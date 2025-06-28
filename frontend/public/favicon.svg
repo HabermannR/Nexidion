@@ -1,0 +1,24 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Filter für den sanften Schein des Selbst -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Gruppe für das gesamte Logo -->
+  <g transform="translate(0, 5)">
+    <!-- Innerer Ring: Die Gaben (ehem. Exiles) -->
+    <circle cx="50" cy="23" r="11" fill="#e0b0ff" /> <!-- Oben: Sensibilität -->
+    <circle cx="77" cy="45" r="11" fill="#e0b0ff" /> <!-- Rechts: Verbundenheit -->
+    <circle cx="50" cy="67" r="11" fill="#e0b0ff" /> <!-- Unten: Intuition -->
+    <circle cx="23" cy="45" r="11" fill="#e0b0ff" /> <!-- Links: Würde -->
+
+    <!-- Das leuchtende Selbst im Zentrum -->
+    <circle cx="50" cy="45" r="18" fill="#f39c12" filter="url(#glow)" />
+  </g>
+</svg>

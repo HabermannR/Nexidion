@@ -1,0 +1,28 @@
+.className {
+  color: green;
+}
+
+.loginContainer {
+  composes: centered-container from './common.css';
+}
+
+.loginContainer h2 {
+  composes: floating-title from './common.css';
+}
+
+.loginForm {
+  composes: vertical-form from './common.css';
+}
+
+.loginForm input {
+  composes: form-input from './common.css';
+}
+
+.loginForm button {
+  composes: primary-button from './common.css';
+}
+
+.errorMessage {
+  color: red;
+  margin-top: 10px;
+}

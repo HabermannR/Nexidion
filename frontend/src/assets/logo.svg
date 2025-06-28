@@ -1,0 +1,30 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Äußerer Ring: Die transformierten Beschützer (Manager/Firefighter) -->
+  <circle cx="50" cy="8" r="8" fill="#27ae60"/>
+  <circle cx="78" cy="19" r="8" fill="#27ae60"/>
+  <circle cx="92" cy="45" r="8" fill="#27ae60"/>
+  <circle cx="78" cy="71" r="8" fill="#27ae60"/>
+  <circle cx="50" cy="82" r="8" fill="#27ae60"/>
+  <circle cx="22" cy="71" r="8" fill="#27ae60"/>
+  <circle cx="8" cy="45" r="8" fill="#27ae60"/>
+  <circle cx="22" cy="19" r="8" fill="#27ae60"/>
+
+  <!-- Innerer Ring: Die Gaben (ehem. Exiles) -->
+  <circle cx="50" cy="27" r="9" fill="#e0b0ff" />
+  <circle cx="70" cy="45" r="9" fill="#e0b0ff" />
+  <circle cx="50" cy="63" r="9" fill="#e0b0ff" />
+  <circle cx="30" cy="45" r="9" fill="#e0b0ff" />
+
+  <!-- Das leuchtende Selbst im Zentrum -->
+  <circle cx="50" cy="45" r="14" fill="#f39c12" filter="url(#glow)"/>
+</svg>

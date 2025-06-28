@@ -1,0 +1,190 @@
+/* ======================================================== */
+/* <<< ROBUST LAYOUT FOR THE CHAT COMPONENT >>> */
+/* ======================================================== */
+
+/* 1. The main window is the flex container */
+.chat-window {
+  display: flex;
+  flex-direction: column; /* Stack children vertically */
+  height: 100%;           /* Fill the parent pane's height */
+  width: 100%;            /* <<< HIER HINZUFÜGEN: Fill the parent pane's width */
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;       /* VERY IMPORTANT: Prevents children from spilling out */
+}
+
+/* 2. The header has a fixed height and won't shrink */
+.chat-header {
+  flex-shrink: 0; 
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 15px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+/* 3. The display area grows and scrolls */
+.chat-display {
+  flex-grow: 1; /* CRITICAL: Takes up all available space */
+  overflow-y: auto; /* Allows the message list to scroll */
+  padding: 15px;
+  min-height: 0; /* CRITICAL FLEXBOX FIX: Allows this element to shrink */
+}
+
+/* 4. The input form has a fixed height and won't shrink */
+.chat-input-form {
+  flex-shrink: 1;
+  display: flex;
+  padding: 5px;
+  border-top: 1px solid #e0e0e0;
+  gap: 5px;
+  background-color: #fff; /* Give it a distinct background */
+}
+
+
+/* ======================================================== */
+/* <<< STYLING FOR BUTTONS, INPUTS, AND MESSAGES >>> */
+/* ======================================================== */
+
+.chat-header h4 {
+  margin: 0;
+}
+
+.clear-chat-button {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.clear-chat-button:hover {
+  background-color: #5a6268;
+}
+
+.chat-input {
+  flex-grow: 1;
+  padding: 5px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  resize: none;
+  font-family: inherit;
+  font-size: 1em;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: #3f51b5;
+  box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.2);
+}
+
+.send-button {
+  background-color: #3f51b5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0 20px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.send-button:hover {
+  background-color: #303f9f;
+}
+.send-button:disabled {
+  background-color: #9e9e9e;
+  cursor: not-allowed;
+}
+
+/* --- Message Styling --- */
+/* (You can keep your existing message styles if you prefer) */
+.message {
+  margin-bottom: 15px;
+  max-width: 90%;
+  display: flex;
+  flex-direction: column;
+}
+.message.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.message.assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.message strong {
+  font-size: 0.8em;
+  color: #666;
+  margin-bottom: 4px;
+}
+.message p {
+  padding: 10px 15px;
+  border-radius: 18px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.message.user p {
+  background-color: #3f51b5;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.message.assistant p {
+  background-color: #e9e9eb;
+  color: #333;
+  border-bottom-left-radius: 4px;
+}
+
+/* ======================================================== */
+/* <<< RESPONSIVE COMPACT STYLES FOR CHAT >>> */
+/* ======================================================== */
+
+@media screen and (max-width: 1000px) {
+
+  /* Reduce padding on the main sections */
+  .chat-header {
+    padding: 5px 12px;
+  }
+  .chat-display {
+    padding: 5px;
+  }
+  .chat-input-form {
+    padding: 5px;
+    gap: 6px;
+  }
+
+  /* Make the header text smaller */
+  .chat-header h4 {
+    font-size: 0.9em;
+  }
+  
+  /* Make the clear button smaller */
+  .clear-chat-button {
+    padding: 4px 8px;
+    font-size: 0.7em;
+  }
+
+  /* Make the text input area smaller */
+  .chat-input {
+    padding: 6px 8px;
+    font-size: 0.9em;
+  }
+
+  /* Make the send button smaller */
+  .send-button {
+    padding: 0 5px; /* Less horizontal padding */
+  }
+
+  /* Make chat messages more compact */
+  .message {
+    margin-bottom: 8px;
+  }
+  .message p {
+    padding: 6px 12px;
+    font-size: 0.9em;
+  }
+  .message strong {
+    font-size: 0.7em;
+  }
+}
