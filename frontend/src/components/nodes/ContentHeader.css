@@ -1,0 +1,23 @@
+.content-header-container {
+  display: flex;
+  flex-wrap: wrap; /* Wichtig für mobile Ansicht */
+  gap: 1rem; /* Abstand zwischen Titel und Button-Gruppe */
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.content-title {
+  /* Verhindert, dass der Titel die Buttons aus dem Bild schiebt */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0; /* Verhindert, dass die Buttons schrumpfen */
+}

@@ -1,0 +1,91 @@
+/* src/components/Chat/Chat.css (VEREINFACHTE VERSION) */
+
+/* ======================================================== */
+/* <<< CHAT MESSAGE STYLING >>> */
+/* ======================================================== */
+
+.message {
+  max-width: 85%; /* Verhindert, dass Blasen zu breit werden */
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+  line-height: 1.6;
+}
+.message.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.message.assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.message strong {
+  font-size: 0.8rem;
+  color: #6c757d; /* Bootstrap secondary color */
+  margin-bottom: 0.25rem;
+}
+
+/* User message bubble */
+.message .user-message-content {
+  padding: 0.5rem 1rem;
+  border-radius: 1.25rem;
+  background-color: #0d6efd; /* Bootstrap primary color */
+  color: white;
+  border-bottom-right-radius: 0.25rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Assistant message bubble (applied to the markdown container) */
+.message .markdown-content {
+  padding: 0.5rem 1rem;
+  border-radius: 1.25rem;
+  background-color: #e9ecef; /* Bootstrap light-gray color */
+  color: #212529; /* Bootstrap default text color */
+  border-bottom-left-radius: 0.25rem;
+  word-break: break-word;
+}
+/* Entfernt Ränder von Elementen in der Blase */
+.message .markdown-content > *:first-child { margin-top: 0; }
+.message .markdown-content > *:last-child { margin-bottom: 0; }
+
+
+/* ======================================================== */
+/* <<< HISTORY PANEL ANIMATION & STYLING >>> */
+/* ======================================================== */
+.chat-history-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px; /* Oder eine andere Breite Ihrer Wahl */
+  height: 100%;
+  z-index: 100; /* Muss über dem restlichen Inhalt liegen */
+  transform: translateX(100%);
+  transition: transform 0.3s ease-in-out;
+  /* Stile für das Panel selbst (z.B. in ChatHistoryPanel.jsx)
+     können Bootstrap-Klassen wie 'bg-white', 'border-start' etc. sein */
+}
+
+/* Slide-in-Animation */
+.chat-window.history-open .chat-history-panel {
+  transform: translateX(0);
+}
+
+/* Stile für die Verlaufsliste (können auch im Panel selbst sein) */
+.session-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.session-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #dee2e6; /* Bootstrap border-color */
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.session-item:hover {
+  background-color: #f8f9fa; /* Bootstrap bg-light */
+}
+/* Weitere Stile für Titel, Meta etc. aus der vorherigen Antwort hier einfügen... */

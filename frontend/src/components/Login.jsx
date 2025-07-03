@@ -5,15 +5,13 @@ import { useAuth } from '../context/AuthContext';
 import styles from './Menu.module.css';
 
 function Login() {
-  // NEU: State für den Benutzernamen hinzufügen
   const [username, setUsername] = useState(''); 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuth();
 
-  // Dieser Hook ist perfekt und bleibt unverändert.
-  // Er leitet den Benutzer weiter, wenn er bereits eingeloggt ist.
+
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/nodes');

@@ -2,9 +2,10 @@
 __pycache__/
 *.pyc
 .idea/
-venv/
+.venv/
 *.env
 *.db
+git/
 
 # React / Node.js spezifisch
 node_modules/
@@ -28,9 +29,17 @@ vacuum.py
 secrets.json     # Falls du so etwas hast
 credentials.txt  # Generell alle Dateien mit sensiblen Daten
 backup/
+Knowledge*Base*export/ 
+Knowledge Base export/ 
+secure_images/
+backend/migrations/
+testgitignore.py
 
+.gitignore
+*_
 *.pdf
 *.epub
 *.md
 *.jpg
 *.png
+*.svg

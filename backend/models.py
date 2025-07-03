@@ -26,7 +26,6 @@ class Node(db.Model):
     # The primary key is a UUID string, generated automatically for new nodes.
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title = db.Column(db.String(255), nullable=False)
-    content = db.Column(db.Text, nullable=True)  # Matches schema where content can be NULL
     current_version = db.Column(db.Integer, nullable=False, default=1)
 
     # --- Relationships ---
@@ -43,6 +42,39 @@ class Node(db.Model):
     # The 'cascade="all, delete-orphan"' rule tells SQLAlchemy to automatically delete
     # all versions of a node when the node itself is deleted, mirroring "ON DELETE CASCADE".
     versions = db.relationship('Version', backref='node', lazy=True, cascade="all, delete-orphan")
+
+    current_version_object = db.relationship(
+        'Version',
+        primaryjoin="and_(Node.id==Version.node_id, Node.current_version==Version.version)",
+        uselist=False,
+        viewonly=True
+    )
+
+    def to_dict(self, include_children=False, include_content=True):
+        """
+        Konvertiert das Node-Objekt in ein serialisierbares Dictionary.
+        """
+        node_dict = {
+            'id': self.id,
+            'title': self.title,
+            'parent_id': self.parent_id,
+            'current_version': self.current_version
+        }
+
+        if include_content:
+            content = self.current_version_object.content if self.current_version_object else ""
+            node_dict['content'] = content
+
+        if include_children:
+            # ===================================================================
+            # KORREKTUR: Sortiere die Kinder, bevor sie verarbeitet werden.
+            # `self.children` ist eine "dynamic" Beziehung, also können wir .order_by() darauf anwenden.
+            # ===================================================================
+            sorted_children = self.children.order_by(Node.title).all()
+            node_dict['children'] = [child.to_dict(include_children=True, include_content=False) for child in
+                                     sorted_children]
+
+        return node_dict
 
 
 class Version(db.Model):
@@ -61,3 +93,42 @@ class Version(db.Model):
     # --- Relationships ---
     # Foreign key linking this version back to its parent Node.
     node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False, index=True)
+
+
+# NEU: Assoziationstabelle für den Many-to-Many-Kontext
+# Eine Nachricht (message) kann viele Kontext-Versionen haben.
+# Eine Version kann der Kontext für viele Nachrichten sein.
+chat_message_context = db.Table('chat_message_context',
+                                db.Column('message_id', db.Integer, db.ForeignKey('chat_messages.id'),
+                                          primary_key=True),
+                                db.Column('version_id', db.Integer, db.ForeignKey('versions.id'), primary_key=True)
+                                )
+
+
+class ChatSession(db.Model):
+    """Represents a single, continuous chat conversation."""
+    __tablename__ = 'chat_sessions'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = db.Column(db.String(255), nullable=True)  # Kann nach der 1. Frage generiert werden
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    llm_model = db.Column(db.String(100), nullable=False)
+
+    # Eine Sitzung hat viele Nachrichten
+    messages = db.relationship('ChatMessage', backref='session', lazy=True, cascade="all, delete-orphan")
+
+
+class ChatMessage(db.Model):
+    """Represents a single message (from user or assistant) in a chat session."""
+    __tablename__ = 'chat_messages'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    session_id = db.Column(db.String(36), db.ForeignKey('chat_sessions.id'), nullable=False, index=True)
+    role = db.Column(db.String(20), nullable=False)  # 'user' or 'assistant'
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Many-to-Many-Beziehung zu den Kontext-Versionen
+    # Gilt nur für 'user'-Nachrichten, aber die Verknüpfung ist hier definiert.
+    context_versions = db.relationship('Version', secondary=chat_message_context, lazy='subquery',
+                                       backref=db.backref('context_for_messages', lazy=True))

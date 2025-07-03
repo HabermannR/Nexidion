@@ -1,0 +1,94 @@
+/* src/components/nodes/ContentArea.css */
+
+/*
+ * Diese Regel greift NUR auf mobilen Geräten (Bildschirme, die schmaler als 992px sind)
+ * und verkleinert die Schriftgröße im Hauptinhaltsbereich.
+ */
+ .internal-link {
+  /* Eine klassische Link-Farbe. Wähle eine, die zu deinem Design passt. */
+  color: #007bff; /* Ein modernes, zugängliches Blau (Bootstrap's Standard) */
+  
+  /* Der Mauszeiger wird zur "Hand", was dem Benutzer signalisiert, dass das Element klickbar ist. */
+  cursor: pointer;
+  
+  /* Ein dezenter Übergangseffekt für die Farbänderung beim Hover. */
+  transition: color 0.15s ease-in-out, text-decoration-color 0.15s ease-in-out;
+  
+  /* Startet ohne Unterstreichung, diese kommt erst beim Hover hinzu. */
+  text-decoration: none; 
+}
+
+/* 
+ * Stil, wenn der Benutzer mit der Maus über den Link fährt oder ihn
+ * per Tastatur (Tab-Taste) fokussiert. Das ist wichtig für die Barrierefreiheit.
+ */
+.internal-link:hover,
+.internal-link:focus {
+  /* Eine etwas dunklere Farbe als Feedback. */
+  color: #0056b3; 
+  
+  /* Die Unterstreichung erscheint als klares visuelles Signal. */
+  text-decoration: underline;
+}
+
+/* Optional: Eine visuelle Hervorhebung beim Fokussieren für Tastaturbenutzer. */
+.internal-link:focus {
+  outline: 2px solid #80bdff;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (min-width: 992px) {
+  .view-content {
+    font-size: 16px; /* Standard ist oft 16px (1rem). 14px ist ein gängiger, gut lesbarer Wert für mobilen Fließtext. */
+    
+    /* Optional, aber empfohlen für bessere Lesbarkeit auf kleinen Bildschirmen: */
+    line-height: 1.6; 
+  }
+
+  /* Optional: Wenn die Überschriften auch etwas kleiner sein sollen */
+  .view-content h1 {
+    font-size: 1.8rem;
+  }
+  .view-content h2 {
+    font-size: 1.4rem;
+  }
+	
+  .view-content h3 {
+    font-size: 1.2rem;
+  }
+  
+  .view-content h4 {
+    font-size: 1.1rem;
+  }
+}
+@media (max-width: 991.98px) {
+  
+  /* 
+   * Wir zielen auf den Wrapper `.view-content`, den wir im JSX von ContentArea.jsx
+   * um den ReactMarkdown-Inhalt gelegt haben.
+   */
+  .view-content {
+    font-size: 14px; /* Standard ist oft 16px (1rem). 14px ist ein gängiger, gut lesbarer Wert für mobilen Fließtext. */
+    
+    /* Optional, aber empfohlen für bessere Lesbarkeit auf kleinen Bildschirmen: */
+    line-height: 1.6; 
+  }
+
+  /* Optional: Wenn die Überschriften auch etwas kleiner sein sollen */
+  .view-content h1 {
+    font-size: 1.8rem;
+  }
+  .view-content h2 {
+    font-size: 1.4rem;
+  }
+	
+  .view-content h3 {
+    font-size: 1.2rem;
+  }
+  
+  .view-content h4 {
+    font-size: 1.1rem;
+  }
+
+}

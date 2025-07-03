@@ -8,15 +8,28 @@ const AppContext = createContext(null);
 export const useAppContext = () => useContext(AppContext);
 
 export const AppProvider = ({ children }) => {
+  // Bestehender State
   const [selectedNodeIds, setSelectedNodeIds] = useState(new Set());
   const [globalTreeData, setGlobalTreeData] = useState([]);
-
-  // --- MODIFIZIERT: State für die Druckvorschau ---
-  // Wir speichern jetzt ein Objekt, das Nodes und das Inhaltsverzeichnis (toc) enthält.
   const [isPrintPreviewActive, setIsPrintPreviewActive] = useState(false);
   const [printPreviewData, setPrintPreviewData] = useState({ nodes: [], toc: [] });
+  const [collapsedNodes, setCollapsedNodes] = useState(new Set());
+  const [chatInputValue, setChatInputValue] = useState('');
 
+  const toggleNodeCollapse = useCallback((nodeId) => {
+    setCollapsedNodes(prevSet => {
+      const newSet = new Set(prevSet);
+      if (newSet.has(nodeId)) {
+        newSet.delete(nodeId);
+      } else {
+        newSet.add(nodeId);
+      }
+      return newSet;
+    });
+  }, []); // Keine Abhängigkeiten, da nur der Setter von useState verwendet wird
+  // ===================================================================
 
+  // Bestehende Funktionen
   const toggleNodeSelection = useCallback((nodeId) => {
     setSelectedNodeIds(prev => {
       const newSet = new Set(prev);
@@ -45,8 +58,6 @@ export const AppProvider = ({ children }) => {
     }
   }, [selectedNodeIds]);
 
-  // --- MODIFIZIERT: Funktionen zur Steuerung der Druckvorschau ---
-  // enterPrintPreview erwartet jetzt ein Objekt: { nodes: [...], toc: [...] }
   const enterPrintPreview = useCallback((data) => {
     setPrintPreviewData(data);
     setIsPrintPreviewActive(true);
@@ -54,35 +65,40 @@ export const AppProvider = ({ children }) => {
 
   const exitPrintPreview = useCallback(() => {
     setIsPrintPreviewActive(false);
-    // Setzt den State auf den leeren Initialzustand zurück
     setPrintPreviewData({ nodes: [], toc: [] });
   }, []);
 
+  // useMemo ist hier großartig, um unnötige Re-Renders von Consumern zu vermeiden.
   const value = useMemo(() => ({
     selectedNodeIds,
-    setSelectedNodeIds, // HINZUGEFÜGT: Die Setter-Funktion verfügbar machen
+    setSelectedNodeIds,
     toggleNodeSelection,
     getContextContent,
     treeData: globalTreeData,
     setTreeDataForContext: setGlobalTreeData,
-    
-    // --- MODIFIZIERT: Die neuen Werte für den Context verfügbar machen ---
     isPrintPreviewActive,
-    printPreviewData, // Statt nodesToPrint
+    printPreviewData,
     enterPrintPreview,
     exitPrintPreview,
+    collapsedNodes,
+    toggleNodeCollapse,
+	chatInputValue,
+    setChatInputValue,
 
   }), [
       selectedNodeIds, 
-      setSelectedNodeIds, // HINZUGEFÜGT: Als Abhängigkeit für useMemo
+      setSelectedNodeIds,
       toggleNodeSelection, 
       getContextContent, 
       globalTreeData, 
-      // --- MODIFIZIERT: Abhängigkeiten für die neuen Werte hinzufügen ---
       isPrintPreviewActive,
-      printPreviewData, // Statt nodesToPrint
+      printPreviewData,
       enterPrintPreview,
-      exitPrintPreview
+      exitPrintPreview,
+      collapsedNodes,
+      toggleNodeCollapse,
+	  chatInputValue,
+      setChatInputValue
     ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

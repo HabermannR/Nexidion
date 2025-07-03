@@ -1,0 +1,126 @@
+/*
+ * Dieses CSS steuert NUR das grobe Layout von MainLayout.
+ * Es verwendet die CSS-Variable --topbar-height, die in App.css
+ * oder index.css global definiert werden sollte.
+ */
+
+.main-layout-container {
+  /* Stellt sicher, dass der Container die Resthöhe des Viewports einnimmt */
+  height: calc(100vh - var(--topbar-height));
+}
+
+.main-layout-row {
+  /* Zwingt die Row, die volle Höhe ihres Containers zu nutzen */
+  height: 100%;
+}
+
+/*
+ * Macht die Inhaltsspalten unabhängig voneinander scrollbar.
+ * Wichtig für ein App-ähnliches Verhalten.
+ */
+.main-content-col,
+.context-panel-col {
+  height: 100%;
+  overflow-y: auto;
+  padding: 1rem; /* Ein bisschen Abstand nach innen */
+}
+
+/*
+ * Styling für die linke Tree-Sidebar.
+ * Das Offcanvas wird auf Desktops zu einem normalen div.
+ * Wir stellen sicher, dass es sich korrekt verhält.
+ */
+.tree-sidebar {
+  width: 100%;
+  border-right: 1px solid #dee2e6;
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-sidebar .offcanvas-body {
+  padding: 0;
+  flex-grow: 1;
+}
+
+/* Die Padding-Regeln können hier bleiben, da sie layout-spezifisch sind */
+.main-content-col,
+.context-panel-col {
+  padding: 1rem;
+}
+
+.context-panel-col .accordion-body {
+    padding: 0;
+}
+
+.desktop-sidebar-wrapper {
+  padding: 1rem;
+}
+
+/* ================================================================ */
+/* DESKTOP-ANSICHT (lg und größer)                                  */
+/* ================================================================ */
+@media (min-width: 992px) {
+  
+  /* Alle drei Spalten bekommen die volle Höhe ihres Eltern-Containers (der Row) */
+  .tree-column,
+  .main-content-col,
+  .context-panel-col {
+    height: 100%;
+  }
+  
+  /* Die Spalten für Content und Context sollen selbst scrollen */
+  .main-content-col,
+  .context-panel-col {
+    overflow-y: auto;
+    padding: 1rem;
+  }
+  
+  /* 
+   * SPEZIALBEHANDLUNG FÜR DIE TREE-SPALTE, UM DAS SCROLLEN ZU FIXEN
+   */
+  .tree-column {
+    display: flex; /* Macht die Spalte zu einem Flex-Container */
+    flex-direction: column;
+    border-right: 1px solid #dee2e6;
+  }
+  
+  .tree-column .tree-sidebar {
+    /* Das Offcanvas darin soll den gesamten Platz ausfüllen */
+    flex-grow: 1; 
+    min-height: 0; /* Der entscheidende Flexbox-Trick */
+
+    /* Stellt sicher, dass das Offcanvas im Desktop-Modus korrekt angezeigt wird */
+    position: relative !important;
+    visibility: visible !important;
+    border: none;
+  }
+
+  .tree-column .offcanvas-body {
+    /* DER BODY IM OFF CANVAS WIRD ZUM SCROLL-CONTAINER */
+    overflow-y: auto;
+    padding: 0; /* Wir entfernen das Padding, da ProjectTree es selbst kontrolliert */
+  }
+}
+
+/* ================================================================ */
+/* MOBILE-ANSICHT (< 992px)                                         */
+/* ================================================================ */
+@media (max-width: 991.98px) {
+  /* Auf Mobilgeräten verhalten sich die Spalten normal */
+  .main-content-col,
+  .context-panel-col {
+    height: auto;
+    overflow-y: visible;
+    padding: 0 0.5rem; 
+  }
+  
+  .context-panel-col {
+     padding-top: 0;
+     padding-bottom: 1rem;
+  }
+}
+
+/* Anpassung für das Accordion in der rechten Spalte */
+.context-panel-col .accordion-body {
+    padding: 0;
+}

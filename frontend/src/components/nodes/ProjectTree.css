@@ -1,0 +1,132 @@
+.project-tree-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tree-search-bar {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e9ecef;
+  margin-bottom: 1rem;
+}
+
+.tree-node-list {
+  flex-grow: 1;
+  overflow-y: auto;
+}
+
+.tree-node-wrapper {
+  /* Container für einen Node und seine Kinder */
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  /* ÄNDERUNG: Statt `space-between` verwenden wir `flex-start`. */
+  /* Das sorgt dafür, dass alle Elemente linksbündig anfangen. */
+  justify-content: flex-start;
+  gap: 0.5rem; /* NEU: Ein kleiner Abstand zwischen dem Titel und den Controls */
+  
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+  margin-bottom: 2px;
+}
+
+.tree-node:hover {
+  background-color: #f8f9fa; /* Bootstrap's 'gray-100' */
+}
+
+.tree-node.is-selected > .tree-node-content {
+  font-weight: bold;
+  color: #0d6efd; /* Bootstrap's 'primary' color */
+}
+
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  /* flex-grow: 1;  <-- DIESE ZEILE LÖSCHEN ODER AUSKOMMENTIEREN */
+  
+  /* Diese drei Zeilen sorgen für den "..."-Effekt bei langen Titeln */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* NEU: Wir geben ihm eine maximale Breite, damit er nicht unendlich wächst */
+  /* und die Buttons aus dem Bild schiebt, wenn der Titel sehr lang ist. */
+  max-width: calc(100% - 80px); /* 100% minus der geschätzte Platz für die Buttons */
+}
+
+.collapse-icon {
+  display: inline-block;
+  width: 1.5rem;
+  text-align: center;
+  color: #6c757d; /* Bootstrap's 'secondary' color */
+  font-size: 0.8em;
+  font-family: monospace;
+}
+
+.node-checkbox {
+  margin-right: 0.5rem;
+}
+
+.node-controls {
+  display: flex;
+  align-items: center;
+  opacity: 0.2; /* Standardmäßig unsichtbar */
+  transition: opacity 0.15s ease-in-out;
+}
+
+.tree-node:hover .node-controls {
+  opacity: 1; /* Beim Hovern über den Node sichtbar machen */
+}
+
+.control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  
+  width: 20px;
+  height: 20px;
+  
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1;
+  color: white;
+  
+  background: none; /* Wichtig, um die Standard-Button-Farbe zu entfernen */
+  border: none; /* Entfernt den Standard-Rand */
+  border-radius: 50%;
+  
+  cursor: pointer;
+  margin-left: 5px;
+  padding: 0;
+  
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.control-btn:hover {
+  transform: scale(1.1); /* Ein kleiner Zoom-Effekt beim Hovern */
+}
+
+/* Spezifische Farben für Hinzufügen und Löschen */
+.control-btn-add {
+  background-color: #28a745; /* Ein schönes Grün (Bootstrap success) */
+}
+.control-btn-add:hover {
+  background-color: #218838;
+}
+
+.control-btn-delete {
+  background-color: #dc3545; /* Ein schönes Rot (Bootstrap danger) */
+}
+.control-btn-delete:hover {
+  background-color: #c82333;
+}
+.tree-node-children {
+  padding-left: 0.75rem; /* Weniger Abstand vom Inhalt zur Linie */
+  margin-left: 0.5rem;  /* Weniger Abstand der Linie zum Rand */
+  border-left: 1px solid #e9ecef;
+  
+}

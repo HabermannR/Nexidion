@@ -1,0 +1,66 @@
+/* src/components/common/ResizableImage.css */
+
+.resizable-image-container {
+    position: relative; /* Wichtig für die Positionierung der Steuerelemente */
+    display: inline-block; /* Verhält sich wie ein Bild, aber als Block-Container */
+    max-width: 100%; /* Stellt sicher, dass der Container nicht überläuft */
+    transition: all 0.2s ease-in-out;
+}
+
+/* Die Steuerelemente sind standardmäßig unsichtbar */
+.resize-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 15px;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0; /* Standardmäßig unsichtbar */
+    transition: opacity 0.3s ease-in-out;
+    z-index: 10;
+}
+
+/* Wenn man über den Bild-Container fährt, werden die Steuerelemente sichtbar */
+.resizable-image-container:hover .resize-controls {
+    opacity: 1;
+}
+
+.resize-controls button {
+    background-color: #fff;
+    color: #333;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 22px; /* Vertikales Zentrieren des Textes */
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.resize-controls button:hover {
+    background-color: #eee;
+}
+
+.resize-percentage {
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 35px; /* Gibt dem Text etwas Platz */
+    text-align: center;
+    user-select: none; /* Verhindert, dass der Text markiert wird */
+}
+
+/* Sorgt dafür, dass das eigentliche Bild auch responsive bleibt */
+.resizable-image-container img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}

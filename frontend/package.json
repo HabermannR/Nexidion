@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "axios": "^1.10.0",
+    "bootstrap": "^5.3.7",
+    "diff2html": "^3.4.51",
+    "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
     "marked": "^15.0.12",
     "react": "^19.1.0",
+    "react-bootstrap": "^2.10.10",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^19.1.0",
