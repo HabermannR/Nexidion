@@ -17,6 +17,7 @@ yarn-debug.log*
 yarn-error.log*
 dist.zip
 .env.development
+frontend/src/components/special_nodes/
 
 
 # Deine spezifischen, privaten Dateien
@@ -34,6 +35,10 @@ Knowledge Base export/
 secure_images/
 backend/migrations/
 testgitignore.py
+backend/sync_docs.py
+backend/benchmark.py
+backend/reorder.py
+backend/my_export.json
 
 .gitignore
 *_
