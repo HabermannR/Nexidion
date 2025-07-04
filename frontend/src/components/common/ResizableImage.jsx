@@ -23,7 +23,7 @@ const ResizableImage = ({ src, alt, ...props }) => {
     // Die Komponente rendert einen Container, der das Bild und die Steuerelemente enthält.
     // Die Steuerelemente werden nur bei Hover über dem Container sichtbar.
     return (
-        <div className="resizable-image-container" {...props}>
+       <span className="resizable-image-container" {...props}> 
             {/* Das SecureImage erhält die dynamische Breite als Inline-Style */}
             <SecureImage 
                 src={src} 
@@ -32,12 +32,12 @@ const ResizableImage = ({ src, alt, ...props }) => {
             />
             
             {/* Die Steuerelemente zur Größenanpassung */}
-            <div className="resize-controls">
+            <span className="resize-controls">
                 <button onClick={handleDecrease} title="Bild verkleinern">-</button>
                 <span className="resize-percentage">{width}%</span>
                 <button onClick={handleIncrease} title="Bild vergrößern">+</button>
-            </div>
-        </div>
+            </span>
+        </span>
     );
 };
 

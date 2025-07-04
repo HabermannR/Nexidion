@@ -9,6 +9,7 @@ import TopBar from './components/layout/TopBar';
 import Login from './components/Login';
 import NodesView from './pages/NodesView'; 
 import NodeList from './pages/NodeList'; 
+import VaultSettings from './pages/settings/VaultSettings';
 import IFSLandkarteSVGExport from './components/special_nodes/IFSLandkarteSVGExport';
 import ProtectedRoute from './ProtectedRoute';
 // Globale Stile
@@ -39,6 +40,12 @@ const router = createBrowserRouter(
           <NodeList />
         </ProtectedRoute>
       } /> 
+	  
+	  <Route path="/settings/vaults" element={
+		<ProtectedRoute>
+		  <VaultSettings /> 
+		</ProtectedRoute>
+	  } />
       
       <Route path="/nodes/:nodeId" element={
         <ProtectedRoute>
@@ -58,13 +65,15 @@ const router = createBrowserRouter(
 
 function App() {
   return (
-    <AuthProvider>
-      <AppProvider>
+    // VAULT-FIX: Reihenfolge der Provider getauscht.
+    // AppProvider muss außen sein, damit AuthProvider darauf zugreifen kann.
+    <AppProvider>
+      <AuthProvider>
         <DndProvider backend={HTML5Backend}>
           <RouterProvider router={router} />
         </DndProvider>
-      </AppProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </AppProvider>
   );
 }
 

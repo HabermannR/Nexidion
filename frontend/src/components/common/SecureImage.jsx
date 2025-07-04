@@ -22,7 +22,6 @@ const SecureImage = ({ src, alt, ...props }) => {
                 const contentType = response.headers['content-type'] || response.data.type;
                 
                 if (contentType && contentType.includes('svg')) {
-                    console.log('Processing as SVG...');
                     
                     // SVG als Text laden
                     response = await api.get(src, {
@@ -34,13 +33,11 @@ const SecureImage = ({ src, alt, ...props }) => {
                     
                     // Falls die SVG in HTML eingebettet ist, extrahiere sie
                     if (svgContent.includes('<div') && svgContent.includes('<svg')) {
-                        console.log('SVG is wrapped in HTML, extracting...');
                         
                         // Extrahiere den SVG-Teil
                         const svgMatch = svgContent.match(/<svg[^>]*>[\s\S]*?<\/svg>/i);
                         if (svgMatch) {
                             svgContent = svgMatch[0];
-                            console.log('Extracted SVG:', svgContent.substring(0, 100) + '...');
                         } else {
                             console.error('Could not find SVG content in HTML wrapper');
                             setError("Invalid SVG format");
@@ -52,7 +49,6 @@ const SecureImage = ({ src, alt, ...props }) => {
                     const objectURL = URL.createObjectURL(svgBlob);
                     setImageSrc(objectURL);
                 } else {
-                    console.log('Processing as regular image...');
                     const objectURL = URL.createObjectURL(response.data);
                     setImageSrc(objectURL);
                 }

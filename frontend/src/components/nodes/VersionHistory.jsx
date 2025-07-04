@@ -4,16 +4,17 @@ import React from 'react';
 import ListGroup from 'react-bootstrap/ListGroup';
 import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
+import { BsArrowLeftRight } from 'react-icons/bs'; 
 
 export default function VersionHistory({ 
   versions, 
-  selectedVersion, 
-  onVersionClick, 
+  diffSelection, 
+  onSelectVersion,   // NEU
+  onCompareVersion,  // NEU
   onShowCurrent 
 }) {
 
   if (!versions || versions.length === 0) {
-    // ... (dieser Teil bleibt unverändert)
     return (
       <div className="version-history-panel">
         <h5>Versionen</h5>
@@ -23,19 +24,14 @@ export default function VersionHistory({
       </div>
     );
   }
-
-  // ===================================================================
-  // KORREKTUR: ENTFERNEN SIE DIESE ZEILE.
-  // Das Backend liefert die Liste bereits korrekt sortiert (neueste oben).
-  // const reversedVersions = versions.slice().reverse();
-  // Wir verwenden jetzt direkt die `versions`-Prop.
-  // ===================================================================
+  
+  const { base, compare } = diffSelection;
 
   return (
     <div className="version-history-panel">
       <h5>Versionen</h5>
       
-      {selectedVersion && (
+      {base && (
         <Button 
           variant="outline-secondary" 
           size="sm" 
@@ -47,20 +43,44 @@ export default function VersionHistory({
       )}
 
       <ListGroup variant="flush" className="mt-2">
-        {/* Wir iterieren jetzt direkt über die `versions`-Liste */}
         {versions.map(v => {
-          const isSelected = selectedVersion && (selectedVersion.timestamp === v.timestamp);
+          const isBase = base?.timestamp === v.timestamp;
+          const isCompare = compare?.timestamp === v.timestamp;
           
+          // Das Diff-Symbol wird nur angezeigt, wenn eine Basis ausgewählt ist 
+          // und das aktuelle Item nicht die Basis selbst ist.
+          const showDiffButton = base && !isBase;
+
           return (
             <ListGroup.Item 
-              key={v.timestamp} 
-              action 
-              active={isSelected}
-              onClick={() => onVersionClick(v)}
-              className="d-flex justify-content-between align-items-center" // Für schöneres Layout
+              key={v.timestamp}
+              // Die 'active'-Prop von Bootstrap wird nur für die Basis-Auswahl genutzt (dunkelblau)
+              active={isBase}
+              // Unsere eigene Klasse für die hellblaue Vergleichs-Auswahl
+              className={`d-flex justify-content-between align-items-center version-list-item ${isCompare ? 'diff-compare-active' : ''}`}
+              // Klick auf den Hauptbereich wählt nur die Version zur Anzeige aus
+              onClick={() => onSelectVersion(v)}
             >
-              <span>Gespeichert am {new Date(v.timestamp).toLocaleString('de-DE')}</span>
-              <small className="text-muted">v{v.version}</small> {/* Optional: Versionsnummer anzeigen */}
+              <div className="flex-grow-1">
+                <span>Gespeichert am {new Date(v.timestamp).toLocaleString('de-DE')}</span>
+                <br/>
+                <small className="text-muted">v{v.version}</small>
+              </div>
+              
+              {showDiffButton && (
+                <Button 
+                  variant={isCompare ? "primary" : "outline-info"}
+                  size="sm"
+                  className="ms-2"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Verhindert, dass onSelectVersion auch ausgelöst wird
+                    onCompareVersion(v); // Ruft den spezifischen Vergleichs-Handler auf
+                  }}
+                  title={`Vergleiche mit v${base.version}`}
+                >
+                  <BsArrowLeftRight />
+                </Button>
+              )}
             </ListGroup.Item>
           );
         })}

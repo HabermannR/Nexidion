@@ -22,16 +22,17 @@
 .tree-node {
   display: flex;
   align-items: center;
-  /* ÄNDERUNG: Statt `space-between` verwenden wir `flex-start`. */
-  /* Das sorgt dafür, dass alle Elemente linksbündig anfangen. */
   justify-content: flex-start;
-  gap: 0.5rem; /* NEU: Ein kleiner Abstand zwischen dem Titel und den Controls */
+  gap: 0.5rem; 
   
   padding: 0.3rem 0.5rem;
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.15s ease-in-out;
   margin-bottom: 2px;
+  
+  /* NEU: Wichtig für die Positionierung des gestrichelten Rahmens */
+  position: relative; 
 }
 
 .tree-node:hover {
@@ -43,19 +44,35 @@
   color: #0d6efd; /* Bootstrap's 'primary' color */
 }
 
+.tree-node.is-drop-target::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px dashed #0d6efd; /* Blauer gestrichelter Rahmen */
+  border-radius: 6px; /* Passt zum Radius des Nodes */
+  background-color: rgba(13, 110, 253, 0.1); /* Sehr leichte blaue Füllung */
+  
+  /* Animation für einen weicheren Effekt */
+  transition: all 0.2s ease-in-out;
+  
+  /* Stellt sicher, dass der Rahmen nicht klickbar ist und Klicks durchlässt */
+  pointer-events: none; 
+}
+
 .tree-node-content {
   display: flex;
   align-items: center;
-  /* flex-grow: 1;  <-- DIESE ZEILE LÖSCHEN ODER AUSKOMMENTIEREN */
-  
-  /* Diese drei Zeilen sorgen für den "..."-Effekt bei langen Titeln */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-
-  /* NEU: Wir geben ihm eine maximale Breite, damit er nicht unendlich wächst */
-  /* und die Buttons aus dem Bild schiebt, wenn der Titel sehr lang ist. */
-  max-width: calc(100% - 80px); /* 100% minus der geschätzte Platz für die Buttons */
+  max-width: calc(100% - 80px);
+  
+  /* NEU: Sorgen wir dafür, dass der Inhalt über dem Drop-Target-Rahmen liegt */
+  position: relative;
+  z-index: 1;
 }
 
 .collapse-icon {

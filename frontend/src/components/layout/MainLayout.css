@@ -1,3 +1,5 @@
+/* MainLayout.css - Korrigierte Version mit Bootstrap CSS-Variablen */
+
 /*
  * Dieses CSS steuert NUR das grobe Layout von MainLayout.
  * Es verwendet die CSS-Variable --topbar-height, die in App.css
@@ -118,9 +120,77 @@
      padding-top: 0;
      padding-bottom: 1rem;
   }
+  
+  /* ============================================================ */
+  /* BREITERE MOBILE OFFCANVAS OVERLAYS - Bootstrap CSS-Variablen */
+  /* ============================================================ */
+  
+  /* Navigation Offcanvas - 80% der Bildschirmbreite */
+  .tree-sidebar.offcanvas {
+    --bs-offcanvas-width: 80vw;
+    max-width: 400px; /* Maximale Breite für sehr große Tablets */
+  }
+  
+  /* Context Panel Offcanvas - 85% der Bildschirmbreite */
+  .context-offcanvas.offcanvas {
+    --bs-offcanvas-width: 85vw;
+    max-width: 450px; /* Etwas breiter für mehr Inhalt */
+  }
+  
+  /* Version History Offcanvas - 85% der Bildschirmbreite */
+  .version-offcanvas.offcanvas {
+    --bs-offcanvas-width: 85vw;
+    max-width: 450px;
+  }
+  
+  /* Für sehr kleine Bildschirme (< 576px) noch breiter */
+  @media (max-width: 575.98px) {
+    .tree-sidebar.offcanvas {
+      --bs-offcanvas-width: 90vw;
+    }
+    
+    .context-offcanvas.offcanvas,
+    .version-offcanvas.offcanvas {
+      --bs-offcanvas-width: 95vw;
+    }
+  }
 }
 
 /* Anpassung für das Accordion in der rechten Spalte */
 .context-panel-col .accordion-body {
     padding: 0;
+}
+
+/* ================================================================ */
+/* VERBESSERTE MOBILE OFFCANVAS STYLING                            */
+/* ================================================================ */
+
+/* Bessere Lesbarkeit und Nutzbarkeit auf mobilen Geräten */
+@media (max-width: 991.98px) {
+  .offcanvas-body {
+    padding: 1rem;
+  }
+  
+  /* Größere Touch-Targets für mobile Navigation */
+  .offcanvas .btn,
+  .offcanvas .nav-link,
+  .offcanvas .list-group-item {
+    min-height: 44px; /* Apple empfohlene Mindestgröße für Touch-Targets */
+    display: flex;
+    align-items: center;
+  }
+  
+  /* Bessere Abstände in mobilen Overlays */
+  .offcanvas .accordion-item {
+    margin-bottom: 0.5rem;
+  }
+  
+  .offcanvas .accordion-button {
+    padding: 1rem;
+    font-size: 1.1rem;
+  }
+  
+  .offcanvas .accordion-body {
+    padding: 1rem;
+  }
 }

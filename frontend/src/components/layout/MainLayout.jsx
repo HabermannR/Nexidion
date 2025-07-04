@@ -1,4 +1,4 @@
-// src/components/layout/MainLayout.jsx (Version mit der neuen 3-Button-Aktionsleiste)
+// src/components/layout/MainLayout.jsx (Version mit breiteren Mobile-Overlays)
 
 import React from 'react';
 import Container from 'react-bootstrap/Container';
@@ -18,7 +18,6 @@ function MainLayout({
   onToggleContext, 
   onToggleVersions 
 }) {
-
     
   return (
     <Container fluid className="main-layout-container">
@@ -36,20 +35,17 @@ function MainLayout({
         <Col 
           xs={12} 
           lg={6} 
-          // order-2: Auf Mobilgeräten das zweite Element (nach der Aktionsleiste)
-          // order-lg-2: Auf Desktop das zweite Element (Standard)
           className="main-content-col order-2 order-lg-2"
         >
           {mainContent}
         </Col>
 
-        {/* NEUE KOMBINIERTE AKTIONSSPALTE (nur für mobil) */}
+        {/* MOBILE AKTIONSLEISTE */}
         <Col 
           xs={12} 
           className="order-1 d-lg-none"
         >
           <Row className="g-2 p-3 align-items-center bg-light border-bottom">
-            {/* Button 1: Navigation (bleibt) */}
             <Col>
               <Button variant="outline-secondary" className="w-100" onClick={onToggleTree}>
                 ☰ Navigation
@@ -64,18 +60,17 @@ function MainLayout({
             
             <Col>
               <Button variant="outline-secondary" className="w-100" onClick={onToggleContext}>
-                ⚙️ Context
+                ⚙️ Context  
               </Button>
             </Col>
           </Row>
         </Col>
 
-        {/* ALTE CONTEXT/VERSION-SPALTE (jetzt nur noch für Desktop) */}
+        {/* DESKTOP CONTEXT/VERSION-SPALTE */}
         <Col 
           lg={3} 
           className="d-none d-lg-block order-lg-3 context-panel-col"
         >
-          {/* Auf dem Desktop zeigen wir beide Panels untereinander an */}
           <div className="desktop-sidebar-wrapper">
              {contextPanel}
              <hr className="my-3" />

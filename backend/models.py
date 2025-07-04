@@ -14,6 +14,34 @@ from flask_sqlalchemy import SQLAlchemy
 # This will be initialized with the Flask app in the main application file.
 db = SQLAlchemy()
 
+class Vault(db.Model):
+    """
+    Represents a single, isolated knowledge base or 'vault'.
+    Each vault has its own set of nodes and chat sessions.
+    """
+    __tablename__ = 'vaults'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships to nodes and sessions within this vault.
+    # The cascade rule ensures that when a vault is deleted, all its
+    # associated nodes and chat sessions are also automatically deleted.
+    nodes = db.relationship('Node', backref='vault', lazy='dynamic', cascade="all, delete-orphan")
+    chat_sessions = db.relationship('ChatSession', backref='vault', lazy='dynamic', cascade="all, delete-orphan")
+
+    def to_dict(self):
+        """
+        Serializes the Vault object to a dictionary.
+        """
+        return {
+            'id': self.id,
+            'name': self.name,
+            'created_at': self.created_at.isoformat()
+        }
+
+
 
 class Node(db.Model):
     """
@@ -32,6 +60,8 @@ class Node(db.Model):
     # Foreign key for the self-referential parent-child relationship.
     # The index=True mirrors the CREATE INDEX command in your schema for better performance.
     parent_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=True, index=True)
+
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
 
     # Defines the 'node.children' attribute, which provides a query to get all child nodes.
     # Using lazy='dynamic' is efficient as it doesn't load all children into memory at once.
@@ -58,7 +88,8 @@ class Node(db.Model):
             'id': self.id,
             'title': self.title,
             'parent_id': self.parent_id,
-            'current_version': self.current_version
+            'current_version': self.current_version,
+            'vault_id': self.vault_id  # NEU: vault_id im Dictionary
         }
 
         if include_content:
@@ -114,6 +145,7 @@ class ChatSession(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     llm_model = db.Column(db.String(100), nullable=False)
 
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
     # Eine Sitzung hat viele Nachrichten
     messages = db.relationship('ChatMessage', backref='session', lazy=True, cascade="all, delete-orphan")
 

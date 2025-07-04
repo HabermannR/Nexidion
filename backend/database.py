@@ -1,71 +1,163 @@
 # database.py
+
 """
 The data access layer for the application, powered by Flask-SQLAlchemy.
 
 This module provides functions to query and manipulate the database using the
 ORM (Object-Relational Mapper), offering a secure and maintainable way to
-interact with the Node and Version models.
+interact with the Vault, Node, and Version models. All data access is
+scoped to a specific vault_id to ensure data isolation.
 """
 
-from models import db, Node, Version
-from sqlalchemy import case, text
+from sqlalchemy import case, func
 from sqlalchemy.orm import joinedload, selectinload
 
+from models import db, Vault, Node, Version
 
-def init_db(root_node_title='Summary'):
+def init_db():
     """
-    Initializes the database schema and creates the root node.
-    This is idempotent and will only create tables/root node if they don't exist.
-
-    Args:
-        root_node_title (str): The title for the root node of the knowledge base.
+    Initializes the database schema and creates the very first default vault
+    and its root node if no vaults exist yet. This is idempotent.
     """
-    print("Creating database tables...")
+    print("Creating database tables if they don't exist...")
     db.create_all()
 
-    # Check if a root node (parent_id=None) already exists
-    root_node = Node.query.filter_by(parent_id=None).first()
-    if not root_node:
-        print(f"No root node found. Creating new root node with title: '{root_node_title}'")
-        # MODIFICATION: Remove the circular import and call the function directly.
-        create_node(
-            title=root_node_title,
-            content=f'This is the root of the "{root_node_title}" knowledge base.',
-            parent_id=None
-        )
+    # Check if any vault exists. If not, create a default one.
+    if Vault.query.first() is None:
+        print("No vaults found. Creating a default 'Main' vault.")
+        try:
+            create_vault_with_root_node(name="Main")
+            print("Default 'Main' vault created successfully.")
+        except Exception as e:
+            print(f"Error creating the default vault: {e}")
     else:
-        print(f"Database already has a root node titled: '{root_node.title}'. Skipping creation.")
+        print("Database already contains vaults. Skipping default creation.")
 
-    # ... (rest of your database.py file)
+# ==============================================================================
+# VAULT-RELATED FUNCTIONS
+# ==============================================================================
 
-
-def get_all_nodes_as_tree():
+def get_all_vaults() -> list[Vault]:
     """
-    Fetches all nodes and organizes them into a tree structure.
-    This is optimized to use a single query to prevent the N+1 problem.
+    Retrieves all vaults, sorted by name.
+    Returns a list of Vault objects.
     """
-    # 1. Fetch all nodes in one go.
-    all_nodes = Node.query.order_by(Node.title).all()
+    return Vault.query.order_by(Vault.name).all()
 
-    # 2. Create a dictionary for quick lookups by ID.
+
+def create_vault_with_root_node(name: str) -> Vault:
+    """
+    Creates a new vault and its corresponding root node ("Summary") after
+    ensuring the name is unique.
+
+    Args:
+        name: The desired name for the new vault.
+
+    Returns:
+        The created Vault object.
+
+    Raises:
+        ValueError: If the name is empty or already exists.
+    """
+    name_stripped = name.strip()
+    if not name_stripped:
+        raise ValueError("Vault name cannot be empty.")
+
+    if Vault.query.filter_by(name=name_stripped).first():
+        raise ValueError(f"A vault with the name '{name_stripped}' already exists.")
+
+    try:
+        new_vault = Vault(name=name_stripped)
+        db.session.add(new_vault)
+        db.session.flush()
+
+        root_node = Node(title="Summary", vault_id=new_vault.id, parent_id=None)
+        db.session.add(root_node)
+        db.session.flush()
+
+        initial_version = Version(
+            node_id=root_node.id,
+            version=1,
+            content=f"This is the root node for the '{name_stripped}' vault."
+        )
+        db.session.add(initial_version)
+
+        db.session.commit()
+        return new_vault
+    except Exception as e:
+        db.session.rollback()
+        raise e
+
+
+def rename_vault(vault_id: int, new_name: str) -> Vault:
+    """
+    Renames a vault after ensuring the new name is unique.
+
+    Raises:
+        ValueError: If the vault is not found or the new name is already in use.
+    """
+    vault = Vault.query.get(vault_id)
+    if not vault:
+        raise ValueError(f"Vault with ID {vault_id} not found.")
+
+    new_name_stripped = new_name.strip()
+    if not new_name_stripped:
+        raise ValueError("New vault name cannot be empty.")
+
+    existing = Vault.query.filter(Vault.id != vault_id, Vault.name == new_name_stripped).first()
+    if existing:
+        raise ValueError(f"Another vault with the name '{new_name_stripped}' already exists.")
+
+    vault.name = new_name_stripped
+    db.session.commit()
+    return vault
+
+
+def delete_vault(vault_id: int):
+    """
+    Deletes a vault and all its associated data (nodes, versions, etc.).
+
+    Raises:
+        ValueError: If the vault is not found or it is the last remaining vault.
+    """
+    vault = Vault.query.get(vault_id)
+    if not vault:
+        raise ValueError(f"Vault with ID {vault_id} not found.")
+
+    if Vault.query.count() <= 1:
+        raise ValueError("Cannot delete the last remaining vault.")
+
+    try:
+        # The cascade='all, delete-orphan' rule in the models handles deletion of children.
+        db.session.delete(vault)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        raise e
+
+
+# ==============================================================================
+# NODE-RELATED FUNCTIONS
+# ==============================================================================
+
+def get_all_nodes_as_tree(vault_id: int) -> list[dict]:
+    """
+    Fetches all nodes for a specific vault and organizes them into a tree structure.
+    """
+    all_nodes = Node.query.filter_by(vault_id=vault_id).order_by(Node.title).all()
     nodes_map = {node.id: node.to_dict(include_content=False) for node in all_nodes}
-
-    # 3. Build the tree structure.
     tree = []
+
     for node_id, node_dict in nodes_map.items():
         parent_id = node_dict.get('parent_id')
         if parent_id in nodes_map:
-            # This is a child node, add it to its parent's 'children' list.
             parent = nodes_map[parent_id]
             if 'children' not in parent:
                 parent['children'] = []
             parent['children'].append(node_dict)
         else:
-            # This is a root node.
             tree.append(node_dict)
 
-    # Optional: Sort children within each node if the order matters
-    # (The initial query already sorted everything by title)
     def sort_children_recursively(nodes):
         for node in nodes:
             if 'children' in node:
@@ -73,186 +165,238 @@ def get_all_nodes_as_tree():
                 sort_children_recursively(node['children'])
 
     sort_children_recursively(tree)
-
     return tree
 
 
-def get_all_nodes_as_list():
-    """Fetches all nodes as a simple flat list of dictionaries using the .to_dict() method."""
-    nodes = Node.query.order_by(Node.title).all()
-    # include_content=True hier, falls eine Listenansicht mal den Inhalt braucht.
+def get_all_nodes_as_list(vault_id: int) -> list[dict]:
+    """Fetches all nodes for a specific vault as a simple flat list."""
+    nodes = Node.query.filter_by(vault_id=vault_id).order_by(Node.title).all()
     return [node.to_dict(include_content=True) for node in nodes]
 
 
-def get_nodes_by_title(title: str) -> list[dict]:
-    """Fetches nodes by title using the .to_dict() method."""
+def get_nodes_by_title(title: str, vault_id: int) -> list[dict]:
+    """Fetches nodes by title within a specific vault, sorted by relevance."""
     if not title:
         return []
     search_term = f"%{title}%"
     relevance = case((Node.title.ilike(title), 0), else_=1)
-    nodes: list[Node] = Node.query.filter(Node.title.ilike(search_term)).order_by(relevance, Node.title).all()
-    # Für Suchergebnisse wollen wir typischerweise den Inhalt nicht, um die Antwort klein zu halten.
+    nodes = (
+        Node.query
+        .filter(Node.vault_id == vault_id, Node.title.ilike(search_term))
+        .order_by(relevance, Node.title)
+        .all()
+    )
     return [node.to_dict(include_content=False) for node in nodes]
 
 
-def get_node_by_id(node_id):
-    """Fetches a single node and its version history by its ID."""
-    # Use eager loading to fetch related objects in a more efficient way.
-    # - joinedload: Good for one-to-one relationships (current_version_object).
-    # - selectinload: Good for one-to-many relationships (versions).
+def get_node_by_id(node_id: str, vault_id: int) -> dict | None:
+    """
+    Retrieves a single node by its ID, validating against the vault.
+    Crucially, it now loads the full version history for the detail view.
+
+    Returns:
+        A dictionary of the node or None if not found.
+    """
     node = (
         Node.query
         .options(
             joinedload(Node.current_version_object),
             selectinload(Node.versions)
         )
-        .get(node_id)
+        .filter_by(id=node_id, vault_id=vault_id)
+        .first()
     )
 
     if not node:
         return None
 
-    # Now, when we call .to_dict() or access .versions, no new queries are sent.
-    node_dict = node.to_dict()
+    node_dict = node.to_dict(include_content=True)
 
-    versions_list = [{
-        'version': v.version, 'content': v.content, 'timestamp': v.timestamp.isoformat()
-    } for v in sorted(node.versions, key=lambda x: x.version, reverse=True)]
+    versions_list = [
+        {
+            'version': v.version,
+            'content': v.content,
+            'timestamp': v.timestamp.isoformat()  # Wichtig für JSON-Serialisierung
+        }
+        for v in node.versions
+    ]
 
-    node_dict['versions'] = versions_list
+    node_dict['versions'] = sorted(
+        versions_list,
+        key=lambda v: v['version'],
+        reverse=True
+    )
+
     return node_dict
 
-def get_node_content_by_id(node_id: int) -> str:
+
+def get_content_for_nodes(node_ids: list[str], vault_id: int) -> dict:
     """
-    Holt nur den Inhalt eines Nodes anhand seiner ID.
-    Gibt einen leeren String zurück, wenn der Node oder seine Version nicht gefunden wird.
+    Retrieves titles and concatenated content for a list of node IDs within a vault.
+    This is the sole function for fetching batch context, optimized for performance.
+
+    Returns:
+        A dictionary {"titles": [...], "content": "..."}.
     """
-    node = Node.query.get(node_id)
-    if node and node.current_version_object:
-        return node.current_version_object.content
-    return ""
+    if not node_ids:
+        return {"titles": [], "content": ""}
+
+    nodes_query = (
+        db.session.query(Node)
+        .options(joinedload(Node.current_version_object))
+        .filter(Node.id.in_(node_ids), Node.vault_id == vault_id)
+        .all()
+    )
+
+    nodes_by_id = {node.id: node for node in nodes_query}
+    ordered_titles, ordered_contents = [], []
+
+    for node_id in node_ids:
+        if node_id in nodes_by_id:
+            node = nodes_by_id[node_id]
+            ordered_titles.append(node.title)
+            content = node.current_version_object.content if node.current_version_object else ""
+            ordered_contents.append(
+                f"--- START OF DOCUMENT: {node.title} ---\n{content}\n--- END OF DOCUMENT: {node.title} ---")
+
+    full_content = "\n\n".join(ordered_contents)
+    return {"titles": ordered_titles, "content": full_content}
 
 
-def create_node(title, content, parent_id):
-    """Creates a new node and its initial version."""
-    # ACHTUNG: Node hat keine content-Spalte mehr!
-    new_node = Node(title=title, parent_id=parent_id, current_version=1)
-    # Wir müssen den Node zuerst zur Session hinzufügen, um eine ID für die Version zu haben
+def create_node(title: str, content: str, parent_id: str | None, vault_id: int) -> Node:
+    """Creates a new node and its initial version within a specific vault."""
+    if parent_id:
+        parent_node = Node.query.filter_by(id=parent_id, vault_id=vault_id).first()
+        if not parent_node:
+            raise ValueError("Parent node not found in the specified vault.")
+
+    new_node = Node(title=title, parent_id=parent_id, current_version=1, vault_id=vault_id)
     db.session.add(new_node)
-    db.session.flush()  # Weist die ID zu, ohne zu committen
+    db.session.flush()
 
     initial_version = Version(node_id=new_node.id, version=1, content=content)
     db.session.add(initial_version)
-
     db.session.commit()
-    # get_node_by_id holt jetzt den vollständig formatierten Node
-    return get_node_by_id(new_node.id)
+    return new_node
 
 
-def update_node(node_id: str, **kwargs):
-    node = Node.query.get(node_id)
+def update_node(node_id: str, vault_id: int, **kwargs) -> Node:
+    """
+    Updates a node's title and/or content by creating a new version.
+    Ensures the node belongs to the correct vault.
+    """
+    node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
-        raise ValueError("Node not found")
+        raise ValueError("Node not found in the specified vault")
 
-    # Der Titel kommt immer vom Node selbst
     current_title = node.title
-    # Der Inhalt kommt immer von der aktuellen Version
     current_content = node.current_version_object.content if node.current_version_object else ""
-
     new_title = kwargs.get('title', current_title)
     new_content = kwargs.get('content', current_content)
 
     if new_title == current_title and new_content == current_content:
-        return node
+        return node  # No changes, do nothing.
 
-    next_version_number = (db.session.query(db.func.max(Version.version))
+    next_version_number = (db.session.query(func.max(Version.version))
                            .filter(Version.node_id == node.id).scalar() or 0) + 1
-
-    new_version = Version(
-        node_id=node.id,
-        version=next_version_number,
-        content=new_content  # Nur hier wird der neue Inhalt gespeichert
-    )
+    new_version = Version(node_id=node.id, version=next_version_number, content=new_content)
     db.session.add(new_version)
 
-    # Aktualisiere den Haupt-Node
     node.title = new_title
     node.current_version = next_version_number
-    # KEIN node.content = new_content mehr nötig!
-
     db.session.commit()
     db.session.refresh(node)
-
     return node
 
 
-def rename_node(node_id, new_title):
-    """Updates a node's title without creating a new version."""
-    node = Node.query.get(node_id)
+def rename_node(node_id: str, new_title: str, vault_id: int) -> dict:
+    """Updates only a node's title, ensuring it's in the correct vault."""
+    node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
-        raise ValueError("Node not found")
+        raise ValueError("Node not found in the specified vault")
     node.title = new_title
     db.session.commit()
-    # Verwende get_node_by_id, um eine konsistente Antwort zu gewährleisten.
-    return get_node_by_id(node.id)
+    return get_node_by_id(node.id, vault_id=vault_id)
 
-def delete_node(node_id):
+
+def delete_node(node_id: str, vault_id: int):
+    """Deletes a node and its cascaded data, ensuring it belongs to the correct vault."""
+    node_to_delete = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
+    if not node_to_delete:
+        raise ValueError("Node not found in the specified vault")
+
+    db.session.delete(node_to_delete)
+    db.session.commit()
+
+
+def move_node(node_id: str, new_parent_id: str | None, vault_id: int):
+    """Moves a node to a new parent within the same vault."""
+    if str(node_id) == str(new_parent_id):
+        raise ValueError("Cannot move a node into itself.")
+
+    node_to_move = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
+    if not node_to_move:
+        raise ValueError("Node to move not found in the specified vault.")
+
+    if new_parent_id:
+        new_parent = Node.query.filter_by(id=new_parent_id, vault_id=vault_id).first()
+        if not new_parent:
+            raise ValueError("Target parent node not found in the specified vault.")
+        if _is_descendant(node_id, new_parent_id, vault_id):
+            raise ValueError("Cannot move a node into one of its own children.")
+
+    node_to_move.parent_id = new_parent_id
+    db.session.commit()
+
+
+def get_nodes_by_ids(node_ids: list[str], vault_id: int) -> list[dict]:
     """
-    Deletes a node from the database.
-    - Associated versions are deleted via the 'cascade' rule in the model.
-    - Children nodes are orphaned (parent_id set to NULL) via the database's
-      ON DELETE SET NULL foreign key constraint.
+    Retrieves full node objects, including their content, for a given list of IDs.
+
+    Returns:
+        A list of node dictionaries.
     """
-    node_to_delete = Node.query.get(node_id)
-
-    if node_to_delete:
-        db.session.delete(node_to_delete)
-        db.session.commit()
-
-
-def move_node(node_id, new_parent_id):
-    """Moves a node to a new parent."""
-    # Setting new_parent_id to None or an empty string should make it a root node
-    if not new_parent_id:
-        new_parent_id = None
-
-    if str(node_id) == str(new_parent_id) or _is_descendant(node_id, new_parent_id):
-        raise ValueError("Cannot move a node into itself or one of its own children.")
-
-    node_to_move = Node.query.get(node_id)
-    if node_to_move:
-        node_to_move.parent_id = new_parent_id
-        db.session.commit()
-
-
-def get_context_from_ids(node_ids, with_titles=False):
-    """Fetches content for a list of node IDs using the current version."""
     if not node_ids:
-        return {"context": "", "titles": []} if with_titles else ""
+        return []
 
-    # Eager load the current_version_object to avoid N+1 queries.
     nodes = (
         Node.query
-        .options(joinedload(Node.current_version_object))
-        .filter(Node.id.in_(node_ids))
+        .options(joinedload(Node.current_version_object))  # Lade den Inhalt effizient
+        .filter(Node.id.in_(node_ids), Node.vault_id == vault_id)
         .all()
     )
 
-    # The rest of the function remains the same, but is now much faster.
-    context_parts, titles = [], []
-    for node in nodes:
-        content = node.current_version_object.content if node.current_version_object else ""
-        context_parts.append(f"--- Node: {node.title} ---\n\n{content}")
-        if with_titles:
-            titles.append(node.title)
-
-    context_string = "\n\n".join(context_parts)
-    return {"context": context_string, "titles": titles} if with_titles else context_string
+    # Gib die vollen Node-Daten als Dictionaries zurück
+    return [node.to_dict(include_content=True) for node in nodes]
 
 
-def get_tree_as_text():
-    """Fetches the entire node tree and formats it as indented text."""
-    tree = get_all_nodes_as_tree()
+def _is_descendant(ancestor_id: str, descendant_id: str, vault_id: int) -> bool:
+    """
+    Helper function to check for cyclic dependencies within a vault using a
+    recursive Common Table Expression (CTE).
+    """
+    if not descendant_id or not ancestor_id:
+        return False
+
+    cte = (
+        db.session.query(Node.id, Node.parent_id)
+        .filter(Node.id == descendant_id, Node.vault_id == vault_id)
+        .cte(name="ancestors", recursive=True)
+    )
+    parent_alias = db.aliased(Node)
+    cte_alias = db.aliased(cte, name="cte_alias")
+    cte = cte.union_all(
+        db.session.query(parent_alias.id, parent_alias.parent_id)
+        .filter(parent_alias.vault_id == vault_id)
+        .join(cte_alias, parent_alias.id == cte_alias.c.parent_id)
+    )
+    is_found = db.session.query(cte.c.id).filter(cte.c.id == ancestor_id).scalar()
+    return is_found is not None
+
+
+def get_tree_as_text(vault_id: int) -> str:
+    """Fetches the node tree for a vault and formats it as indented text."""
+    tree = get_all_nodes_as_tree(vault_id=vault_id)
     text_lines = []
 
     def build_lines(nodes, indent_level=0):
@@ -266,17 +410,14 @@ def get_tree_as_text():
     return "\n".join(text_lines)
 
 
-# database.py
-
-def get_full_tree_for_export():
+def get_full_tree_for_export(vault_id: int) -> list[dict]:
     """
-    Fetches the entire KB tree including all node data and all version history.
+    Fetches the entire tree for a vault, including all node data and version history.
     This is a memory-intensive operation designed for exporting.
     """
-    all_nodes = Node.query.all()
-    all_versions = Version.query.all()
+    all_nodes = Node.query.filter_by(vault_id=vault_id).all()
+    all_versions = Version.query.join(Node).filter(Node.vault_id == vault_id).all()
 
-    # Map versions to their node_id for quick lookup
     versions_map = {}
     for version in all_versions:
         if version.node_id not in versions_map:
@@ -287,17 +428,15 @@ def get_full_tree_for_export():
             'timestamp': version.timestamp.isoformat()
         })
 
-    # Create the base node dictionaries, attaching all their versions
     nodes_map = {}
     for node in all_nodes:
-        node_dict = node.to_dict(include_content=False)  # Get base dict
+        node_dict = node.to_dict(include_content=False)
         node_dict['versions'] = sorted(
             versions_map.get(node.id, []),
             key=lambda v: v['version']
         )
         nodes_map[node.id] = node_dict
 
-    # Build the tree structure
     tree = []
     for node_id, node_dict in nodes_map.items():
         parent_id = node_dict.get('parent_id')
@@ -309,7 +448,6 @@ def get_full_tree_for_export():
         else:
             tree.append(node_dict)
 
-    # Sort for consistent output
     def sort_recursively(nodes):
         nodes.sort(key=lambda n: n['title'])
         for node in nodes:
@@ -318,29 +456,3 @@ def get_full_tree_for_export():
 
     sort_recursively(tree)
     return tree
-
-
-def _is_descendant(ancestor_id, descendant_id):
-    """
-    Helper function to check if a node is a descendant of another,
-    using an optimized recursive CTE query to avoid iterative lookups.
-    """
-    if not descendant_id or not ancestor_id:
-        return False
-
-    # A recursive CTE to find all ancestors of the descendant_id
-    cte = db.session.query(Node.id, Node.parent_id).filter(Node.id == descendant_id).cte(name="ancestors",
-                                                                                         recursive=True)
-
-    # Recursive part of the CTE
-    parent_alias = db.aliased(Node)
-    cte_alias = db.aliased(cte, name="cte_alias")
-    cte = cte.union_all(
-        db.session.query(parent_alias.id, parent_alias.parent_id)
-        .join(cte_alias, parent_alias.id == cte_alias.c.parent_id)
-    )
-
-    # Check if the ancestor_id exists in the set of all ancestors.
-    is_found = db.session.query(cte.c.id).filter(cte.c.id == ancestor_id).scalar()
-
-    return is_found is not None

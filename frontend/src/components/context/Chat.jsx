@@ -24,7 +24,7 @@ const Chat = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
 
-  const { selectedNodeIds, chatInputValue, setChatInputValue } = useAppContext();
+  const { selectedNodeIds, chatInputValue, setChatInputValue, activeVault } = useAppContext();
   const chatDisplayRef = useRef(null);
 
   // --- EFFECTS ---
@@ -59,6 +59,11 @@ const Chat = () => {
   };
 
   const handleLoadSession = async (sessionIdToLoad) => {
+    // VAULT-FIX: Wenn wir Sessions laden, müssen wir die vault_id nicht mitschicken,
+    // da die session_id global eindeutig ist. ABER, wir sollten prüfen, ob die geladene
+    // Session zum aktuellen Vault gehört. Das ist eine erweiterte Sicherheitsmaßnahme.
+    // Fürs Erste lassen wir es einfach, aber hier wäre der Ort dafür.
+    // Beispiel: if (sessionData.vault_id !== activeVault.id) { alert("Session gehört zu anderem Vault!"); return; }
     if (isLoading) return;
     if (chatHistory.length > 0 && !window.confirm("Loading a past session will replace the current one. Continue?")) {
       return;
@@ -81,7 +86,8 @@ const Chat = () => {
 
   const handleChatSubmit = async (event) => {
     event.preventDefault();
-    if (!chatInputValue.trim() || isLoading) return;
+    // VAULT-FIX: Guard Clause, falls aus irgendeinem Grund kein Vault aktiv ist.
+    if (!chatInputValue.trim() || isLoading || !activeVault) return;
 
     const userInput = chatInputValue.trim();
     setChatInputValue('');
@@ -91,13 +97,17 @@ const Chat = () => {
     try {
       const endpoint = sessionId ? `/api/chat/sessions/${sessionId}/messages` : '/api/chat/sessions';
       const selectedModel = localStorage.getItem('selectedModel') || 'claude-3-sonnet-20240229';
+      
       const payload = {
         user_input: userInput,
         node_ids: Array.from(selectedNodeIds),
-        ...(!sessionId && { model: selectedModel })
+        // VAULT-FIX: Füge die vault_id hinzu, wenn eine NEUE Session erstellt wird.
+        ...(!sessionId && { model: selectedModel, vault_id: activeVault.id })
       };
+      
       const response = await api.post(endpoint, payload);
       const assistantResponse = response.data;
+      
       setChatHistory(prev => [...prev, { role: 'assistant', content: assistantResponse.content }]);
       if (assistantResponse.session_id && !sessionId) {
         setSessionId(assistantResponse.session_id);
@@ -110,6 +120,7 @@ const Chat = () => {
       setIsLoading(false);
     }
   };
+
 
 
   // --- JSX RENDER ---

@@ -1,0 +1,22 @@
+.version-list-item {
+  cursor: pointer;
+}
+
+.version-list-item:not(.active):hover {
+  background-color: #f8f9fa;
+}
+
+/* 
+  NEU: Stil für die zweite, zum Vergleich ausgewählte Version (hellblau)
+*/
+.diff-compare-active {
+  /* Helles Blau, z.B. die "info"-Farbe von Bootstrap */
+  color: #0c5460 !important; /* Dunkler Text für Kontrast */
+  background-color: #d1ecf1 !important; /* Hellblaues Hintergrund */
+  border-color: #bee5eb !important;
+}
+
+/* Verhindert, dass der Hover-Effekt das Hellblau überschreibt */
+.version-list-item.diff-compare-active:hover {
+  background-color: #d1ecf1 !important;
+}

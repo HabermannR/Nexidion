@@ -1,5 +1,8 @@
 /* src/components/nodes/ContentArea.css */
 
+.d2h-code-side-linenumber {
+  display: none !important;
+}
 /*
  * Diese Regel greift NUR auf mobilen Geräten (Bildschirme, die schmaler als 992px sind)
  * und verkleinert die Schriftgröße im Hauptinhaltsbereich.

@@ -10,7 +10,6 @@ const PrintPreview = ({ onLinkClick }) => {
     const { printPreviewData, exitPrintPreview } = useAppContext();
     const { nodes, toc } = printPreviewData || { nodes: [], toc: [] };
 
-    console.log('PrintPreview rendering with:', { nodes, toc });
 
     // This effect adds a class to the body when the preview is active,
     // allowing global styles to hide the main app and show the print view.

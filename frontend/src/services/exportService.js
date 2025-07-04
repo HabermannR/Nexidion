@@ -3,6 +3,7 @@
 import { marked } from 'marked';
 import { getIdsInOrder, generateTocForSelectedNodes } from './treeService'; // Importieren die Helfer
 import api from '../api/axios';
+import qs from 'qs';
 
 // Die komplette, riesige generateEpub Funktion hier einfügen
 // Korrigierte generateEpub Funktion mit XML-Entitäten und vollständiger Bildunterstützung
@@ -130,81 +131,75 @@ const generateEpub = async (nodes, toc) => {
     // Sammle alle Bilder aus dem Content und lade sie über die API
     // Sammle alle Bilder aus dem Content und lade sie über die API
 const imageFiles = new Map(); // Map: filename -> blob data
-const processImagesInContent = async (content) => {
-    // Regex für Markdown-Bilder: ![alt](path)
-    const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
-    let processedContent = content;
-    const matches = [...content.matchAll(imgRegex)];
-    
-    for (const match of matches) {
-        const [fullMatch, altText, imagePath] = match;
+ const loadImageWithFallback = async (basePath) => {
+        const lastDotIndex = basePath.lastIndexOf('.');
+        const swImagePath = lastDotIndex === -1
+            ? `${basePath}_sw`
+            : `${basePath.substring(0, lastDotIndex)}_sw${basePath.substring(lastDotIndex)}`;
         
+        // VERSUCH 1: Lade die _sw-Version
         try {
-            // Erzeuge den Pfad für die _sw-Version des Bildes (z.B. bild_sw.png)
-            const lastDotIndex = imagePath.lastIndexOf('.');
-            const swImagePath = lastDotIndex === -1
-                ? `${imagePath}_sw` // Fall ohne Dateiendung
-                : `${imagePath.substring(0, lastDotIndex)}_sw${imagePath.substring(lastDotIndex)}`;
+            const response = await api.get(swImagePath, { responseType: 'blob' });
+            return { blob: response.data, contentType: response.headers['content-type'] || response.data.type };
+        } catch (swError) {
+            // Wenn _sw-Version fehlschlägt, ist das okay, wir versuchen das Original.
+            console.log(`SW-version for ${basePath} not found, trying original.`);
+        }
 
-            let response;
-            try {
-                // Versuche zuerst, die _sw-Version über die API zu laden.
-                response = await api.get(swImagePath, { responseType: 'blob' });
-            } catch (error) {
-                // Wenn die _sw-Version nicht gefunden wird, lade das Originalbild.
-                response = await api.get(imagePath, { responseType: 'blob' });
-            }
-            // Prüfe, ob es sich um eine SVG handelt
-            const contentType = response.headers['content-type'] || response.data.type;
-            let imageBlob = response.data;
+        // VERSUCH 2: Lade die Original-Version
+        try {
+            const response = await api.get(basePath, { responseType: 'blob' });
+            return { blob: response.data, contentType: response.headers['content-type'] || response.data.type };
+        } catch (originalError) {
+            // Wenn auch das Original fehlschlägt, geben wir einen klaren Fehler aus und werfen ihn.
+            console.error(`Failed to load image (both SW and original): ${basePath}`, originalError);
+            throw new Error(`Could not load image: ${basePath}`);
+        }
+    };
+
+
+    const processImagesInContent = async (content) => {
+        const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+        let processedContent = content;
+        // WICHTIG: `map` mit `Promise.all` verwenden, um parallel zu laden
+        const matches = [...content.matchAll(imgRegex)];
+        
+        for (const match of matches) {
+            const [fullMatch, altText, imagePath] = match;
             
-            if (contentType && contentType.includes('svg')) {
-                console.log('Processing SVG for EPUB:', imagePath);
+            try {
+                // Lade das Bild mit der neuen, robusten Funktion
+                let { blob: imageBlob, contentType } = await loadImageWithFallback(imagePath);
                 
-                // SVG als Text laden
-                response = await api.get(imagePath, { responseType: 'text' });
-                let svgContent = response.data;
-                
-                // Falls die SVG in HTML eingebettet ist, extrahiere sie
-                if (svgContent.includes('<div') && svgContent.includes('<svg')) {
-                    console.log('SVG is wrapped in HTML, extracting for EPUB...');
-                    
+                // SVG-Sonderbehandlung (bleibt gleich, aber jetzt mit korrekten Daten)
+                if (contentType && contentType.includes('svg')) {
+                    // ... (deine bestehende SVG-Logik hier einfügen)
+                    const svgResponse = await api.get(imagePath, { responseType: 'text' });
+                    let svgContent = svgResponse.data;
                     const svgMatch = svgContent.match(/<svg[^>]*>[\s\S]*?<\/svg>/i);
-                    if (svgMatch) {
-                        svgContent = svgMatch[0];
-                        console.log('Extracted SVG for EPUB:', svgContent.substring(0, 100) + '...');
-                    } else {
-                        console.error('Could not find SVG content in HTML wrapper for EPUB');
-                        throw new Error('Invalid SVG format');
-                    }
+                    if (svgMatch) svgContent = svgMatch[0];
+                    imageBlob = new Blob([svgContent], { type: 'image/svg+xml' });
                 }
                 
-                // Erstelle Blob aus dem bereinigten SVG-Content
-                imageBlob = new Blob([svgContent], { type: 'image/svg+xml' });
+                const filename = `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const extension = imagePath.split('.').pop().toLowerCase() || 'jpg';
+                const fullFilename = `${filename}.${extension}`;
+                
+                imageFiles.set(fullFilename, imageBlob);
+                
+                const htmlImg = `<img src="images/${fullFilename}" alt="${escapeXml(altText)}" style="max-width: 100%; height: auto;"/>`;
+                processedContent = processedContent.replace(fullMatch, htmlImg);
+                
+            } catch (error) {
+                // Dieser Catch-Block wird jetzt nur noch erreicht, wenn BEIDE Ladeversuche fehlschlagen.
+                console.warn(error.message); // Zeigt z.B. "Could not load image: /path/to/image.jpg"
+                const fallback = `<em class="image-placeholder">[Bild: ${escapeXml(altText || imagePath)}]</em>`;
+                processedContent = processedContent.replace(fullMatch, fallback);
             }
-            
-            // Generiere einen sicheren Dateinamen
-            const filename = `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const extension = imagePath.split('.').pop().toLowerCase() || 'jpg';
-            const fullFilename = `${filename}.${extension}`;
-            
-            // Speichere das Bild
-            imageFiles.set(fullFilename, imageBlob);
-            
-            // Ersetze den Markdown-Link durch HTML
-            const htmlImg = `<img src="images/${fullFilename}" alt="${escapeXml(altText)}" style="max-width: 100%; height: auto;"/>`;
-            processedContent = processedContent.replace(fullMatch, htmlImg);
-            
-        } catch (error) {
-            console.warn(`Could not load image: ${imagePath}`, error);
-            // Fallback: Zeige den Alt-Text an
-            const fallback = `<em class="image-placeholder">[Bild: ${escapeXml(altText || imagePath)}]</em>`;
-            processedContent = processedContent.replace(fullMatch, fallback);
         }
-    }
-    
-    return processedContent;
-};
+        
+        return processedContent;
+    };
 
     // content.opf (Manifest) - Aktualisiert für EPUB 3
     const manifestItems = nodes.map((node, index) =>
@@ -377,22 +372,67 @@ img[src$=".svg"] {
     URL.revokeObjectURL(url);
 };
 
-// Hilfsfunktion, um die vollen Node-Daten zu holen
-const getFullNodesByIds = async (ids) => {
-    const nodePromises = ids.map(id => api.get(`/api/nodes/${id}`));
-    const nodeResponses = await Promise.all(nodePromises);
-    return nodeResponses.map(res => res.data);
+/**
+ * Holt die vollständigen Node-Daten für eine Liste von IDs in einer einzigen,
+ * effizienten API-Anfrage. Benötigt die aktive vault_id.
+ * @param {string[]} ids - Eine Liste von Node-IDs.
+ * @param {number} vaultId - Die ID des aktiven Vaults.
+ * @returns {Promise<Array<Object>>} - Ein Promise, das ein Array von Node-Objekten liefert.
+ */
+const getFullNodesByIds = async (ids, vaultId) => {
+    if (!ids || ids.length === 0) {
+        return [];
+    }
+    if (!vaultId) {
+        throw new Error("vaultId is required to fetch node details.");
+    }
+    
+    try {
+        const response = await api.get('/api/nodes/details', {
+            params: {
+                vault_id: vaultId,
+                node_ids: ids
+            },
+            // Genau derselbe Serializer wie bei der Druckfunktion
+            paramsSerializer: params => {
+                return qs.stringify(params, { arrayFormat: 'repeat' });
+            }
+        });
+        
+        const nodesWithContent = response.data;
+        if (!nodesWithContent || nodesWithContent.length === 0) {
+            console.error("API for export returned no nodes. Check vault_id and node_ids sent:", {
+                vault_id: vaultId,
+                node_ids: ids,
+            });
+             throw new Error("Could not fetch node details for export from server.");
+        }
+
+        // Sortiere die erhaltenen Nodes in der Reihenfolge des Baumes, da die API-Antwort
+        // nicht unbedingt sortiert ist.
+        const nodesById = new Map(nodesWithContent.map(n => [n.id, n]));
+        const sortedNodes = ids.map(id => nodesById.get(id)).filter(Boolean);
+        
+        return sortedNodes;
+
+    } catch (error) {
+        console.error("Failed to fetch full nodes for export:", error);
+        throw error; 
+    }
 };
 
 /**
  * Orchestriert den EPUB-Export für die ausgewählten Nodes.
+ * Benötigt jetzt die `activeVault`-ID.
  */
-export const exportSelectionAsEpub = async (treeData, selectedIds) => {
+export const exportSelectionAsEpub = async (treeData, selectedIds, activeVault) => {
   try {
     const orderedIds = getIdsInOrder(treeData, selectedIds);
     if (orderedIds.length === 0) return false;
     
-    const nodes = await getFullNodesByIds(orderedIds);
+    // Rufe die neue, effiziente Funktion mit der vault_id auf
+    const nodes = await getFullNodesByIds(orderedIds, activeVault.id);
+    
     const toc = generateTocForSelectedNodes(treeData, selectedIds);
     
     await generateEpub(nodes, toc);
@@ -405,13 +445,16 @@ export const exportSelectionAsEpub = async (treeData, selectedIds) => {
 
 /**
  * Orchestriert den Markdown-Export für die ausgewählten Nodes.
+ * Benötigt jetzt die `activeVault`-ID.
  */
-export const exportSelectionAsMarkdown = async (treeData, selectedIds) => {
+export const exportSelectionAsMarkdown = async (treeData, selectedIds, activeVault) => {
     try {
         const orderedIds = getIdsInOrder(treeData, selectedIds);
         if (orderedIds.length === 0) return false;
 
-        const nodes = await getFullNodesByIds(orderedIds);
+        // Rufe die neue, effiziente Funktion mit der vault_id auf
+        const nodes = await getFullNodesByIds(orderedIds, activeVault.id);
+
         const markdownContent = nodes.map(node => `# ${node.title}\n\n${node.content || ''}`).join('\n\n---\n\n');
         
         const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });

@@ -6,27 +6,38 @@ import Button from 'react-bootstrap/Button';
 import InputGroup from 'react-bootstrap/InputGroup';
 import { useAppContext } from '../../context/AppContext';
 
+// Der Key bleibt gleich, die Struktur innen drin ändert sich
 const STORAGE_KEY = 'knowledgeBaseSelections';
 
 export default function SelectionManager() {
-  const { selectedNodeIds, setSelectedNodeIds } = useAppContext();
+  // Holen uns den aktiven Vault aus dem Context.
+  const { selectedNodeIds, setSelectedNodeIds, activeVault } = useAppContext();
   
-  const [savedSelections, setSavedSelections] = useState({});
+  // Dieser State hält jetzt ALLE Auswahlen für ALLE Vaults
+  const [allSavedSelections, setAllSavedSelections] = useState({});
   const [selectedName, setSelectedName] = useState('');
 
-  // Lade gespeicherte Auswahlen beim ersten Rendern
+  // Lade alle Auswahlen beim ersten Rendern
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setSavedSelections(JSON.parse(stored));
+        setAllSavedSelections(JSON.parse(stored));
       }
     } catch (error) {
       console.error("Could not load selections from localStorage", error);
     }
   }, []);
 
+  // Hilfsfunktion, um die Auswahlen NUR für den aktuellen Vault zu bekommen
+  const getSelectionsForCurrentVault = useCallback(() => {
+    if (!activeVault) return {};
+    return allSavedSelections[`vault-${activeVault.id}`] || {};
+  }, [allSavedSelections, activeVault]);
+
+
   const handleSave = useCallback(() => {
+    if (!activeVault) return; // Sicherheitscheck
     if (selectedNodeIds.size === 0) {
       alert("Bitte Nodes auswählen, um die Auswahl zu speichern.");
       return;
@@ -34,36 +45,77 @@ export default function SelectionManager() {
     const name = prompt("Name für diese Auswahl eingeben:");
     if (!name || !name.trim()) return;
 
-    const newSelections = { ...savedSelections, [name.trim()]: Array.from(selectedNodeIds) };
-    setSavedSelections(newSelections);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newSelections));
+    const vaultKey = `vault-${activeVault.id}`;
+    const newSelectionsForVault = {
+        ...getSelectionsForCurrentVault(),
+        [name.trim()]: Array.from(selectedNodeIds)
+    };
+    
+    const updatedAllSelections = {
+        ...allSavedSelections,
+        [vaultKey]: newSelectionsForVault
+    };
+
+    setAllSavedSelections(updatedAllSelections);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAllSelections));
     alert(`Auswahl "${name.trim()}" gespeichert!`);
-  }, [selectedNodeIds, savedSelections]);
+
+  }, [selectedNodeIds, activeVault, allSavedSelections, getSelectionsForCurrentVault]);
 
   const handleLoad = useCallback(() => {
-    if (!selectedName || !savedSelections[selectedName]) return;
-    const idsToLoad = savedSelections[selectedName];
-    setSelectedNodeIds(new Set(idsToLoad));
-  }, [selectedName, savedSelections, setSelectedNodeIds]);
+    if (!activeVault || !selectedName) return;
+
+    const selectionsForVault = getSelectionsForCurrentVault();
+    const idsToLoad = selectionsForVault[selectedName];
+
+    if (idsToLoad) {
+      setSelectedNodeIds(new Set(idsToLoad));
+    }
+  }, [selectedName, activeVault, getSelectionsForCurrentVault, setSelectedNodeIds]);
 
   const handleDelete = useCallback(() => {
-    if (!selectedName || !savedSelections[selectedName]) return;
+    if (!activeVault || !selectedName) return;
+    
     if (window.confirm(`Soll die Auswahl "${selectedName}" wirklich gelöscht werden?`)) {
-      const newSelections = { ...savedSelections };
-      delete newSelections[selectedName];
-      setSavedSelections(newSelections);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newSelections));
-      setSelectedName(''); // Dropdown zurücksetzen
+        const vaultKey = `vault-${activeVault.id}`;
+        const selectionsForVault = { ...getSelectionsForCurrentVault() };
+        delete selectionsForVault[selectedName];
+
+        const updatedAllSelections = {
+            ...allSavedSelections,
+            [vaultKey]: selectionsForVault
+        };
+
+        setAllSavedSelections(updatedAllSelections);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAllSelections));
+        setSelectedName(''); // Dropdown zurücksetzen
     }
-  }, [selectedName, savedSelections]);
+  }, [selectedName, activeVault, allSavedSelections, getSelectionsForCurrentVault]);
+
+  // Zeige im Dropdown nur die Auswahlen für den aktuellen Vault an
+  const currentVaultSelections = getSelectionsForCurrentVault();
+
+  // Wenn kein Vault aktiv ist, wird die Komponente quasi deaktiviert
+  if (!activeVault) {
+      return (
+        <div className="selection-manager text-muted small">
+            <h5 className="text-muted">Auswahlen verwalten</h5>
+            Bitte einen Vault auswählen, um Auswahlen zu verwalten.
+        </div>
+      );
+  }
 
   return (
-    <div className="selection-manager">
-      <h5>Auswahlen verwalten</h5>
+    <div className="selection-manager mt-3">
+      <h5 className="mb-2">Auswahlen verwalten</h5>
       <InputGroup size="sm" className="mb-2">
-        <Form.Select value={selectedName} onChange={(e) => setSelectedName(e.target.value)}>
+        <Form.Select 
+            value={selectedName} 
+            onChange={(e) => setSelectedName(e.target.value)}
+            disabled={Object.keys(currentVaultSelections).length === 0}
+        >
           <option value="">-- Gespeicherte Auswahl laden --</option>
-          {Object.keys(savedSelections).sort().map(name => (
+          {Object.keys(currentVaultSelections).sort().map(name => (
             <option key={name} value={name}>{name}</option>
           ))}
         </Form.Select>

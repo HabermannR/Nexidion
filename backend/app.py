@@ -27,24 +27,16 @@ migrate = Migrate()
 #Terminal 1 (Backend): Navigate to your backend folder and run python app.py.
 #Terminal 2 (Frontend): Navigate to your frontend folder and run npm start (or npm run dev).
 #npm run build
+#git status --ignored
 
 #todo
-#multi vault
 #async für Update, stream für chat
-#scroll chat history
-#Print kaputt
-#diff view für versionen
 #update node geht nicht vom handy
 #Die Möglichkeit, einer Chat-Session einen besseren Titel zu geben (vielleicht vom LLM generiert).
-#Ne: Anzeigen, welcher Kontext für welche Nachricht verwendet wurde, direkt in der UI.
 
 def create_app(config_class=Config):
-    """
-    Erstellt und konfiguriert die Flask-App mithilfe des Application Factory-Musters.
-    """
+    """Application Factory Pattern"""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    # --- START: ENVIRONMENT-SPECIFIC CONFIGURATION ---
 
     # Detect the environment. We'll set APP_ENV to 'production' on PythonAnywhere.
     # If it's not set, we default to 'development'.
@@ -69,137 +61,195 @@ def create_app(config_class=Config):
         # to the Flask server (e.g., http://localhost:5001).
         CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
 
-    # --- END: ENVIRONMENT-SPECIFIC CONFIGURATION ---
-
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     SECURE_IMAGE_FOLDER = os.path.join(BASE_DIR, '..', 'secure_images')
-    # Konfiguration aus der config.py-Datei laden
     app.config.from_object(config_class)
 
-    # Überprüfen, ob die notwendigen Konfigurationen vorhanden sind
     if not all([app.config['JWT_SECRET_KEY'], app.config['ADMIN_USERNAME'], app.config['ADMIN_PASSWORD_HASH']]):
-        raise ValueError("JWT_SECRET_KEY, ADMIN_USERNAME, and ADMIN_PASSWORD_HASH must be set in the .env file.")
+        raise ValueError("JWT_SECRET_KEY, ADMIN_USERNAME, and ADMIN_PASSWORD_HASH must be set.")
 
-    # Erweiterungen initialisieren
     db.init_app(app)
     migrate.init_app(app, db)
-    jwt = JWTManager(app) # JWT initialisieren
+    JWTManager(app)
 
-    # --- API-Routen  ---
+    # ==============================================================================
+    # HELPER FUNCTIONS
+    # ==============================================================================
+
+    def _get_vault_id_from_request():
+        """
+        Helper to get and validate vault_id from request query arguments for GET requests.
+        Raises ValueError if not found or invalid.
+        """
+        vault_id = request.args.get('vault_id', type=int)
+        if not vault_id:
+            raise ValueError("A 'vault_id' query parameter is required and must be an integer.")
+        return vault_id
+
+    # ==============================================================================
+    # AUTHENTICATION API
+    # ==============================================================================
 
     @app.route('/api/login', methods=['POST'])
     def login():
         username = request.json.get('username', None)
         password = request.json.get('password', None)
-        if (username == app.config['ADMIN_USERNAME'] and
-                password and check_password_hash(app.config['ADMIN_PASSWORD_HASH'], password)):
+        if username == app.config['ADMIN_USERNAME'] and check_password_hash(app.config['ADMIN_PASSWORD_HASH'],
+                                                                            password):
             access_token = create_access_token(identity=username)
             return jsonify(access_token=access_token)
         return jsonify({"msg": "Bad username or password"}), 401
 
+    # ==============================================================================
+    # VAULT API
+    # ==============================================================================
+
+    @app.route('/api/vaults', methods=['GET'])
+    @jwt_required()
+    def list_vaults():
+        vaults = database.get_all_vaults()
+        return jsonify([v.to_dict() for v in vaults])
+
+    @app.route('/api/vaults', methods=['POST'])
+    @jwt_required()
+    def create_vault():
+        vault_name = request.json.get('name')
+        if not vault_name:
+            return jsonify({"error": "Vault name is required"}), 400
+        try:
+            new_vault = database.create_vault_with_root_node(name=vault_name)
+            return jsonify(new_vault.to_dict()), 201
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 409  # Conflict
+
+    @app.route('/api/vaults/<int:vault_id>', methods=['PUT'])
+    @jwt_required()
+    def rename_vault(vault_id):
+        new_name = request.json.get('name')
+        if not new_name:
+            return jsonify({"error": "New name is required"}), 400
+        try:
+            updated_vault = database.rename_vault(vault_id, new_name)
+            return jsonify(updated_vault.to_dict())
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 409
+
+    @app.route('/api/vaults/<int:vault_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_vault(vault_id):
+        try:
+            database.delete_vault(vault_id)
+            return jsonify({"message": f"Vault with ID {vault_id} deleted."}), 200
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    # ==============================================================================
+    # NODE API
+    # ==============================================================================
+
     @app.route('/api/nodes/tree', methods=['GET'])
     @jwt_required()
     def get_nodes_tree():
-        tree = database.get_all_nodes_as_tree()
-        return jsonify(tree)
+        try:
+            vault_id = _get_vault_id_from_request()
+            tree = database.get_all_nodes_as_tree(vault_id=vault_id)
+            return jsonify(tree)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
-    @app.route('/api/nodes/<node_id>', methods=['GET'])
+    @app.route('/api/nodes/details', methods=['GET'])
+    @jwt_required()
+    def get_nodes_details():
+        """
+        Fetches a list of full node objects (including content) for a given list of IDs.
+        This is specifically for features like the print preview.
+        """
+        try:
+            vault_id = _get_vault_id_from_request()
+            node_ids = request.args.getlist('node_ids', type=str)
+            if not node_ids:
+                return jsonify([])  # Gib einfach eine leere Liste zurück, kein Fehler
+
+            # Wir brauchen eine neue Datenbankfunktion dafür (siehe Schritt 2)
+            nodes = database.get_nodes_by_ids(node_ids=node_ids, vault_id=vault_id)
+            return jsonify(nodes)
+
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route('/api/nodes/content', methods=['GET'])
+    @jwt_required()
+    def get_nodes_content():
+        """
+        **THIS IS THE FIX FOR THE ORIGINAL PROBLEM**
+        Fetches the concatenated content and titles for a list of node IDs.
+        """
+        try:
+            vault_id = _get_vault_id_from_request()
+            node_ids = request.args.getlist('node_ids', type=str)
+            if not node_ids:
+                return jsonify({"error": "node_ids query parameter is required"}), 400
+
+            result = database.get_content_for_nodes(node_ids=node_ids, vault_id=vault_id)
+            return jsonify(result)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route('/api/nodes/<string:node_id>', methods=['GET'])
     @jwt_required()
     def get_node(node_id):
-        node = database.get_node_by_id(node_id)
-        if node is None:
-            return jsonify({"error": "Node not found"}), 404
-        return jsonify(node)
-
-    @app.route('/api/nodes', methods=['GET'])
-    @jwt_required()
-    def get_nodes_by_title_or_all():
-        title_to_find = request.args.get('title')
-        if title_to_find:
-            nodes = database.get_nodes_by_title(title_to_find)
-        else:
-            nodes = database.get_all_nodes_as_list()
-        return jsonify(nodes)
+        try:
+            vault_id = _get_vault_id_from_request()
+            node = database.get_node_by_id(node_id, vault_id=vault_id)
+            if node is None:
+                return jsonify({"error": "Node not found in the specified vault"}), 404
+            return jsonify(node)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
     @app.route('/api/nodes', methods=['POST'])
     @jwt_required()
     def create_node():
         data = request.json
+        vault_id = data.get('vault_id')
         title = data.get('title')
-        if not title:
-            return jsonify({"error": "Title is required"}), 400
-        new_node = database.create_node(
-            title=title,
-            content=data.get('content', ''),
-            parent_id=data.get('parent_id')
-        )
-        return jsonify(new_node), 201
+        if not vault_id or not title:
+            return jsonify({"error": "vault_id and title are required"}), 400
+        try:
+            new_node = database.create_node(
+                title=title,
+                content=data.get('content', ''),
+                parent_id=data.get('parent_id'),
+                vault_id=vault_id
+            )
+            # We call get_node_by_id to get the full dict representation
+            return jsonify(database.get_node_by_id(new_node.id, vault_id)), 201
+        except Exception as e:
+            logging.error(f"Error creating node: {e}")
+            return jsonify({"error": "An internal server error occurred"}), 500
 
     @app.route('/api/nodes/<string:node_id>', methods=['PUT'])
     @jwt_required()
     def update_node(node_id):
         data = request.json
-
-        if not data:
-            return jsonify({"error": "Request body cannot be empty"}), 400
-
-        update_fields = {}
-        if 'title' in data:
-            update_fields['title'] = data['title']
-        if 'content' in data:
-            update_fields['content'] = data['content']
-
-        if not update_fields:
-            return jsonify({"error": "No valid fields (title, content) provided for update"}), 400
-
+        vault_id = data.get('vault_id')
+        if not vault_id:
+            return jsonify({"error": "vault_id is required"}), 400
         try:
-            # Ruft die korrigierte DB-Funktion auf
-            updated_node_obj = database.update_node(node_id, **update_fields)
+            # DIESE EINE ZEILE LÖST DAS PROBLEM AN DER QUELLE
+            data.pop('vault_id', None)
 
-            # KORREKTUR: Rufen Sie .to_dict() auf dem zurückgegebenen Objekt auf
-            if not updated_node_obj:
-                # Dieser Fall sollte durch die Korrektur in database.py nicht mehr eintreten
-                raise Exception("Database function returned None unexpectedly.")
-
-            return jsonify(updated_node_obj.to_dict())
-
+            updated_node = database.update_node(node_id, vault_id, **data)
+            return jsonify(updated_node.to_dict(include_content=True))
         except ValueError as e:
             return jsonify({"error": str(e)}), 404
-        except Exception as e:
-            import traceback
-            logging.error(f"Error updating node {node_id}: {traceback.format_exc()}")
-            return jsonify({"error": "An internal server error occurred"}), 500
 
-    @app.route('/api/nodes/<node_id>/rename', methods=['PATCH'])
-    @jwt_required()
-    def rename_node(node_id):
-        """
-        Renames a node. Expects a JSON body with a 'title' key.
-        This is a more specific and lightweight operation than updating the whole node.
-        """
-        data = request.get_json()
-        new_title = data.get('title')
-
-        # Validate that the new title is provided and not just whitespace
-        if not new_title or not new_title.strip():
-            return jsonify({"error": "New title cannot be empty"}), 400
-
-        try:
-            updated_node = database.rename_node(node_id, new_title.strip())
-            return jsonify(updated_node)
-        except ValueError as e:
-            # This will catch errors like "Node not found" from the database layer
-            return jsonify({"error": str(e)}), 404
-        except AttributeError:
-            # This will catch the error if database.rename_node doesn't exist yet
-            logging.error("database.rename_node function is not implemented.")
-            return jsonify({"error": "Server-side function not implemented."}), 501
-
-    @app.route('/api/nodes/<node_id>', methods=['DELETE'])
+    @app.route('/api/nodes/<string:node_id>', methods=['DELETE'])
     @jwt_required()
     def delete_node_endpoint(node_id):
         try:
-            database.delete_node(node_id)
+            vault_id = _get_vault_id_from_request()
+            database.delete_node(node_id, vault_id=vault_id)
             return jsonify({"message": "Node deleted successfully"}), 200
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
@@ -208,140 +258,118 @@ def create_app(config_class=Config):
     @jwt_required()
     def move_node():
         data = request.json
+        vault_id = data.get('vault_id')
+        node_id = data.get('node_id')
+        new_parent_id = data.get('new_parent_id')
+        if not vault_id or not node_id:
+            return jsonify({"error": "vault_id and node_id are required"}), 400
         try:
-            database.move_node(data.get('node_id'), data.get('new_parent_id'))
+            database.move_node(node_id, new_parent_id, vault_id=vault_id)
             return jsonify({"message": "Node moved successfully"})
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
-    @app.route('/api/nodes/content', methods=['POST'])
-    @jwt_required()
-    def get_nodes_content():
-        data = request.get_json()
-        node_ids = data.get('node_ids', [])
-        nodes_data = database.get_context_from_ids(node_ids, with_titles=True)
-        return jsonify({"content": nodes_data['context'], "titles": nodes_data['titles']})
+    # ==============================================================================
+    # CHAT API
+    # ==============================================================================
 
     @app.route('/api/chat/sessions', methods=['GET'])
     @jwt_required()
     def list_chat_sessions():
-        """Listet alle vergangenen Chat-Sitzungen auf."""
-        sessions = chatservice.list_sessions()
-        return jsonify(sessions)
+        try:
+            vault_id = _get_vault_id_from_request()
+            sessions = chatservice.list_sessions(vault_id=vault_id)
+            return jsonify(sessions)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
     @app.route('/api/chat/sessions/<string:session_id>', methods=['GET'])
     @jwt_required()
     def get_chat_session_history(session_id):
-        """Lädt den kompletten Verlauf einer spezifischen Chat-Sitzung."""
-        session_history = chatservice.get_session_history(session_id)
-        if session_history is None:
+        history = chatservice.get_session_history(session_id)
+        if history is None:
             return jsonify({"error": "Session not found"}), 404
-        return jsonify(session_history)
+        return jsonify(history)
 
     @app.route('/api/chat/sessions', methods=['POST'])
     @jwt_required()
     def create_chat_session():
-        """Startet eine komplett neue Chat-Sitzung."""
-        data = request.get_json()
+        data = request.json
+        vault_id = data.get('vault_id')
         user_input = data.get('user_input')
-        if not user_input:
-            return jsonify({"error": "User input is required"}), 400
-
+        if not vault_id or not user_input:
+            return jsonify({"error": "vault_id and user_input are required"}), 400
         try:
-            response_data = chatservice.create_new_chat_session(
+            response = chatservice.create_new_chat_session(
                 user_input=user_input,
                 node_ids=data.get('node_ids', []),
-                model=data.get('model', 'claude-3-sonnet-20240229')
+                model=data.get('model', 'claude-3-sonnet-20240229'),
+                vault_id=vault_id
             )
-            return jsonify(response_data), 201
+            return jsonify(response), 201
         except Exception as e:
-            logging.error(f"API Error creating chat session: {e}")
-            return jsonify({"error": "Failed to create new chat session."}), 500
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/chat/sessions/<string:session_id>/messages', methods=['POST'])
     @jwt_required()
     def add_message_to_session(session_id):
-        """Fügt eine neue Nachricht zu einer BESTEHENDEN Chat-Sitzung hinzu."""
-        data = request.get_json()
+        data = request.json
         user_input = data.get('user_input')
         if not user_input:
-            return jsonify({"error": "User input is required"}), 400
-
+            return jsonify({"error": "user_input is required"}), 400
         try:
-            response_data = chatservice.add_message_to_session(
+            response = chatservice.add_message_to_session(
                 session_id=session_id,
                 user_input=user_input,
                 node_ids=data.get('node_ids', [])
             )
-            return jsonify(response_data)
-        except ValueError as e:  # Fängt "Session not found" vom Service ab
+            return jsonify(response)
+        except ValueError as e:
             return jsonify({"error": str(e)}), 404
-        except Exception as e:
-            logging.error(f"API Error adding message to session {session_id}: {e}")
-            return jsonify({"error": "Failed to process message."}), 500
 
     @app.route('/api/nodes/<string:node_id>/propose-update', methods=['POST'])
     @jwt_required()
     def propose_node_update(node_id):
-        """
-        Generiert einen Aktualisierungsvorschlag für einen Node basierend auf dem
-        Chatverlauf und dem Kontext.
-        """
         data = request.json
-        chat_history = data.get('chat_history')
-        context_node_ids = data.get('context_node_ids')
-
-        if chat_history is None or context_node_ids is None:
-            return jsonify({"error": "Chat history and context node IDs are required"}), 400
-
+        vault_id = data.get('vault_id')
+        if not vault_id:
+            return jsonify({"error": "vault_id is required"}), 400
         try:
-            # Rufe die neue Service-Funktion auf
-            proposal_data = chatservice.propose_node_update_from_chat(
+            proposal = chatservice.propose_node_update_from_chat(
                 target_node_id=node_id,
-                chat_history=chat_history,
-                context_node_ids=context_node_ids,
-                model=data.get('model', 'gemini-2.5-pro')
+                chat_history=data.get('chat_history', []),
+                context_node_ids=data.get('context_node_ids', []),
+                model=data.get('model', 'gemini-2.5-pro'),
+                vault_id=vault_id
             )
-            return jsonify(proposal_data)
-
+            return jsonify(proposal)
         except ValueError as e:
-            # Fängt Fehler wie "Node nicht gefunden" oder "AI gab ungültiges JSON zurück"
-            return jsonify({"error": str(e)}), 400  # oder 500, je nach Fehlerart
-        except Exception as e:
-            # Fängt alle anderen Fehler, z.B. von der LLM-API
-            logging.error(f"Failed to generate update proposal for node {node_id}: {e}")
-            return jsonify({"error": "An internal error occurred while generating the proposal."}), 500
+            return jsonify({"error": str(e)}), 400
+
+    # ==============================================================================
+    # FILE SERVING & CLI
+    # ==============================================================================
 
     @app.route('/api/image/<path:filename>')
-    @jwt_required()  # SICHERHEIT: Nur eingeloggte Benutzer dürfen hier zugreifen
+    @jwt_required()
     def serve_secure_image(filename):
-        """
-        Liefert ein Bild aus dem sicheren Ordner aus.
-        Der Zugriff ist nur mit einem gültigen JWT-Token möglich.
-        `send_from_directory` ist sicher gegen Directory-Traversal-Angriffe.
-        """
         try:
-            # send_from_directory kümmert sich um das Senden der Datei mit dem richtigen MIME-Typ
             return send_from_directory(SECURE_IMAGE_FOLDER, filename)
         except FileNotFoundError:
             return jsonify({"error": "Image not found"}), 404
 
-
-    # --- Frontend Serving (Catch-all route) ---
-    # This route is only effective in PRODUCTION mode when the static_folder is set.
-    # It ensures that any request not matching an API route is served the React app.
+    # Catch-all route for frontend serving in production
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
-    def serve(path):
-        # Wir brauchen einen expliziten Pfad zum Build-Verzeichnis
-        # Da static_folder nicht mehr in app.config ist.
-        frontend_dir = os.path.join(BASE_DIR, '..', 'frontend', 'dist')
+    def serve_frontend(path):
+        if app.static_folder:
+            if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+                return send_from_directory(app.static_folder, path)
+            else:
+                return send_from_directory(app.static_folder, 'index.html')
+        return "Frontend not found", 404
 
-        if path != "" and os.path.exists(os.path.join(frontend_dir, path)):
-            return send_from_directory(frontend_dir, path)
-        else:
-            return send_from_directory(frontend_dir, 'index.html')
-
+    # CLI commands here...
     @app.cli.command('init-db')
     @click.option('--root-title', default='Summary', help='The title for the root node of the knowledge base.')
     def init_db_command(root_title):
@@ -350,7 +378,7 @@ def create_app(config_class=Config):
         Example: flask init-db --root-title "My Project Wiki"
         """
         try:
-            database.init_db(root_node_title=root_title)
+            database.init_db()
             print("-----------------------------------------")
             print("✅ Database initialized successfully!")
             print("-----------------------------------------")
@@ -386,27 +414,73 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"🔥 An error occurred during backup: {e}")
 
+    # In app.py
+    import json  # Stelle sicher, dass json importiert ist
+
     @app.cli.command('export-json')
-    @click.option('--out', default='knowledge_base_export.json', help='Output JSON file name.')
-    def export_json_command(out):
-        """
-        Exports the entire knowledge base (nodes and versions) to a JSON file.
-        Useful for data portability and inspection, not for primary backup.
-        """
-        print("Gathering all nodes and versions for export...")
-        # We need a special function that gets EVERYTHING for the export
-        # You would need to add this function to your database.py
-        try:
-            full_tree = database.get_full_tree_for_export()
+    @click.option('--vault-id', type=int, help='The ID of the vault to export.')
+    @click.option('--out', default=None, help='Output JSON file name. Defaults to vault_name.json.')
+    def export_json_command(vault_id, out):
+        """Exports a specific vault to a JSON file, including all its nodes and versions."""
 
-            with open(out, 'w', encoding='utf-8') as f:
-                json.dump(full_tree, f, indent=2, ensure_ascii=False)
+        # Holen der App-Kontext, damit wir die Datenbank abfragen können
+        from flask.cli import with_appcontext
 
-            print("-----------------------------------------")
-            print(f"✅ Knowledge base exported successfully to: {out}")
-            print("-----------------------------------------")
-        except Exception as e:
-            print(f"🔥 An error occurred during JSON export: {e}")
+        @with_appcontext
+        def perform_export():
+            # 1. Alle verfügbaren Vaults abrufen
+            all_vaults = database.get_all_vaults()
+            if not all_vaults:
+                print("🔥 Error: No vaults found in the database.")
+                return
+
+            selected_vault = None
+            if vault_id:
+                # Wenn eine ID angegeben wurde, finde den Vault
+                selected_vault = next((v for v in all_vaults if v.id == vault_id), None)
+                if not selected_vault:
+                    print(f"🔥 Error: Vault with ID {vault_id} not found.")
+                    return
+            else:
+                # Wenn keine ID angegeben wurde, den Benutzer fragen
+                print("Available vaults:")
+                for i, vault in enumerate(all_vaults):
+                    print(f"  [{i + 1}] ID: {vault.id}, Name: {vault.name}")
+
+                try:
+                    choice = int(input("Please enter the number of the vault to export: ")) - 1
+                    if 0 <= choice < len(all_vaults):
+                        selected_vault = all_vaults[choice]
+                    else:
+                        print("🔥 Invalid selection.")
+                        return
+                except ValueError:
+                    print("🔥 Invalid input. Please enter a number.")
+                    return
+
+            # 2. Dateinamen festlegen, falls nicht angegeben
+            if out is None:
+                # Ersetze Leerzeichen und Sonderzeichen für einen sicheren Dateinamen
+                safe_name = "".join(c for c in selected_vault.name if c.isalnum() or c in (' ', '_')).rstrip()
+                out_filename = f"{safe_name.replace(' ', '_')}_export.json"
+            else:
+                out_filename = out
+
+            # 3. Den eigentlichen Export durchführen
+            print(f"Exporting vault '{selected_vault.name}' (ID: {selected_vault.id})...")
+            try:
+                full_tree = database.get_full_tree_for_export(vault_id=selected_vault.id)
+
+                with open(out_filename, 'w', encoding='utf-8') as f:
+                    json.dump(full_tree, f, indent=2, ensure_ascii=False)
+
+                print("-----------------------------------------")
+                print(f"✅ Vault exported successfully to: {out_filename}")
+                print("-----------------------------------------")
+            except Exception as e:
+                print(f"🔥 An error occurred during JSON export: {e}")
+
+        perform_export()
 
     return app
 

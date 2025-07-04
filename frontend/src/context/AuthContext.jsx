@@ -1,24 +1,33 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+// VAULT-FIX: Importiere den useAppContext, um auf seine Funktionen zugreifen zu können
+import { useAppContext } from './AppContext'; 
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  // KEY FIX: Initialize the state by READING from localStorage.
-  // If a token exists in storage, we start in a logged-in state.
+  // Dein bestehender State ist perfekt, keine Änderungen hier
   const [token, setToken] = useState(localStorage.getItem('token'));
+  
+  // VAULT-FIX: Hole die fetchVaults-Funktion aus dem AppContext
+  const { fetchVaults } = useAppContext();
 
-  // This effect keeps localStorage in sync when the token changes (on login/logout)
   useEffect(() => {
     if (token) {
-      // When login() is called, the new token is saved here.
       localStorage.setItem('token', token);
+      // VAULT-FIX: Wenn die Seite neu geladen wird und ein Token vorhanden ist,
+      // lade sofort die Vaults.
+      fetchVaults();
     } else {
-      // When logout() is called, the token is removed.
       localStorage.removeItem('token');
     }
-  }, [token]);
+    // VAULT-FIX: fetchVaults zur Abhängigkeitsliste hinzufügen.
+    // Da fetchVaults mit useCallback erstellt wurde, ändert es sich nicht
+    // und verursacht keine unnötigen Re-Renders.
+  }, [token, fetchVaults]);
 
   const login = (newToken) => {
+    // Diese Funktion löst den obigen useEffect aus, der dann fetchVaults aufruft.
+    // Wir müssen fetchVaults hier nicht erneut aufrufen.
     setToken(newToken);
   };
 
@@ -26,15 +35,13 @@ export function AuthProvider({ children }) {
     setToken(null);
   };
 
-  // 'isAuthenticated' is now correctly derived from the persistent state.
-  // !! turns the token string (or null) into a true/false boolean.
   const isAuthenticated = !!token;
-  const isAdmin = false; // Implement admin logic if you need it
+  const isAdmin = false;
 
   const value = {
     token,
-    isAuthenticated, // This is for the Login component's redirect
-    isLoggedIn: isAuthenticated, // This is for the TopBar (good to use consistent naming)
+    isAuthenticated,
+    isLoggedIn: isAuthenticated,
     login,
     logout,
   };

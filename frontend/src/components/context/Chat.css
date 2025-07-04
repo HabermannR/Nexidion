@@ -1,11 +1,11 @@
-/* src/components/Chat/Chat.css (VEREINFACHTE VERSION) */
+/* src/components/Chat/Chat.css (UPDATED VERSION) */
 
 /* ======================================================== */
 /* <<< CHAT MESSAGE STYLING >>> */
 /* ======================================================== */
 
 .message {
-  max-width: 85%; /* Verhindert, dass Blasen zu breit werden */
+  max-width: 95%;
   display: flex;
   flex-direction: column;
   margin-bottom: 1rem;
@@ -57,13 +57,13 @@
   position: absolute;
   top: 0;
   right: 0;
-  width: 320px; /* Oder eine andere Breite Ihrer Wahl */
+  width: 320px;
   height: 100%;
-  z-index: 100; /* Muss über dem restlichen Inhalt liegen */
+  z-index: 100;
   transform: translateX(100%);
   transition: transform 0.3s ease-in-out;
-  /* Stile für das Panel selbst (z.B. in ChatHistoryPanel.jsx)
-     können Bootstrap-Klassen wie 'bg-white', 'border-start' etc. sein */
+  /* Prevent scrolling issues */
+  overflow: hidden;
 }
 
 /* Slide-in-Animation */
@@ -71,7 +71,16 @@
   transform: translateX(0);
 }
 
-/* Stile für die Verlaufsliste (können auch im Panel selbst sein) */
+/* Ensure the scrollable area within the panel works correctly */
+.chat-history-panel .overflow-auto {
+  height: 100%;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  /* Prevent scroll event bubbling */
+  overscroll-behavior: contain;
+}
+
+/* Stile für die Verlaufsliste */
 .session-list {
   list-style: none;
   padding: 0;
@@ -80,12 +89,31 @@
 
 .session-item {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #dee2e6; /* Bootstrap border-color */
+  border-bottom: 1px solid #dee2e6;
   cursor: pointer;
   transition: background-color 0.2s;
 }
 
 .session-item:hover {
-  background-color: #f8f9fa; /* Bootstrap bg-light */
+  background-color: #f8f9fa;
 }
-/* Weitere Stile für Titel, Meta etc. aus der vorherigen Antwort hier einfügen... */
+
+.session-item:last-child {
+  border-bottom: none;
+}
+
+.session-title {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.session-meta {
+  color: #666;
+  font-size: 0.85em;
+}
+
+/* Prevent background scrolling when panel is open */
+.chat-window.history-open {
+  overflow: hidden;
+}

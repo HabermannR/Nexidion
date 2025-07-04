@@ -6,18 +6,18 @@ import Form from 'react-bootstrap/Form';
 import { useAppContext } from '../../context/AppContext';
 import api from '../../api/axios';
 import './ActionButtons.css'; 
+import qs from 'qs';
 
 // Service-Imports
 import { copyContextContent, copyTreeStructure } from '../../services/clipboardService';
 import { exportSelectionAsEpub, exportSelectionAsMarkdown } from '../../services/exportService';
-// Diese Services werden hier nicht direkt genutzt, aber ich lasse sie drin, falls sie an anderer Stelle relevant sind.
-// import { getIdsInOrder, generateTocForSelectedNodes } from '../../services/treeService';
+import { getIdsInOrder, generateTocForSelectedNodes } from '../../services/treeService';
 
 // Import des Modals
 import UpdatePreviewModal from './UpdatePreviewModal'; 
 
 export default function ActionButtons({ onNodeUpdate }) {
-  const { selectedNodeIds, getContextContent, treeData, enterPrintPreview } = useAppContext();
+  const { selectedNodeIds, getContextContent, treeData, enterPrintPreview, activeVault } = useAppContext();
   
   // State für Ladezustände und Feedback
   const [isLoading, setIsLoading] = useState({
@@ -80,7 +80,8 @@ export default function ActionButtons({ onNodeUpdate }) {
   const handleExportEpub = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, exportEpub: true }));
     try {
-      const success = await exportSelectionAsEpub(treeData, selectedNodeIds);
+      // Übergebe hier das activeVault-Objekt
+      const success = await exportSelectionAsEpub(treeData, selectedNodeIds, activeVault);
       if (success) {
         showFeedback('EPUB-Export gestartet!');
       } else if (selectedNodeIds.size > 0) {
@@ -92,13 +93,14 @@ export default function ActionButtons({ onNodeUpdate }) {
     } finally {
       setIsLoading(prev => ({ ...prev, exportEpub: false }));
     }
-  }, [treeData, selectedNodeIds, showFeedback]);
+  }, [treeData, selectedNodeIds, activeVault, showFeedback]); // activeVault als Abhängigkeit hinzufügen
 
   // KORRIGIERT: Expliziter async Handler für Markdown-Export
   const handleExportMd = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, exportMd: true }));
     try {
-      const success = await exportSelectionAsMarkdown(treeData, selectedNodeIds);
+      // Übergebe hier das activeVault-Objekt
+      const success = await exportSelectionAsMarkdown(treeData, selectedNodeIds, activeVault);
       if (success) {
         showFeedback('Markdown-Export gestartet!');
       } else if (selectedNodeIds.size > 0) {
@@ -110,20 +112,60 @@ export default function ActionButtons({ onNodeUpdate }) {
     } finally {
       setIsLoading(prev => ({ ...prev, exportMd: false }));
     }
-  }, [treeData, selectedNodeIds, showFeedback]);
+  }, [treeData, selectedNodeIds, activeVault, showFeedback]); // activeVault als Abhängigkeit hinzufügen
 
-  const handlePrint = useCallback(async () => {
+  const handlePrint = useCallback(async () => { // Die Funktion muss jetzt async sein
+    if (selectedNodeIds.size === 0) {
+        showFeedback("Bitte Nodes zum Drucken auswählen.");
+        return;
+    }
+
     setIsLoading(prev => ({ ...prev, print: true }));
+
     try {
-        await enterPrintPreview();
-        // Feedback wird durch den Kontext gehandhabt oder ist nicht nötig
-    } catch(error) {
+        const nodeIds = Array.from(selectedNodeIds);
+
+        const response = await api.get('/api/nodes/details', {
+            params: {
+                vault_id: activeVault.id,
+                node_ids: nodeIds
+            },
+            // DIESE ZEILEN SIND DIE LÖSUNG:
+            paramsSerializer: params => {
+                return qs.stringify(params, { arrayFormat: 'repeat' });
+            }
+        });
+
+        const nodesWithContent = response.data; // Das ist jetzt unser Array mit vollen Nodes
+
+        if (!nodesWithContent || nodesWithContent.length === 0) {
+            throw new Error("Could not fetch node details from server.");
+        }
+
+        // --- DATEN-NACHLADEN ENDE ---
+
+        // 2. Sortiere die Nodes in der visuellen Reihenfolge des Baumes.
+        const orderedIds = getIdsInOrder(treeData, selectedNodeIds);
+        const sortedNodes = nodesWithContent.sort((a, b) => {
+            return orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id);
+        });
+
+        // 3. Generiere das Inhaltsverzeichnis (Table of Contents).
+        const toc = generateTocForSelectedNodes(treeData, selectedNodeIds);
+
+        // 4. Rufe enterPrintPreview mit den vollständigen Daten auf.
+        enterPrintPreview({
+            nodes: sortedNodes,
+            toc: toc
+        });
+        
+    } catch (error) {
         console.error("Fehler bei der Druckvorbereitung:", error);
         showFeedback('Druckvorschau konnte nicht erstellt werden.');
     } finally {
-        setIsLoading(prev => ({ ...prev, print: false }));
+        setTimeout(() => setIsLoading(prev => ({ ...prev, print: false })), 200);
     }
-  }, [enterPrintPreview, showFeedback]);
+}, [treeData, selectedNodeIds, activeVault, enterPrintPreview, showFeedback]); // activeVault als Abhängigkeit hinzufügen
   
   // ===================================================================
   // Logik für AI-Update (unverändert)
@@ -145,16 +187,24 @@ export default function ActionButtons({ onNodeUpdate }) {
   }, [selectedNodeIds, flattenedNodes]);
 
   const handleProposeUpdate = async () => {
-    if (!updateTargetNodeId) return;
+    // VAULT-FIX: Guard Clause, um sicherzustellen, dass ein Vault aktiv ist.
+    if (!updateTargetNodeId || !activeVault) return;
+    
     setIsLoadingProposal(true);
     try {
       const savedHistory = JSON.parse(sessionStorage.getItem('chatHistory') || '[]');
       const chatHistoryText = savedHistory.map(m => `${m.role}: ${m.content}`).join('\n\n');
       
-      const response = await api.post(`/api/nodes/${updateTargetNodeId}/propose-update`, {
+      const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.5-pro'; // Sinnvoller Fallback
+
+      const payload = {
         chat_history: chatHistoryText,
-        context_node_ids: Array.from(selectedNodeIds)
-      });
+        context_node_ids: Array.from(selectedNodeIds),
+        vault_id: activeVault.id,
+        model: selectedModel // Das Modell wird jetzt mitgesendet!
+      };
+
+      const response = await api.post(`/api/nodes/${updateTargetNodeId}/propose-update`, payload);
       
       setUpdateData({
         original: response.data.original_content,
@@ -169,18 +219,24 @@ export default function ActionButtons({ onNodeUpdate }) {
     }
   };
 
-  const handleAcceptUpdate = async () => {
-    if (!updateTargetNodeId) return;
+const handleAcceptUpdate = async () => {
+    if (!updateTargetNodeId || !activeVault?.id) return; // Sicherer Check
     
     setIsSavingUpdate(true);
-    const success = await onNodeUpdate(updateTargetNodeId, updateData.proposed);
+    
+    // KORREKTUR: Die vault_id mit übergeben
+    const success = await onNodeUpdate(updateTargetNodeId, { content: updateData.proposed }, activeVault.id);
+    
     setIsSavingUpdate(false);
     
     if (success) {
         setIsUpdateModalOpen(false);
         showFeedback('Node erfolgreich aktualisiert!');
+    } else {
+        // Optional: Feedback geben, falls das Update im Parent fehlschlägt
+        alert("Failed to save the update. Please check the console.");
     }
-  };
+};
 
   return (
     <>

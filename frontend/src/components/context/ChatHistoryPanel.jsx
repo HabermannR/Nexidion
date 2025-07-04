@@ -2,21 +2,29 @@
 
 import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
-import './Chat.css'; // Wir verwenden dieselbe CSS-Datei für die Einfachheit
+import { useAppContext } from '../../context/AppContext';
+import './Chat.css';
 
 const ChatHistoryPanel = ({ onLoadSession, onClose }) => {
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  const { activeVault } = useAppContext();
 
   useEffect(() => {
-    // Funktion zum Abrufen der Sitzungen definieren und aufrufen
     const fetchSessions = async () => {
       try {
         setError(null);
         setIsLoading(true);
-        const response = await api.get('/api/chat/sessions');
-        // Sortieren wir die neuesten zuerst, falls das Backend es nicht schon tut
+        
+        if (!activeVault) {
+          setError("No active vault selected.");
+          setIsLoading(false);
+          return;
+        }
+
+        const response = await api.get(`/api/chat/sessions?vault_id=${activeVault.id}`);
         const sortedSessions = response.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setSessions(sortedSessions);
       } catch (err) {
@@ -28,14 +36,12 @@ const ChatHistoryPanel = ({ onLoadSession, onClose }) => {
     };
 
     fetchSessions();
-  }, []); // Leeres Array bedeutet, dieser Effekt läuft nur einmal beim Mounten
+  }, [activeVault]);
 
   const handleSessionClick = (sessionId) => {
-    // Ruft die Funktion in der übergeordneten Komponente auf
     onLoadSession(sessionId);
   };
 
-  // Hilfsfunktion zur Formatierung des Datums
   const formatDate = (isoString) => {
     return new Date(isoString).toLocaleString('de-DE', {
         day: '2-digit',
@@ -46,30 +52,41 @@ const ChatHistoryPanel = ({ onLoadSession, onClose }) => {
     });
   }
 
-	return (
-    <div className="chat-history-panel bg-white border-start shadow-lg">
+  // Prevent scroll events from bubbling up to parent
+  const handleScroll = (e) => {
+    e.stopPropagation();
+  };
+
+  const handleWheel = (e) => {
+    e.stopPropagation();
+  };
+
+  return (
+    <div className="chat-history-panel bg-white border-start shadow-lg d-flex flex-column">
       
-      {/* Header mit Bootstrap-Klassen */}
-      <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
+      <div className="d-flex justify-content-between align-items-center p-3 border-bottom flex-shrink-0">
         <h3 className="h5 mb-0">Chat History</h3>
         <button onClick={onClose} className="btn-close" title="Close history"></button>
       </div>
 
-      {/* Content-Bereich */}
-      <div className="flex-grow-1 overflow-auto p-2">
+      <div 
+        className="flex-grow-1 overflow-auto p-2"
+        onScroll={handleScroll}
+        onWheel={handleWheel}
+      >
         {isLoading && <p className="text-center p-3">Loading history...</p>}
         {error && <p className="text-danger p-3">{error}</p>}
         {!isLoading && !error && sessions.length === 0 && (
           <p className="text-muted text-center p-3">No past conversations found.</p>
         )}
         {!isLoading && !error && sessions.length > 0 && (
-          <ul className="list-unstyled">
+          <ul className="list-unstyled session-list">
             {sessions.map(session => (
               <li 
                 key={session.id} 
                 onClick={() => handleSessionClick(session.id)} 
-                className="session-item" // Eigene Klasse für Hover-Effekt
-                role="button" // Bessere Zugänglichkeit
+                className="session-item"
+                role="button"
               >
                 <strong className="session-title d-block text-dark mb-1">{session.title || 'Untitled Chat'}</strong>
                 <small className="session-meta d-block text-muted">
