@@ -358,7 +358,14 @@ export default function NodesView() {
 
 	const handleSave = async () => {
 		if (!currentNode) return;
-		await updateNodeContent(currentNode.id, editableContent);
+
+		// KORREKTUR: Wickeln Sie den Inhalt in ein Objekt mit dem Key 'content'
+		const updates = { 
+			content: editableContent
+		};
+		
+		// Der Aufruf an die zentrale Update-Funktion
+		await updateNodeContent(currentNode.id, updates, activeVault.id);
 	};
 
     const handleRename = async (nodeId, newTitle) => {
@@ -370,7 +377,7 @@ export default function NodesView() {
                 vault_id: activeVault.id 
             });
             // Den aktuellen Node im State aktualisieren
-            setCurrentNode(prev => ({ ...prev, title: response.data.title }));
+            setCurrentNode(prev => ({ ...prev, title: newTitle }));
             await refreshTree(); // Den Baum aktualisieren, damit der neue Titel dort erscheint
             setSuccessMessage("Node renamed successfully!");
         } catch (err) {

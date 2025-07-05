@@ -1,12 +1,10 @@
-// src/components/Chat/Chat.jsx (VOLLSTÄNDIGE VERSION MIT BOOTSTRAP)
-
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import api from '../../api/axios';
+import api from '../../api/axios'; // Kept for non-streaming calls
 import { useAppContext } from '../../context/AppContext';
-import ChatHistoryPanel from './ChatHistoryPanel'; // Stellen Sie sicher, dass dieser Import korrekt ist
-import './Chat.css'; // Wir behalten das CSS für spezifische Stile
+import ChatHistoryPanel from './ChatHistoryPanel'; 
+import './Chat.css';
 
 const Chat = () => {
   // --- STATE MANAGEMENT ---
@@ -23,24 +21,32 @@ const Chat = () => {
   const [sessionId, setSessionId] = useState(() => sessionStorage.getItem('sessionId') || null);
   const [isLoading, setIsLoading] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  
+  // NEW: State for the streaming toggle, persisted in localStorage
+  const [isStreamingEnabled, setIsStreamingEnabled] = useState(() => {
+    const saved = localStorage.getItem('isStreamingEnabled');
+    // Default to true (streaming on) if not set
+    return saved !== null ? JSON.parse(saved) : true;
+  });
 
   const { selectedNodeIds, chatInputValue, setChatInputValue, activeVault } = useAppContext();
   const chatDisplayRef = useRef(null);
+  const previousVaultIdRef = useRef();
 
   // --- EFFECTS ---
-  // Scrollt bei neuen Nachrichten nach unten
+  
+  // Scroll on new messages
   useEffect(() => {
     if (chatDisplayRef.current) {
       chatDisplayRef.current.scrollTop = chatDisplayRef.current.scrollHeight;
     }
   }, [chatHistory]);
 
-  // Speichert den Chatverlauf bei Änderungen im sessionStorage
+  // Persist history and session ID
   useEffect(() => {
     sessionStorage.setItem('chatHistory', JSON.stringify(chatHistory));
   }, [chatHistory]);
 
-  // Speichert die Session-ID bei Änderungen im sessionStorage
   useEffect(() => {
     if (sessionId) {
       sessionStorage.setItem('sessionId', sessionId);
@@ -48,6 +54,24 @@ const Chat = () => {
       sessionStorage.removeItem('sessionId');
     }
   }, [sessionId]);
+
+  // NEW: Persist the streaming preference
+  useEffect(() => {
+    localStorage.setItem('isStreamingEnabled', JSON.stringify(isStreamingEnabled));
+  }, [isStreamingEnabled]);
+  
+  // Clear chat when vault changes
+  useEffect(() => {
+    const previousVaultId = previousVaultIdRef.current;
+    const currentVaultId = activeVault?.id;
+    if (currentVaultId && previousVaultId !== undefined && currentVaultId !== previousVaultId) {
+      console.log('Vault has changed. Clearing chat state.');
+      setChatHistory([]);
+      setSessionId(null);
+      setChatInputValue('');
+    }
+    previousVaultIdRef.current = currentVaultId;
+  }, [activeVault, setChatInputValue]);
 
   // --- HANDLERS ---
   const handleNewChat = () => {
@@ -59,19 +83,20 @@ const Chat = () => {
   };
 
   const handleLoadSession = async (sessionIdToLoad) => {
-    // VAULT-FIX: Wenn wir Sessions laden, müssen wir die vault_id nicht mitschicken,
-    // da die session_id global eindeutig ist. ABER, wir sollten prüfen, ob die geladene
-    // Session zum aktuellen Vault gehört. Das ist eine erweiterte Sicherheitsmaßnahme.
-    // Fürs Erste lassen wir es einfach, aber hier wäre der Ort dafür.
-    // Beispiel: if (sessionData.vault_id !== activeVault.id) { alert("Session gehört zu anderem Vault!"); return; }
+    // ... (This function remains unchanged)
     if (isLoading) return;
     if (chatHistory.length > 0 && !window.confirm("Loading a past session will replace the current one. Continue?")) {
       return;
     }
     setIsLoading(true);
     try {
+      // Axios is fine here as this is not a streaming request
       const response = await api.get(`/api/chat/sessions/${sessionIdToLoad}`);
       const sessionData = response.data;
+      if (activeVault && sessionData.vault_id !== activeVault.id) {
+          alert("This chat session belongs to a different vault and cannot be loaded here.");
+          return;
+      }
       setChatHistory(sessionData.messages || []);
       setSessionId(sessionData.id);
       setChatInputValue('');
@@ -84,75 +109,162 @@ const Chat = () => {
     }
   };
 
-  const handleChatSubmit = async (event) => {
+  // --- CORE LOGIC: REFACTORED CHAT SUBMIT ---
+// In Ihrer Chat.jsx Datei
+
+const handleChatSubmit = async (event) => {
     event.preventDefault();
-    // VAULT-FIX: Guard Clause, falls aus irgendeinem Grund kein Vault aktiv ist.
     if (!chatInputValue.trim() || isLoading || !activeVault) return;
 
     const userInput = chatInputValue.trim();
+    const currentSessionId = sessionId;
+    const selectedModel = localStorage.getItem('selectedModel') || 'claude-3-sonnet-20240229';
+	console.log(selectedModel)
+    
+    const jwtToken = localStorage.getItem('token'); 
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (jwtToken) {
+      headers['Authorization'] = `Bearer ${jwtToken}`;
+    }
+
     setChatInputValue('');
-    setChatHistory(prev => [...prev, { role: 'user', content: userInput }]);
     setIsLoading(true);
 
-    try {
-      const endpoint = sessionId ? `/api/chat/sessions/${sessionId}/messages` : '/api/chat/sessions';
-      const selectedModel = localStorage.getItem('selectedModel') || 'claude-3-sonnet-20240229';
+    const payload = {
+      user_input: userInput,
+      node_ids: Array.from(selectedNodeIds),
+      ...(!currentSessionId && { model: selectedModel, vault_id: activeVault.id })
+    };
+
+    if (isStreamingEnabled) {
+      setChatHistory(prev => [
+        ...prev,
+        { role: 'user', content: userInput },
+        { role: 'assistant', content: '' }
+      ]);
       
-      const payload = {
-        user_input: userInput,
-        node_ids: Array.from(selectedNodeIds),
-        // VAULT-FIX: Füge die vault_id hinzu, wenn eine NEUE Session erstellt wird.
-        ...(!sessionId && { model: selectedModel, vault_id: activeVault.id })
-      };
-      
-      const response = await api.post(endpoint, payload);
-      const assistantResponse = response.data;
-      
-      setChatHistory(prev => [...prev, { role: 'assistant', content: assistantResponse.content }]);
-      if (assistantResponse.session_id && !sessionId) {
-        setSessionId(assistantResponse.session_id);
+      try {
+        const endpoint = currentSessionId
+          ? `/api/chat/sessions/${currentSessionId}/messages/stream`
+          : '/api/chat/sessions/stream';
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: headers, 
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+           const errorText = await response.text();
+            let errorMessage = errorText;
+            try {
+                errorMessage = JSON.parse(errorText).msg || errorText; 
+            } catch {
+                // keep raw text
+            }
+            throw new Error(errorMessage);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let newSessionIdFromStream = null;
+
+        // DER try-Block umschließt die while-Schleife
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          let chunk = decoder.decode(value, { stream: true });
+          
+          if (!currentSessionId && !newSessionIdFromStream && chunk.startsWith("session_id:")) {
+            const parts = chunk.split('\n\n');
+            newSessionIdFromStream = parts[0].replace("session_id:", "").trim();
+            setSessionId(newSessionIdFromStream);
+            chunk = parts.slice(1).join('\n\n');
+          }
+
+          setChatHistory(prev => {
+            const newHistory = [...prev];
+            const lastMessage = newHistory[newHistory.length - 1];
+            newHistory[newHistory.length - 1] = {
+              ...lastMessage,
+              content: lastMessage.content + chunk
+            };
+            return newHistory;
+          });
+        } // <-- Hier endet die while-Schleife
+
+      } catch (error) { // <-- Der catch-Block gehört zum try-Block darüber
+        console.error('Failed to stream chat response', error);
+        const errorMessage = error.message || "Sorry, an error occurred.";
+        setChatHistory(prev => {
+          const newHistory = [...prev];
+          // Überprüfen, ob es überhaupt eine letzte Nachricht gibt, sicher ist sicher
+          if (newHistory.length > 0) {
+            newHistory[newHistory.length - 1].content = `**Error:** ${errorMessage}`;
+          }
+          return newHistory;
+        });
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to generate chat response', error);
-      const errorMessage = error.response?.data?.error || "Sorry, an error occurred. Please try again.";
-      setChatHistory(prev => [...prev, { role: 'assistant', content: errorMessage }]);
-    } finally {
-      setIsLoading(false);
+
+    } else {
+      // --- NON-STREAMING LOGIC ---
+      setChatHistory(prev => [...prev, { role: 'user', content: userInput }]);
+      try {
+        const endpoint = currentSessionId ? `/api/chat/sessions/${currentSessionId}/messages` : '/api/chat/sessions';
+        const response = await api.post(endpoint, payload);
+        const assistantResponse = response.data;
+        
+        setChatHistory(prev => [...prev, { role: 'assistant', content: assistantResponse.content }]);
+        if (assistantResponse.session_id && !sessionId) {
+          setSessionId(assistantResponse.session_id);
+        }
+      } catch (error) {
+        console.error('Failed to generate chat response', error);
+        const errorMessage = error.response?.data?.error || "Sorry, an error occurred.";
+        setChatHistory(prev => [...prev, { role: 'assistant', content: `**Error:** ${errorMessage}` }]);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
-
-
   // --- JSX RENDER ---
   return (
-    // Hauptcontainer mit Flexbox für das Layout. `overflow-hidden` ist wichtig.
-    // Die Klasse 'history-open' wird für die CSS-Animation des Panels verwendet.
     <div className={`d-flex flex-column h-100 bg-light border rounded-3 overflow-hidden chat-window ${isHistoryPanelOpen ? 'history-open' : ''}`}>
-      
-      {/* 1. Header: Feste Höhe, flex-shrink: 0 ist implizit */}
+      {/* 1. Header with the new toggle switch */}
       <div className="d-flex justify-content-between align-items-center p-2 border-bottom bg-white">
         <h4 className="h6 mb-0">Chat with Context</h4>
-        <div className="d-flex gap-2">
-          <button 
-            onClick={() => setIsHistoryPanelOpen(true)} 
-            className="btn btn-sm btn-outline-secondary" 
-            title="View chat history"
-          >
-            History
-          </button>
-          {chatHistory.length > 0 && (
-            <button 
-              onClick={handleNewChat} 
-              className="btn btn-sm btn-secondary" 
-              title="Start a new conversation"
-            >
-              New Chat
-            </button>
-          )}
+        <div className="d-flex align-items-center gap-3">
+          {/* NEW: Streaming Toggle */}
+          <div className="form-check form-switch" title="Toggle response streaming">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              role="switch"
+              id="streamingToggle"
+              checked={isStreamingEnabled}
+              onChange={e => setIsStreamingEnabled(e.target.checked)}
+            />
+            <label className="form-check-label small" htmlFor="streamingToggle">
+              Stream
+            </label>
+          </div>
+          <div className="d-flex gap-2">
+            <button onClick={() => setIsHistoryPanelOpen(true)} className="btn btn-sm btn-outline-secondary" title="View chat history">History</button>
+            {chatHistory.length > 0 && (
+              <button onClick={handleNewChat} className="btn btn-sm btn-secondary" title="Start a new conversation">New Chat</button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 2. Chat-Anzeigebereich: Wächst, um den verfügbaren Platz zu füllen, und ist scrollbar */}
+      {/* 2. Chat display area (Spinner logic removed for simplicity) */}
       <div className="flex-grow-1 p-3 overflow-auto" ref={chatDisplayRef}>
         {chatHistory.length === 0 && (
           <div className="message assistant">
@@ -162,56 +274,30 @@ const Chat = () => {
         {chatHistory.map((message, index) => (
           <div key={index} className={`message ${message.role}`}>
             <strong>{message.role === 'user' ? 'You' : 'Assistant'}:</strong>
-            {message.role === 'assistant' ? (
-              <div className="markdown-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <div className="user-message-content">{message.content}</div>
-            )}
-          </div>
-        ))}
-        {isLoading && (
-          <div className="message assistant">
-            <strong>Assistant:</strong>
             <div className="markdown-content">
-              <div className="spinner-border spinner-border-sm" role="status">
-                <span className="visually-hidden">Loading...</span>
-              </div>
-              <span className="ms-2">Thinking...</span>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
             </div>
           </div>
-        )}
+        ))}
       </div>
 
-      {/* 3. Eingabeformular: Feste Höhe, am unteren Rand */}
+      {/* 3. Input form */}
       <form onSubmit={handleChatSubmit} className="d-flex align-items-start p-2 border-top bg-white gap-2">
         <textarea
           value={chatInputValue}
           onChange={(e) => setChatInputValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleChatSubmit(e);
-            }
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSubmit(e); } }}
           placeholder="Ask about your selected context..."
           className="form-control"
           disabled={isLoading}
           rows="2"
         />
-        <button 
-          type="submit" 
-          className="btn btn-primary" 
-          disabled={isLoading || !chatInputValue.trim()}
-        >
-          Send
-        </button>
+        <button type="submit" className="btn btn-primary" disabled={isLoading || !chatInputValue.trim()}>Send</button>
       </form>
 
-      {/* 4. Das Verlaufs-Panel, das bei Bedarf gerendert wird */}
+      {/* 4. History Panel */}
       {isHistoryPanelOpen && (
         <ChatHistoryPanel 
           onLoadSession={handleLoadSession}

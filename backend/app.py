@@ -5,7 +5,7 @@ import logging
 import shutil
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 from werkzeug.security import check_password_hash
@@ -26,12 +26,21 @@ migrate = Migrate()
 #To Run Locally:
 #Terminal 1 (Backend): Navigate to your backend folder and run python app.py.
 #Terminal 2 (Frontend): Navigate to your frontend folder and run npm start (or npm run dev).
+#npm run dev -- --host
 #npm run build
 #git status --ignored
 
 #todo
-#async für Update, stream für chat
-#update node geht nicht vom handy
+#async für Update
+#Konzept: Sie erstellen einen AbortController vor dem fetch, übergeben sein signal an die fetch-Optionen und rufen .abort() in einem useEffect-Cleanup auf, wenn die Komponente verlassen wird oder ein neuer Request startet. Das ist fortgeschritten, aber ein riesiger Gewinn für die Stabilität.
+#UI-Verbesserung für Streaming
+#Anstatt den Text einfach nur erscheinen zu lassen, könnten Sie einen kleinen blinkenden Cursor (wie bei einer Schreibmaschine) am Ende der Assistant-Antwort anzeigen, solange der Stream aktiv ist. Das macht visuell sofort klar, dass die Antwort noch nicht fertig ist.
+#update node geht nicht vom handy, jetzt anderer Fehler!
+#local structured
+#bubble up? pro parent die childs nehmen um den parent zu verbessern und dann hoch bubblen
+#unlock knowledge base
+#rebrand?
+#special page automatisieren
 #Die Möglichkeit, einer Chat-Session einen besseren Titel zu geben (vielleicht vom LLM generiert).
 
 def create_app(config_class=Config):
@@ -57,10 +66,17 @@ def create_app(config_class=Config):
         # In development, Flask ONLY acts as an API. The React dev server serves the frontend.
         print("----> Running in DEVELOPMENT mode")
         app = Flask(__name__)
-        # We need CORS to allow requests from the React dev server (e.g., http://localhost:5173)
-        # to the Flask server (e.g., http://localhost:5001).
-        CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
 
+        # Get your PC's local IP address (replace with your actual IP)
+        local_ip = "192.168.2.59"
+
+        # We need CORS to allow requests from the React dev server on your PC and your phone.
+        allowed_origins = [
+            "http://localhost:5173",  # For local development on your PC
+            f"http://{local_ip}:5173"  # For accessing from your phone
+        ]
+        CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+        
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     SECURE_IMAGE_FOLDER = os.path.join(BASE_DIR, '..', 'secure_images')
     app.config.from_object(config_class)
@@ -269,64 +285,6 @@ def create_app(config_class=Config):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
-    # ==============================================================================
-    # CHAT API
-    # ==============================================================================
-
-    @app.route('/api/chat/sessions', methods=['GET'])
-    @jwt_required()
-    def list_chat_sessions():
-        try:
-            vault_id = _get_vault_id_from_request()
-            sessions = chatservice.list_sessions(vault_id=vault_id)
-            return jsonify(sessions)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-
-    @app.route('/api/chat/sessions/<string:session_id>', methods=['GET'])
-    @jwt_required()
-    def get_chat_session_history(session_id):
-        history = chatservice.get_session_history(session_id)
-        if history is None:
-            return jsonify({"error": "Session not found"}), 404
-        return jsonify(history)
-
-    @app.route('/api/chat/sessions', methods=['POST'])
-    @jwt_required()
-    def create_chat_session():
-        data = request.json
-        vault_id = data.get('vault_id')
-        user_input = data.get('user_input')
-        if not vault_id or not user_input:
-            return jsonify({"error": "vault_id and user_input are required"}), 400
-        try:
-            response = chatservice.create_new_chat_session(
-                user_input=user_input,
-                node_ids=data.get('node_ids', []),
-                model=data.get('model', 'claude-3-sonnet-20240229'),
-                vault_id=vault_id
-            )
-            return jsonify(response), 201
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route('/api/chat/sessions/<string:session_id>/messages', methods=['POST'])
-    @jwt_required()
-    def add_message_to_session(session_id):
-        data = request.json
-        user_input = data.get('user_input')
-        if not user_input:
-            return jsonify({"error": "user_input is required"}), 400
-        try:
-            response = chatservice.add_message_to_session(
-                session_id=session_id,
-                user_input=user_input,
-                node_ids=data.get('node_ids', [])
-            )
-            return jsonify(response)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 404
-
     @app.route('/api/nodes/<string:node_id>/propose-update', methods=['POST'])
     @jwt_required()
     def propose_node_update(node_id):
@@ -346,6 +304,164 @@ def create_app(config_class=Config):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
+    @app.route('/api/nodes/<node_id>/rename', methods=['PATCH'])
+    @jwt_required()
+    def rename_node(node_id):
+        """
+        Renames a node. Expects a JSON body with a 'title' key and 'vault_id' key.
+        """
+        data = request.get_json()
+        new_title = data.get('title')
+        vault_id = data.get('vault_id')  # Add this line
+
+        # Validate that the new title is provided and not just whitespace
+        if not new_title or not new_title.strip():
+            return jsonify({"error": "New title cannot be empty"}), 400
+
+        # Validate vault_id
+        if not vault_id:
+            return jsonify({"error": "vault_id is required"}), 400
+
+        try:
+            # Pass vault_id to your database function
+            updated_node = database.rename_node(node_id, new_title.strip(), vault_id=vault_id)
+            return jsonify(updated_node)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        except AttributeError:
+            logging.error("database.rename_node function is not implemented.")
+            return jsonify({"error": "Server-side function not implemented."}), 501
+
+    # ==============================================================================
+    # CHAT API
+    # ==============================================================================
+
+    # --- NON-STREAMING CHAT ENDPOINTS (Existing) ---
+
+    @app.route('/api/chat/sessions', methods=['GET'])
+    @jwt_required()
+    def list_chat_sessions():
+        try:
+            vault_id = _get_vault_id_from_request()
+            sessions = chatservice.list_sessions(vault_id=vault_id)
+            return jsonify(sessions)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
+    @app.route('/api/chat/sessions/<string:session_id>', methods=['GET'])
+    @jwt_required()
+    def get_chat_session_history(session_id):
+        history = chatservice.get_session_history(session_id)
+        if history is None:
+            return jsonify({"error": "Session not found"}), 404
+        return jsonify(history)
+
+    @app.route('/api/chat/sessions/<string:session_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_chat_session(session_id):
+        """Deletes a chat session and all of its associated messages."""
+        try:
+            database.delete_chat_session(session_id)
+            return jsonify({"message": f"Session with ID {session_id} deleted successfully."}), 200
+        except ValueError as e:
+            # This error is raised by the database function if the session is not found
+            return jsonify({"error": str(e)}), 404
+
+    @app.route('/api/chat/sessions', methods=['POST'])
+    @jwt_required()
+    def create_chat_session():
+        # This endpoint is kept for non-streaming clients or backup use
+        data = request.json
+        vault_id = data.get('vault_id')
+        user_input = data.get('user_input')
+        if not vault_id or not user_input:
+            return jsonify({"error": "vault_id and user_input are required"}), 400
+        try:
+            response = chatservice.create_new_chat_session(
+                user_input=user_input,
+                node_ids=data.get('node_ids', []),
+                model=data.get('model', 'claude-3-sonnet-20240229'),
+                vault_id=vault_id
+            )
+            return jsonify(response), 201
+        except Exception as e:
+            logging.error(f"Error in create_chat_session: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/chat/sessions/<string:session_id>/messages', methods=['POST'])
+    @jwt_required()
+    def add_message_to_session(session_id):
+        # This endpoint is kept for non-streaming clients or backup use
+        data = request.json
+        user_input = data.get('user_input')
+        if not user_input:
+            return jsonify({"error": "user_input is required"}), 400
+        try:
+            response = chatservice.add_message_to_session(
+                session_id=session_id,
+                user_input=user_input,
+                node_ids=data.get('node_ids', [])
+            )
+            return jsonify(response)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        except Exception as e:
+            logging.error(f"Error in add_message_to_session for session {session_id}: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    # --- STREAMING CHAT ENDPOINTS (NEW) ---
+
+    @app.route('/api/chat/sessions/stream', methods=['POST'])
+    @jwt_required()
+    def stream_new_chat_session():
+        """Creates a new chat session and streams the response within an app context."""
+        data = request.json
+        vault_id = data.get('vault_id')
+        user_input = data.get('user_input')
+        if not vault_id or not user_input:
+            return jsonify({"error": "vault_id and user_input are required"}), 400
+
+        # We create the generator first, but DON'T execute it yet.
+        generator = chatservice.stream_new_chat_session(
+            user_input=user_input,
+            node_ids=data.get('node_ids', []),
+            model=data.get('model', 'claude-3-sonnet-20240229'),
+            vault_id=vault_id
+        )
+
+        # THIS IS THE FIX: A wrapper generator that keeps the context alive.
+        def stream_with_context():
+            with app.app_context():
+                # yield from will pull from the original generator and pass it through
+                yield from generator
+
+        # We return a response from the NEW generator that has the context.
+        return Response(stream_with_context(), mimetype='text/event-stream')
+
+    @app.route('/api/chat/sessions/<string:session_id>/messages/stream', methods=['POST'])
+    @jwt_required()
+    def stream_message_to_session(session_id):
+        """Adds a message to an existing session and streams the response within an app context."""
+        data = request.json
+        user_input = data.get('user_input')
+        if not user_input:
+            return jsonify({"error": "user_input is required"}), 400
+
+        # Create the original generator
+        generator = chatservice.stream_message_in_session(
+            session_id=session_id,
+            user_input=user_input,
+            node_ids=data.get('node_ids', [])
+        )
+
+        # THE SAME FIX: Wrap it in a function that provides the app context
+        def stream_with_context():
+            with app.app_context():
+                yield from generator
+
+        return Response(stream_with_context(), mimetype='text/event-stream')
+
+
     # ==============================================================================
     # FILE SERVING & CLI
     # ==============================================================================
@@ -362,12 +478,20 @@ def create_app(config_class=Config):
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve_frontend(path):
-        if app.static_folder:
-            if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-                return send_from_directory(app.static_folder, path)
-            else:
-                return send_from_directory(app.static_folder, 'index.html')
-        return "Frontend not found", 404
+        # API-Aufrufe sind bereits durch ihre spezifischen Routen abgedeckt.
+        # Alles andere muss an das Frontend weitergeleitet werden.
+        # PythonAnywhere's "Static Files" wird echte statische Dateien (CSS, JS) abfangen.
+        # Diese Route fängt nur die "virtuellen" React-Router-Pfade ab.
+
+        # Der Pfad zum Build-Verzeichnis des Frontends
+        static_folder_path = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
+
+        # Prüfe, ob die angeforderte Ressource eine existierende Datei ist (z.B. `favicon.ico`)
+        if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
+            return send_from_directory(static_folder_path, path)
+        else:
+            # Für alle anderen Pfade, liefere die Haupt-HTML-Datei der App aus
+            return send_from_directory(static_folder_path, 'index.html')
 
     # CLI commands here...
     @app.cli.command('init-db')
@@ -414,8 +538,6 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"🔥 An error occurred during backup: {e}")
 
-    # In app.py
-    import json  # Stelle sicher, dass json importiert ist
 
     @app.cli.command('export-json')
     @click.option('--vault-id', type=int, help='The ID of the vault to export.')

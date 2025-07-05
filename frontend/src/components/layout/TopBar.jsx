@@ -30,7 +30,8 @@ function TopBar() {
     { id: 'gpt-4o', name: 'GPT-4o' },
     { id: 'o4-mini-2025-04-16', name: 'o4 mini' },
     { id: 'gpt-4.1-mini-2025-04-14', name: 'GPT-4.1' },
-    { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro' }
+    { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro' },
+	{ id: 'local', name: 'local' }
   ];
 
   const getInitialModel = () => {

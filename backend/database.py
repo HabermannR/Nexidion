@@ -12,7 +12,8 @@ scoped to a specific vault_id to ensure data isolation.
 from sqlalchemy import case, func
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import db, Vault, Node, Version
+from models import db, Vault, Node, Version, ChatSession, ChatMessage
+
 
 def init_db():
     """
@@ -32,6 +33,7 @@ def init_db():
             print(f"Error creating the default vault: {e}")
     else:
         print("Database already contains vaults. Skipping default creation.")
+
 
 # ==============================================================================
 # VAULT-RELATED FUNCTIONS
@@ -216,7 +218,7 @@ def get_node_by_id(node_id: str, vault_id: int) -> dict | None:
         {
             'version': v.version,
             'content': v.content,
-            'timestamp': v.timestamp.isoformat()  # Wichtig für JSON-Serialisierung
+            'timestamp': v.timestamp.isoformat()
         }
         for v in node.versions
     ]
@@ -361,12 +363,11 @@ def get_nodes_by_ids(node_ids: list[str], vault_id: int) -> list[dict]:
 
     nodes = (
         Node.query
-        .options(joinedload(Node.current_version_object))  # Lade den Inhalt effizient
+        .options(joinedload(Node.current_version_object))
         .filter(Node.id.in_(node_ids), Node.vault_id == vault_id)
         .all()
     )
 
-    # Gib die vollen Node-Daten als Dictionaries zurück
     return [node.to_dict(include_content=True) for node in nodes]
 
 
@@ -456,3 +457,122 @@ def get_full_tree_for_export(vault_id: int) -> list[dict]:
 
     sort_recursively(tree)
     return tree
+
+
+# ==============================================================================
+# CHAT-RELATED FUNCTIONS
+# ==============================================================================
+
+def list_chat_sessions(vault_id: int) -> list[dict]:
+    """
+    Retrieves a list of all chat sessions for a specific vault.
+    """
+    sessions = (
+        ChatSession.query
+        .filter_by(vault_id=vault_id)
+        .order_by(ChatSession.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": session.id,
+            "title": session.title,
+            "created_at": session.created_at.isoformat(),
+            "llm_model": session.llm_model,
+            "vault_id": session.vault_id
+        } for session in sessions
+    ]
+
+
+def get_chat_session_history(session_id: str) -> dict | None:
+    """
+    Retrieves the complete history of a single chat session, including messages.
+    """
+    session = ChatSession.query.options(selectinload(ChatSession.messages)).get(session_id)
+    if not session:
+        return None
+
+    messages = [
+        {"role": msg.role, "content": msg.content, "timestamp": msg.timestamp.isoformat()}
+        for msg in session.messages
+    ]
+    return {
+        "id": session.id,
+        "title": session.title,
+        "created_at": session.created_at.isoformat(),
+        "llm_model": session.llm_model,
+        "vault_id": session.vault_id,
+        "messages": messages
+    }
+
+
+def get_chat_session_by_id(session_id: str) -> ChatSession | None:
+    """Retrieves a ChatSession object by its ID, with its messages preloaded."""
+    return ChatSession.query.options(selectinload(ChatSession.messages)).get(session_id)
+
+
+def create_chat_session(title: str, llm_model: str, vault_id: int) -> ChatSession:
+    """
+    Creates a new ChatSession instance, adds it to the session, and flushes
+    to assign an ID. Does not commit.
+    """
+    new_session = ChatSession(llm_model=llm_model, title=title, vault_id=vault_id)
+    db.session.add(new_session)
+    db.session.flush()  # Flush to get the new_session.id
+    return new_session
+
+
+def delete_chat_session(session_id: str):
+    """
+    Deletes a chat session and all its associated messages.
+
+    Args:
+        session_id: The ID of the session to delete.
+
+    Raises:
+        ValueError: If the session with the given ID is not found.
+    """
+    session = ChatSession.query.get(session_id)
+    if not session:
+        raise ValueError(f"Chat session with ID {session_id} not found.")
+
+    try:
+        # The 'cascade' option on the relationship in the model will handle deleting messages
+        db.session.delete(session)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        # Re-raise the exception to be handled by the caller
+        raise e
+
+
+def add_chat_message(session_id: str, role: str, content: str, context_versions: list[Version] = None) -> ChatMessage:
+    """
+    Creates a new ChatMessage, associates it with context versions if provided,
+    and adds it to the session. Does not commit.
+    """
+    message = ChatMessage(
+        session_id=session_id,
+        role=role,
+        content=content,
+        context_versions=context_versions or []
+    )
+    db.session.add(message)
+    return message
+
+
+def get_versions_for_node_ids(node_ids: list[str], vault_id: int) -> list[Version]:
+    """
+    Efficiently fetches the current_version_object for a list of node IDs
+    within a specific vault.
+    """
+    if not node_ids:
+        return []
+
+    nodes = Node.query.options(joinedload(Node.current_version_object)).filter(
+        Node.id.in_(node_ids),
+        Node.vault_id == vault_id
+    ).all()
+
+    # Return only the version objects that actually exist
+    return [node.current_version_object for node in nodes if node.current_version_object]

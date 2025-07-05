@@ -1,5 +1,3 @@
-// src/components/chat/ChatHistoryPanel.jsx
-
 import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { useAppContext } from '../../context/AppContext';
@@ -35,11 +33,31 @@ const ChatHistoryPanel = ({ onLoadSession, onClose }) => {
       }
     };
 
-    fetchSessions();
+    if (activeVault) {
+        fetchSessions();
+    }
   }, [activeVault]);
 
   const handleSessionClick = (sessionId) => {
     onLoadSession(sessionId);
+  };
+
+  const handleDeleteSession = async (e, sessionIdToDelete) => {
+    // Stop the event from bubbling up to the li's onClick handler
+    e.stopPropagation();
+
+    if (!window.confirm("Are you sure you want to permanently delete this chat session?")) {
+        return;
+    }
+
+    try {
+        await api.delete(`/api/chat/sessions/${sessionIdToDelete}`);
+        // Update the UI by removing the deleted session from the state
+        setSessions(prevSessions => prevSessions.filter(session => session.id !== sessionIdToDelete));
+    } catch (err) {
+        console.error("Failed to delete chat session:", err);
+        setError("Could not delete the session. Please try again.");
+    }
   };
 
   const formatDate = (isoString) => {
@@ -85,13 +103,22 @@ const ChatHistoryPanel = ({ onLoadSession, onClose }) => {
               <li 
                 key={session.id} 
                 onClick={() => handleSessionClick(session.id)} 
-                className="session-item"
+                className="session-item d-flex justify-content-between align-items-center"
                 role="button"
               >
-                <strong className="session-title d-block text-dark mb-1">{session.title || 'Untitled Chat'}</strong>
-                <small className="session-meta d-block text-muted">
-                  {formatDate(session.created_at)} ({session.llm_model})
-                </small>
+                <div>
+                    <strong className="session-title d-block text-dark mb-1">{session.title || 'Untitled Chat'}</strong>
+                    <small className="session-meta d-block text-muted">
+                    {formatDate(session.created_at)} ({session.llm_model})
+                    </small>
+                </div>
+                <button
+                    onClick={(e) => handleDeleteSession(e, session.id)}
+                    className="btn btn-sm btn-outline-danger"
+                    title="Delete session"
+                >
+                    <i className="bi bi-trash"></i>
+                </button>
               </li>
             ))}
           </ul>
