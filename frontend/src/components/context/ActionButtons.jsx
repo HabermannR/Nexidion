@@ -19,7 +19,6 @@ import UpdatePreviewModal from './UpdatePreviewModal';
 export default function ActionButtons({ onNodeUpdate }) {
   const { selectedNodeIds, getContextContent, treeData, enterPrintPreview, activeVault } = useAppContext();
   
-  // State für Ladezustände und Feedback
   const [isLoading, setIsLoading] = useState({
     copyContent: false,
     copyTree: false,
@@ -27,7 +26,7 @@ export default function ActionButtons({ onNodeUpdate }) {
     exportMd: false,
     print: false,
   });
-  const [feedback, setFeedback] = useState('');
+  const [feedback, setFeedback] = useState({ message: '', type: 'success' }); // Erweitert für Fehler/Erfolg
   
   // State für den AI-Update-Prozess
   const [updateTargetNodeId, setUpdateTargetNodeId] = useState('');
@@ -40,60 +39,63 @@ export default function ActionButtons({ onNodeUpdate }) {
   const hasTree = treeData && treeData.length > 0;
 
   // Hilfsfunktion für Feedback-Nachrichten
-  const showFeedback = useCallback((message) => {
-    setFeedback(message);
-    setTimeout(() => setFeedback(''), 3000);
+  const showFeedback = useCallback((message, type = 'success') => {
+    setFeedback({ message, type });
+    setTimeout(() => setFeedback({ message: '', type: 'success' }), 4000);
   }, []);
 
-  // ===================================================================
-  // KORRIGIERTE ACTION HANDLER
-  // Wir definieren jeden Handler explizit, um async/await korrekt zu steuern.
-  // ===================================================================
-
-  const handleCopyContent = useCallback(() => {
+  // KORREKTUR: Der Handler muss async sein, um await zu verwenden
+  const handleCopyContent = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, copyContent: true }));
     try {
-      copyContextContent(getContextContent);
-      showFeedback('Inhalt in die Zwischenablage kopiert!');
+      // KORREKTUR: Wir warten auf das Ergebnis der asynchronen Funktion
+      await copyContextContent(getContextContent);
+      showFeedback('Inhalt erfolgreich kopiert!');
     } catch (error) {
       console.error("Fehler beim Kopieren des Inhalts:", error);
-      showFeedback('Kopieren fehlgeschlagen.');
+      // KORREKTUR: Wir zeigen die spezifische Fehlermeldung aus dem Service an
+      showFeedback(error.message, 'error'); 
     } finally {
+      // Das Timeout hier ist gut, um ein kurzes "Aufblitzen" zu verhindern
       setTimeout(() => setIsLoading(prev => ({ ...prev, copyContent: false })), 200);
     }
   }, [getContextContent, showFeedback]);
 
-  const handleCopyTree = useCallback(() => {
+  // KORREKTUR: Auch dieser Handler muss async sein
+  const handleCopyTree = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, copyTree: true }));
     try {
-      copyTreeStructure(treeData);
-      showFeedback('Baumstruktur in die Zwischenablage kopiert!');
+      // KORREKTUR: Wir warten auf das Ergebnis der asynchronen Funktion
+      await copyTreeStructure(treeData);
+      showFeedback('Baumstruktur erfolgreich kopiert!');
     } catch (error) {
       console.error("Fehler beim Kopieren des Baums:", error);
-      showFeedback('Kopieren fehlgeschlagen.');
+      // KORREKTUR: Wir zeigen die spezifische Fehlermeldung aus dem Service an
+      showFeedback(error.message, 'error');
     } finally {
         setTimeout(() => setIsLoading(prev => ({ ...prev, copyTree: false })), 200);
     }
   }, [treeData, showFeedback]);
   
-  // KORRIGIERT: Expliziter async Handler für EPUB-Export
+  // Die anderen Handler sind bereits korrekt als async deklariert.
+  // Wir können aber auch hier die Fehlerbehandlung verbessern.
   const handleExportEpub = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, exportEpub: true }));
     try {
-      // Übergebe hier das activeVault-Objekt
       const success = await exportSelectionAsEpub(treeData, selectedNodeIds, activeVault);
       if (success) {
         showFeedback('EPUB-Export gestartet!');
       } else if (selectedNodeIds.size > 0) {
-        showFeedback('Export fehlgeschlagen oder abgebrochen.');
+        showFeedback('Export fehlgeschlagen oder abgebrochen.', 'error');
       }
     } catch (error) {
       console.error("Fehler beim EPUB-Export:", error);
-      showFeedback('EPUB-Export ist fehlgeschlagen.');
+      // KORREKTUR: Auch hier die spezifische Fehlermeldung anzeigen
+      showFeedback(error.message || 'EPUB-Export ist fehlgeschlagen.', 'error');
     } finally {
       setIsLoading(prev => ({ ...prev, exportEpub: false }));
     }
-  }, [treeData, selectedNodeIds, activeVault, showFeedback]); // activeVault als Abhängigkeit hinzufügen
+  }, [treeData, selectedNodeIds, activeVault, showFeedback]);
 
   // KORRIGIERT: Expliziter async Handler für Markdown-Export
   const handleExportMd = useCallback(async () => {
@@ -312,7 +314,11 @@ const handleAcceptUpdate = async () => {
 
       </div>
 
-      {feedback && <div className="text-success small mt-2 text-center">{feedback}</div>}
+      {feedback.message && (
+        <div className={`small mt-2 text-center ${feedback.type === 'error' ? 'text-danger' : 'text-success'}`}>
+          {feedback.message}
+        </div>
+      )}
 
       <UpdatePreviewModal
         show={isUpdateModalOpen}

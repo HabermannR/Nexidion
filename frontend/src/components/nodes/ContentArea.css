@@ -3,10 +3,33 @@
 .d2h-code-side-linenumber {
   display: none !important;
 }
-/*
- * Diese Regel greift NUR auf mobilen Geräten (Bildschirme, die schmaler als 992px sind)
- * und verkleinert die Schriftgröße im Hauptinhaltsbereich.
- */
+
+.markdown-content table {
+  width: 100%;                  /* Lässt die Tabelle die volle Breite einnehmen */
+  border-collapse: collapse;      /* Sorgt für saubere, einfache Rahmen statt doppelter */
+  margin-top: 1em;                /* Etwas Abstand nach oben */
+  margin-bottom: 1em;             /* Etwas Abstand nach unten */
+  border: 2px solid #ddd;         /* Ein leichter äußerer Rahmen für die ganze Tabelle */
+}
+
+/* Stile für Tabellen-Header (th) und -Zellen (td) */
+.markdown-content th,
+.markdown-content td {
+  border: 2px solid #ddd;         /* Rahmen für jede Zelle */
+  padding: 8px;                   /* Innenabstand, damit der Text nicht am Rahmen klebt */
+  text-align: left;               /* Text linksbündig ausrichten */
+}
+
+/* Spezielle Stile nur für die Header-Zeile (th) */
+.markdown-content th {
+  background-color: #e5e5e5;      /* Ein leichter Grauton für den Header-Hintergrund */
+  font-weight: bold;              /* Fettschrift für die Überschriften */
+}
+
+.markdown-content tbody tr:nth-child(even) {
+  background-color: #f9f9f9; /* Ein sehr helles Grau, das nicht stört */
+}
+
  .internal-link {
   /* Eine klassische Link-Farbe. Wähle eine, die zu deinem Design passt. */
   color: #007bff; /* Ein modernes, zugängliches Blau (Bootstrap's Standard) */

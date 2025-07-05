@@ -15,7 +15,6 @@ export const AppProvider = ({ children }) => {
   const [isPrintPreviewActive, setIsPrintPreviewActive] = useState(false);
   const [printPreviewData, setPrintPreviewData] = useState({ nodes: [], toc: [] });
   const [collapsedNodes, setCollapsedNodes] = useState(new Set());
-  const [chatInputValue, setChatInputValue] = useState('');
   const [vaults, setVaults] = useState([]);
   const [activeVault, setActiveVault] = useState(null);
   const [isLoadingVaults, setIsLoadingVaults] = useState(true);
@@ -164,8 +163,6 @@ const getContextContent = useCallback(async () => {
     exitPrintPreview,
     collapsedNodes,
     toggleNodeCollapse,
-	chatInputValue,
-    setChatInputValue,
 
     // ========================================================================
     // VAULT-FIX: Neue Werte und Funktionen hinzufügen
@@ -188,7 +185,6 @@ const getContextContent = useCallback(async () => {
       exitPrintPreview,
       collapsedNodes,
       toggleNodeCollapse,
-	  chatInputValue,
 
       // VAULT-FIX: Neue Abhängigkeiten
       vaults,

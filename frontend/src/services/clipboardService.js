@@ -6,29 +6,38 @@
  * @returns {Promise<boolean>} - True bei Erfolg, false bei Fehler.
  */
 export const copyContextContent = async (getContextContent) => {
+  if (!navigator.clipboard) {
+    // Wirf einen Fehler mit einer klaren Nachricht
+    throw new Error("Kopieren in die Zwischenablage ist nur in einem sicheren Kontext (HTTPS) möglich.");
+  }
   try {
     const { content } = await getContextContent();
     if (content) {
       await navigator.clipboard.writeText(content);
-      return true;
+      // Kein "return true" mehr nötig, Erfolg wird durch das Ausbleiben eines Fehlers signalisiert.
     }
-    return false; // Nichts zu kopieren
   } catch (error) {
     console.error("Failed to copy content:", error);
-    return false;
+    // Wirf den ursprünglichen Fehler weiter oder einen neuen, benutzerfreundlicheren.
+    throw new Error("Inhalt konnte nicht in die Zwischenablage kopiert werden.");
   }
 };
 
 /**
- * Formatiert die Baumstruktur wie der 'tree'-Befehl und kopiert sie ins Clipboard.
- * Geht von einem einzigen Wurzelknoten in treeData aus.
- * @param {Array} treeData - Die Baumdatenstruktur mit einem einzigen Wurzelknoten.
- * @returns {Promise<boolean>} - True bei Erfolg, false bei Fehler.
+ * Formatiert die Baumstruktur und kopiert sie ins Clipboard.
+ * @param {Array} treeData - Die Baumdatenstruktur.
+ * @throws {Error} - Wirft einen Fehler, wenn die API nicht verfügbar ist oder das Kopieren fehlschlägt.
  */
 export const copyTreeStructure = async (treeData) => {
-  // Stellt sicher, dass treeData ein Array mit mindestens einem Element ist.
-  if (!treeData || treeData.length === 0) {
-    return false;
+  // PRÜFUNG 1: API-Verfügbarkeit
+  if (!navigator.clipboard) {
+    throw new Error("Kopieren ist nur in einem sicheren Kontext (HTTPS oder localhost) möglich.");
+  }
+
+  // PRÜFUNG 2: Gültige Daten
+  if (!treeData || treeData.length === 0 || !treeData[0]) {
+    // Dies ist eher ein interner Fehler, aber wir fangen ihn ab.
+    throw new Error("Keine Daten zum Kopieren vorhanden.");
   }
 
   // Rekursive Hilfsfunktion zur Erstellung der Baumstruktur
@@ -59,18 +68,15 @@ export const copyTreeStructure = async (treeData) => {
   if (rootNode.children && rootNode.children.length > 0) {
     rootNode.children.forEach((child, index) => {
       const isLastChild = index === rootNode.children.length - 1;
-      // Der initiale Präfix für die Kinder der ersten Ebene ist leer.
-      // Die Hilfsfunktion fügt dann den ersten Connector hinzu.
       formattedTree += formatNodeRecursive(child, '', isLastChild);
     });
   }
 
   try {
-    // .trim() entfernt den letzten überflüssigen Zeilenumbruch.
     await navigator.clipboard.writeText(formattedTree.trim());
-    return true;
   } catch (error) {
     console.error("Failed to copy tree:", error);
-    return false;
+    // Wirf einen neuen, für den Benutzer verständlichen Fehler.
+    throw new Error("Die Baumstruktur konnte nicht in die Zwischenablage kopiert werden.");
   }
 };

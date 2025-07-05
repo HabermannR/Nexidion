@@ -176,19 +176,34 @@ def get_all_nodes_as_list(vault_id: int) -> list[dict]:
     return [node.to_dict(include_content=True) for node in nodes]
 
 
-def get_nodes_by_title(title: str, vault_id: int) -> list[dict]:
-    """Fetches nodes by title within a specific vault, sorted by relevance."""
+def get_node_by_title(title: str, vault_id: int) -> dict | None:
+    """
+    Findet den relevantesten Node, der zum Suchtitel passt, innerhalb eines Vaults.
+    Gibt ein einzelnes Node-Dictionary oder None zurück.
+
+    Die Logik priorisiert exakte (case-insensitive) Übereinstimmungen.
+    Diese Funktion wird vom intelligenten Endpunkt /api/nodes/<identifier> verwendet.
+    """
     if not title:
-        return []
+        return None
+
+    # Die Suchlogik bleibt exakt dieselbe
     search_term = f"%{title}%"
     relevance = case((Node.title.ilike(title), 0), else_=1)
-    nodes = (
+
+    # DIE EINZIGE ÄNDERUNG IST HIER: .all() wird zu .first()
+    node = (
         Node.query
         .filter(Node.vault_id == vault_id, Node.title.ilike(search_term))
         .order_by(relevance, Node.title)
-        .all()
+        .first()  # <-- Holt nur das oberste, relevanteste Ergebnis
     )
-    return [node.to_dict(include_content=False) for node in nodes]
+
+    if not node:
+        return None
+
+    # Wichtig: Den Inhalt für die direkte Anzeige mitliefern.
+    return node.to_dict(include_content=True)
 
 
 def get_node_by_id(node_id: str, vault_id: int) -> dict | None:

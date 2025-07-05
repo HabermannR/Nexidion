@@ -6,6 +6,30 @@ import { useAppContext } from '../../context/AppContext';
 import ChatHistoryPanel from './ChatHistoryPanel'; 
 import './Chat.css';
 
+// KORREKTUR 1: Neue, memo-isierte Komponente zur Leistungssteigerung
+// Diese Komponente wird nur neu gerendert, wenn sich das `message`-Objekt ändert.
+// Sie löst auch das Farbproblem (Korrektur 2).
+const ChatMessage = React.memo(({ message }) => {
+  const isUser = message.role === 'user';
+
+  return (
+    <div className={`message ${message.role}`}>
+      <strong>{isUser ? 'You' : 'Assistant'}:</strong>
+      {/* KORREKTUR 2: Wendet die richtige CSS-Klasse basierend auf der Rolle an */}
+      <div className={isUser ? 'user-message-content' : 'markdown-content'}>
+        {isUser ? (
+          // Benutzernachrichten brauchen i.d.R. kein Markdown, was das Rendering beschleunigt
+          message.content
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
+        )}
+      </div>
+    </div>
+  );
+});
+
 const Chat = () => {
   // --- STATE MANAGEMENT ---
   const [chatHistory, setChatHistory] = useState(() => {
@@ -29,11 +53,24 @@ const Chat = () => {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
-  const { selectedNodeIds, chatInputValue, setChatInputValue, activeVault } = useAppContext();
+    // KORREKTUR: Hol diese nicht mehr aus dem Context...
+  // const { selectedNodeIds, chatInputValue, setChatInputValue, activeVault } = useAppContext();
+  
+  // ...sondern hole nur, was du wirklich global brauchst
+  const { selectedNodeIds, activeVault } = useAppContext(); 
+
+  // ...und deklariere den Input-State LOKAL!
+   const [chatInputValue, setChatInputValue] = useState(
+    () => sessionStorage.getItem('chatInputDraft') || ''
+  );
   const chatDisplayRef = useRef(null);
   const previousVaultIdRef = useRef();
 
   // --- EFFECTS ---
+  
+  useEffect(() => {
+    sessionStorage.setItem('chatInputDraft', chatInputValue);
+  }, [chatInputValue]);
   
   // Scroll on new messages
   useEffect(() => {
@@ -68,10 +105,10 @@ const Chat = () => {
       console.log('Vault has changed. Clearing chat state.');
       setChatHistory([]);
       setSessionId(null);
-      setChatInputValue('');
+      setChatInputValue(''); // Dies löscht den lokalen State UND den sessionStorage-Draft (wegen des anderen useEffects)
     }
     previousVaultIdRef.current = currentVaultId;
-  }, [activeVault, setChatInputValue]);
+  }, [activeVault]);
 
   // --- HANDLERS ---
   const handleNewChat = () => {
@@ -189,6 +226,8 @@ const handleChatSubmit = async (event) => {
           setChatHistory(prev => {
             const newHistory = [...prev];
             const lastMessage = newHistory[newHistory.length - 1];
+            // Wichtig: Erstelle ein NEUES Objekt für die letzte Nachricht,
+            // damit React.memo die Änderung erkennt.
             newHistory[newHistory.length - 1] = {
               ...lastMessage,
               content: lastMessage.content + chunk
@@ -265,21 +304,15 @@ const handleChatSubmit = async (event) => {
       </div>
 
       {/* 2. Chat display area (Spinner logic removed for simplicity) */}
-      <div className="flex-grow-1 p-3 overflow-auto" ref={chatDisplayRef}>
+       <div className="flex-grow-1 p-3 overflow-auto" ref={chatDisplayRef}>
         {chatHistory.length === 0 && (
           <div className="message assistant">
             <div className="markdown-content">Select nodes and ask a question to start a chat!</div>
           </div>
         )}
+        {/* KORREKTUR 1: Nutze die neue, performante Komponente */}
         {chatHistory.map((message, index) => (
-          <div key={index} className={`message ${message.role}`}>
-            <strong>{message.role === 'user' ? 'You' : 'Assistant'}:</strong>
-            <div className="markdown-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content}
-              </ReactMarkdown>
-            </div>
-          </div>
+          <ChatMessage key={index} message={message} />
         ))}
       </div>
 
@@ -288,7 +321,7 @@ const handleChatSubmit = async (event) => {
         <textarea
           value={chatInputValue}
           onChange={(e) => setChatInputValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSubmit(e); } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); handleChatSubmit(e); } }}
           placeholder="Ask about your selected context..."
           className="form-control"
           disabled={isLoading}

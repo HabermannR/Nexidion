@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import shutil
+import uuid
 from datetime import datetime
 
 from flask import Flask, request, jsonify, send_from_directory, Response
@@ -23,25 +24,26 @@ import database
 
 migrate = Migrate()
 
-#To Run Locally:
-#Terminal 1 (Backend): Navigate to your backend folder and run python app.py.
-#Terminal 2 (Frontend): Navigate to your frontend folder and run npm start (or npm run dev).
-#npm run dev -- --host
-#npm run build
-#git status --ignored
 
-#todo
-#async für Update
-#Konzept: Sie erstellen einen AbortController vor dem fetch, übergeben sein signal an die fetch-Optionen und rufen .abort() in einem useEffect-Cleanup auf, wenn die Komponente verlassen wird oder ein neuer Request startet. Das ist fortgeschritten, aber ein riesiger Gewinn für die Stabilität.
-#UI-Verbesserung für Streaming
-#Anstatt den Text einfach nur erscheinen zu lassen, könnten Sie einen kleinen blinkenden Cursor (wie bei einer Schreibmaschine) am Ende der Assistant-Antwort anzeigen, solange der Stream aktiv ist. Das macht visuell sofort klar, dass die Antwort noch nicht fertig ist.
-#update node geht nicht vom handy, jetzt anderer Fehler!
-#local structured
-#bubble up? pro parent die childs nehmen um den parent zu verbessern und dann hoch bubblen
-#unlock knowledge base
-#rebrand?
-#special page automatisieren
-#Die Möglichkeit, einer Chat-Session einen besseren Titel zu geben (vielleicht vom LLM generiert).
+# To Run Locally:
+# Terminal 1 (Backend): Navigate to your backend folder and run python app.py.
+# Terminal 2 (Frontend): Navigate to your frontend folder and run npm start (or npm run dev).
+# npm run dev -- --host
+# npm run build
+# git status --ignored
+
+# todo
+# async für Update
+# Konzept: Sie erstellen einen AbortController vor dem fetch, übergeben sein signal an die fetch-Optionen und rufen .abort() in einem useEffect-Cleanup auf, wenn die Komponente verlassen wird oder ein neuer Request startet. Das ist fortgeschritten, aber ein riesiger Gewinn für die Stabilität.
+# UI-Verbesserung für Streaming
+# Anstatt den Text einfach nur erscheinen zu lassen, könnten Sie einen kleinen blinkenden Cursor (wie bei einer Schreibmaschine) am Ende der Assistant-Antwort anzeigen, solange der Stream aktiv ist. Das macht visuell sofort klar, dass die Antwort noch nicht fertig ist.
+# update node geht nicht vom handy, jetzt anderer Fehler!
+# local structured
+# bubble up? pro parent die childs nehmen um den parent zu verbessern und dann hoch bubblen
+# unlock knowledge base
+# rebrand?
+# special page automatisieren
+# Die Möglichkeit, einer Chat-Session einen besseren Titel zu geben (vielleicht vom LLM generiert).
 
 def create_app(config_class=Config):
     """Application Factory Pattern"""
@@ -57,7 +59,7 @@ def create_app(config_class=Config):
         # The path '../frontend/dist' assumes your 'backend' and 'frontend' folders are siblings.
         # 'dist' is the default build folder for Vite. If you use Create React App, change it to 'build'.
         print("----> Running in PRODUCTION mode")
-        #app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
+        # app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
         app = Flask(__name__)
         # CORS is not needed in production because the API and frontend are served from the same domain.
 
@@ -76,7 +78,7 @@ def create_app(config_class=Config):
             f"http://{local_ip}:5173"  # For accessing from your phone
         ]
         CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
-        
+
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     SECURE_IMAGE_FOLDER = os.path.join(BASE_DIR, '..', 'secure_images')
     app.config.from_object(config_class)
@@ -101,6 +103,14 @@ def create_app(config_class=Config):
         if not vault_id:
             raise ValueError("A 'vault_id' query parameter is required and must be an integer.")
         return vault_id
+
+    def is_valid_uuid(val):
+        """Prüft, ob ein String eine gültige UUID ist."""
+        try:
+            uuid.UUID(str(val))
+            return True
+        except ValueError:
+            return False
 
     # ==============================================================================
     # AUTHENTICATION API
@@ -211,16 +221,40 @@ def create_app(config_class=Config):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
-    @app.route('/api/nodes/<string:node_id>', methods=['GET'])
+
+    @app.route('/api/nodes/<string:identifier>', methods=['GET'])
     @jwt_required()
-    def get_node(node_id):
+    def get_nodes(identifier):
+        """
+        Intelligenter Endpunkt, der einen Node findet, egal ob eine ID oder ein Titel übergeben wird.
+
+        - Wenn der 'identifier' eine gültige UUID ist, wird nach der Node-ID gesucht.
+        - Wenn nicht, wird er als Titel behandelt und nach dem Node-Titel gesucht.
+        """
         try:
             vault_id = _get_vault_id_from_request()
-            node = database.get_node_by_id(node_id, vault_id=vault_id)
+
+            node = None
+
+            # Logik zur Unterscheidung zwischen ID und Titel
+            if is_valid_uuid(identifier):
+                # Es ist eine ID, suche direkt in der Datenbank.
+                node = database.get_node_by_id(identifier, vault_id=vault_id)
+            else:
+                # Es ist keine ID, also muss es ein Titel sein.
+                # Wichtig: Die Datenbankfunktion muss jetzt ein einzelnes Objekt zurückgeben!
+                node = database.get_node_by_title(identifier, vault_id=vault_id)
+
             if node is None:
-                return jsonify({"error": "Node not found in the specified vault"}), 404
+                # Egal ob nach ID oder Titel gesucht wurde, wenn nichts gefunden wurde -> 404
+                return jsonify({"error": f"Node with identifier '{identifier}' not found in the specified vault"}), 404
+
+            # Wenn gefunden, gib das Node-Objekt zurück.
+            # Die DB-Funktionen sollten bereits ein Dictionary zurückgeben.
             return jsonify(node)
+
         except ValueError as e:
+            # Fängt Fehler wie eine fehlende vault_id ab.
             return jsonify({"error": str(e)}), 400
 
     @app.route('/api/nodes', methods=['POST'])
@@ -461,7 +495,6 @@ def create_app(config_class=Config):
 
         return Response(stream_with_context(), mimetype='text/event-stream')
 
-
     # ==============================================================================
     # FILE SERVING & CLI
     # ==============================================================================
@@ -538,7 +571,6 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"🔥 An error occurred during backup: {e}")
 
-
     @app.cli.command('export-json')
     @click.option('--vault-id', type=int, help='The ID of the vault to export.')
     @click.option('--out', default=None, help='Output JSON file name. Defaults to vault_name.json.')
@@ -605,7 +637,6 @@ def create_app(config_class=Config):
         perform_export()
 
     return app
-
 
 
 # --- App Ausführung (For local development ONLY) ---

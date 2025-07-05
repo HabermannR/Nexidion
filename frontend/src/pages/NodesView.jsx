@@ -179,49 +179,39 @@ export default function NodesView() {
     // ========================================================================
     const handleNodeClick = (node) => navigate(`/nodes/${node.id}`);
 	
-	// In your NodesView component, add this function:
 	const handleLinkClick = async (linkText) => {
-        // VAULT-FIX: Suche muss auf den aktuellen Vault beschränkt sein
-        if (!activeVault) return;
-		try {
-            const response = await api.get('/api/nodes', { 
-                params: { title: linkText.trim(), vault_id: activeVault.id } 
-            });
-			const results = response.data;
-			if (Array.isArray(results) && results.length > 0) {
-				const nodeData = results[0];
-				if (nodeData && nodeData.id) {
-					navigate(`/nodes/${nodeData.id}`);
-				} else {
-					setError(`Found a node for "${linkText}" but it has an invalid format.`);
-				}
-			} else {
-				setError(`Link target "${linkText}" does not exist.`);
-			}
-		} catch (error) {
-			console.error('Error fetching node by title:', error);
-			setError(`Could not follow link to "${linkText}". An error occurred.`);
-		}
-	};
+    if (!activeVault) return;
+    try {
+        // Wir rufen den neuen, intelligenten Endpunkt auf.
+        // Der Titel wird direkt in die URL eingefügt, genau wie eine ID.
+        const response = await api.get(`/api/nodes/${encodeURIComponent(linkText.trim())}`, { 
+            params: { 
+                vault_id: activeVault.id 
+            } 
+        });
 
-    const handleResolveAndNavigate = async (linkTitle) => {
-        try {
-            // API-Endpunkt, der nach einem Node anhand des Titels sucht
-            const response = await api.get('/api/nodes', { params: { title: linkTitle.trim() } });
-            const results = response.data;
-            if (Array.isArray(results) && results.length > 0) {
-                const nodeData = results[0];
-                if (nodeData && nodeData.id) {
-                    navigate(`/nodes/${nodeData.id}`);
-                }
-            } else {
-                setError(`Link target "${linkTitle}" does not exist.`);
-            }
-        } catch (error) {
-            console.error('Error fetching node by title:', error);
-            setError(`Could not follow link to "${linkTitle}". An error occurred.`);
+        // Die Antwort ist jetzt direkt das Node-Objekt, keine Liste mehr.
+        const nodeData = response.data;
+
+        if (nodeData && nodeData.id) {
+            // Da wir schon das volle Node-Objekt haben, können wir direkt dorthin navigieren.
+            // React Router wird die Seite neu laden und die Daten aus der URL (die ID) fetchen.
+            navigate(`/nodes/${nodeData.id}`);
+            setError(null);
+        } else {
+            // Dies sollte nicht mehr passieren, da das Backend 404 zurückgibt, was der catch-Block fängt.
+            setError(`Fehler: Node für "${linkText}" hat ein ungültiges Format.`);
         }
-    };
+    } catch (error) {
+        if (error.response?.status === 404) {
+            setError(`Fehler: Der Link-Ziel "${linkText}" existiert nicht.`);
+        } else {
+            console.error('Error fetching node by title:', error);
+            setError(`Konnte dem Link zu "${linkText}" nicht folgen. Ein Serverfehler ist aufgetreten.`);
+        }
+    }
+};
+
 
     const handleAddNode = async (parentNodeId) => {
         // VAULT-FIX: vault_id im Payload mitsenden
@@ -458,7 +448,7 @@ export default function NodesView() {
                         node={currentNode}
                         onSave={handleSave}
                         onRename={handleRename}
-                        onLinkClick={handleResolveAndNavigate}
+                        onLinkClick={handleLinkClick}
                         successMessage={successMessage}
 
                         // Props zur Steuerung von ContentArea

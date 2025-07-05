@@ -74,7 +74,13 @@ export default function ContentArea({
         h1: ({ node, ...props }) => <h1 {...props}>{renderTextWithInternalLinks(props.children)}</h1>,
         h2: ({ node, ...props }) => <h2 {...props}>{renderTextWithInternalLinks(props.children)}</h2>,
         h3: ({ node, ...props }) => <h3 {...props}>{renderTextWithInternalLinks(props.children)}</h3>,
-        img: ResizableImage, 
+		h4: ({ node, ...props }) => <h4 {...props}>{renderTextWithInternalLinks(props.children)}</h4>,
+		h5: ({ node, ...props }) => <h5 {...props}>{renderTextWithInternalLinks(props.children)}</h5>,
+		h6: ({ node, ...props }) => <h6 {...props}>{renderTextWithInternalLinks(props.children)}</h6>,
+        td: ({ node, ...props }) => <td {...props}>{renderTextWithInternalLinks(props.children)}</td>,
+		th: ({ node, ...props }) => <th {...props}>{renderTextWithInternalLinks(props.children)}</th>,
+
+		img: ResizableImage,  
     };
 
     // Fallback, wenn kein Node ausgewählt ist.
@@ -95,7 +101,13 @@ export default function ContentArea({
             <ContentHeader
                 title={node.title}
                 isEditing={isEditing}
-                onEditClick={() => onSetIsEditing(true)}
+                onEditClick={() => {
+					// Den Editor mit dem aktuell angezeigten Inhalt (kann auch eine alte Version sein) initialisieren.
+					onContentChange(contentToDisplay); 
+					
+					// Dann in den Bearbeitungsmodus wechseln.
+					onSetIsEditing(true);
+				}}
                 onRenameClick={() => {
                     const newTitle = prompt("Neuen Titel eingeben für:", node.title);
                     if (newTitle && newTitle.trim() && newTitle.trim() !== node.title) {
