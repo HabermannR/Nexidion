@@ -9,8 +9,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
-from werkzeug.security import check_password_hash
-from flask_jwt_extended import create_access_token, jwt_required, JWTManager
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
 from flask_migrate import Migrate
 import click
 
@@ -18,9 +17,12 @@ import click
 load_dotenv()
 
 from config import Config
-from models import db
+from models import db, User
 import chatservice
 import database
+
+#import time
+#from flask import g
 
 migrate = Migrate()
 
@@ -32,50 +34,23 @@ migrate = Migrate()
 # npm run build
 # git status --ignored
 
-# todo
-# async für Update
-# Konzept: Sie erstellen einen AbortController vor dem fetch, übergeben sein signal an die fetch-Optionen und rufen .abort() in einem useEffect-Cleanup auf, wenn die Komponente verlassen wird oder ein neuer Request startet. Das ist fortgeschritten, aber ein riesiger Gewinn für die Stabilität.
-# UI-Verbesserung für Streaming
-# Anstatt den Text einfach nur erscheinen zu lassen, könnten Sie einen kleinen blinkenden Cursor (wie bei einer Schreibmaschine) am Ende der Assistant-Antwort anzeigen, solange der Stream aktiv ist. Das macht visuell sofort klar, dass die Antwort noch nicht fertig ist.
-# update node geht nicht vom handy, jetzt anderer Fehler!
-# local structured
-# bubble up? pro parent die childs nehmen um den parent zu verbessern und dann hoch bubblen
-# unlock knowledge base
-# rebrand?
-# special page automatisieren
-# Die Möglichkeit, einer Chat-Session einen besseren Titel zu geben (vielleicht vom LLM generiert).
-
 def create_app(config_class=Config):
     """Application Factory Pattern"""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    # Detect the environment. We'll set APP_ENV to 'production' on PythonAnywhere.
-    # If it's not set, we default to 'development'.
     APP_ENV = os.getenv('APP_ENV', 'development')
 
     if APP_ENV == 'production':
-        # PRODUCTION MODE (PythonAnywhere)
-        # In production, Flask serves the static React files.
-        # The path '../frontend/dist' assumes your 'backend' and 'frontend' folders are siblings.
-        # 'dist' is the default build folder for Vite. If you use Create React App, change it to 'build'.
         print("----> Running in PRODUCTION mode")
-        # app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
         app = Flask(__name__)
-        # CORS is not needed in production because the API and frontend are served from the same domain.
-
     else:
-        # DEVELOPMENT MODE (Your Local PC)
-        # In development, Flask ONLY acts as an API. The React dev server serves the frontend.
         print("----> Running in DEVELOPMENT mode")
         app = Flask(__name__)
-
-        # Get your PC's local IP address (replace with your actual IP)
-        local_ip = "192.168.2.59"
-
-        # We need CORS to allow requests from the React dev server on your PC and your phone.
+        local_ip = os.getenv("LOCAL_IP", "192.168.2.59")
         allowed_origins = [
-            "http://localhost:5173",  # For local development on your PC
-            f"http://{local_ip}:5173"  # For accessing from your phone
+            "http://localhost:5173",
+            "http://localhost:3000",
+            f"http://{local_ip}:5173"
         ]
         CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
@@ -83,29 +58,37 @@ def create_app(config_class=Config):
     SECURE_IMAGE_FOLDER = os.path.join(BASE_DIR, '..', 'secure_images')
     app.config.from_object(config_class)
 
-    if not all([app.config['JWT_SECRET_KEY'], app.config['ADMIN_USERNAME'], app.config['ADMIN_PASSWORD_HASH']]):
-        raise ValueError("JWT_SECRET_KEY, ADMIN_USERNAME, and ADMIN_PASSWORD_HASH must be set.")
+    if not app.config['JWT_SECRET_KEY']:
+        raise ValueError("JWT_SECRET_KEY must be set in your .env file.")
 
     db.init_app(app)
     migrate.init_app(app, db)
     JWTManager(app)
 
+    #@app.before_request
+    #def before_request_time():
+    #    g.start_time = time.time()
+
+    #@app.after_request
+    #def after_request_time(response):
+    #    if 'start_time' in g:
+    #        duration = (time.time() - g.start_time) * 1000
+    #        logging.info(f"Request an {request.path} mit {request.method} dauerte {duration:.2f}ms")
+    #    return response
+
     # ==============================================================================
     # HELPER FUNCTIONS
     # ==============================================================================
-
     def _get_vault_id_from_request():
-        """
-        Helper to get and validate vault_id from request query arguments for GET requests.
-        Raises ValueError if not found or invalid.
-        """
         vault_id = request.args.get('vault_id', type=int)
         if not vault_id:
-            raise ValueError("A 'vault_id' query parameter is required and must be an integer.")
+            if request.is_json and 'vault_id' in request.json:
+                vault_id = request.json.get('vault_id', type=int)
+        if not vault_id:
+            raise ValueError("A 'vault_id' parameter is required (in query string or JSON body).")
         return vault_id
 
     def is_valid_uuid(val):
-        """Prüft, ob ein String eine gültige UUID ist."""
         try:
             uuid.UUID(str(val))
             return True
@@ -115,165 +98,201 @@ def create_app(config_class=Config):
     # ==============================================================================
     # AUTHENTICATION API
     # ==============================================================================
-
     @app.route('/api/login', methods=['POST'])
     def login():
         username = request.json.get('username', None)
         password = request.json.get('password', None)
-        if username == app.config['ADMIN_USERNAME'] and check_password_hash(app.config['ADMIN_PASSWORD_HASH'],
-                                                                            password):
-            access_token = create_access_token(identity=username)
-            return jsonify(access_token=access_token)
+
+        if not username or not password:
+            return jsonify({"msg": "Username and password are required"}), 400
+
+        user = User.query.filter_by(username=username, user_type='human').first()
+        if user and user.check_password(password):
+            identity_as_string = str(user.id)
+            access_token = create_access_token(identity=identity_as_string)
+            return jsonify(access_token=access_token, user=user.to_dict())
+
         return jsonify({"msg": "Bad username or password"}), 401
+
+    @app.route('/api/auth/me', methods=['GET'])
+    @jwt_required()
+    def get_current_user_profile():
+        current_user_id = int(get_jwt_identity())
+        user = User.query.get(current_user_id)
+        if user:
+            return jsonify(user=user.to_dict()), 200
+        return jsonify({"msg": "User not found"}), 404
 
     # ==============================================================================
     # VAULT API
     # ==============================================================================
-
     @app.route('/api/vaults', methods=['GET'])
     @jwt_required()
     def list_vaults():
-        vaults = database.get_all_vaults()
+        current_user_id = int(get_jwt_identity())
+        vaults = database.get_vaults_for_user(user_id=current_user_id)
         return jsonify([v.to_dict() for v in vaults])
 
     @app.route('/api/vaults', methods=['POST'])
     @jwt_required()
     def create_vault():
+        current_user_id = int(get_jwt_identity())
         vault_name = request.json.get('name')
         if not vault_name:
             return jsonify({"error": "Vault name is required"}), 400
         try:
-            new_vault = database.create_vault_with_root_node(name=vault_name)
+            # ## KORRIGIERT ##: owner_id wird jetzt übergeben
+            new_vault = database.create_vault_with_root_node(name=vault_name, owner_id=current_user_id)
             return jsonify(new_vault.to_dict()), 201
         except ValueError as e:
-            return jsonify({"error": str(e)}), 409  # Conflict
+            return jsonify({"error": str(e)}), 409
 
     @app.route('/api/vaults/<int:vault_id>', methods=['PUT'])
     @jwt_required()
     def rename_vault(vault_id):
+        current_user_id = int(get_jwt_identity())
         new_name = request.json.get('name')
         if not new_name:
             return jsonify({"error": "New name is required"}), 400
         try:
-            updated_vault = database.rename_vault(vault_id, new_name)
+            updated_vault = database.rename_vault(vault_id, new_name, user_id=current_user_id)
             return jsonify(updated_vault.to_dict())
         except ValueError as e:
-            return jsonify({"error": str(e)}), 409
+            return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/vaults/<int:vault_id>', methods=['DELETE'])
     @jwt_required()
     def delete_vault(vault_id):
+        current_user_id = int(get_jwt_identity())
         try:
-            database.delete_vault(vault_id)
+            database.delete_vault(vault_id, user_id=current_user_id)
             return jsonify({"message": f"Vault with ID {vault_id} deleted."}), 200
         except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+            return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     # ==============================================================================
     # NODE API
     # ==============================================================================
-
     @app.route('/api/nodes/tree', methods=['GET'])
     @jwt_required()
     def get_nodes_tree():
+        current_user_id = int(get_jwt_identity())
         try:
             vault_id = _get_vault_id_from_request()
-            tree = database.get_all_nodes_as_tree(vault_id=vault_id)
+            tree = database.get_all_nodes_as_tree(vault_id=vault_id, user_id=current_user_id)
             return jsonify(tree)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+
+    ## WIEDERHERGESTELLT und für Multi-User angepasst ##
+    @app.route('/api/nodes', methods=['GET'])
+    @jwt_required()
+    def get_nodes_by_title_or_all():
+        current_user_id = int(get_jwt_identity())
+        try:
+            vault_id = _get_vault_id_from_request()
+            title_to_find = request.args.get('title')
+
+            # HINWEIS: Ihre alte API hat hier eine Liste zurückgegeben.
+            # Die neue `database.py` hat `get_node_by_title`, das nur EIN Ergebnis liefert.
+            # Wir behalten die Logik bei, die ein einzelnes, bestes Ergebnis liefert.
+            # Wenn Sie eine Liste von Suchergebnissen benötigen, müsste eine neue DB-Funktion her.
+            if title_to_find:
+                node = database.get_node_by_title(title_to_find, vault_id=vault_id, user_id=current_user_id)
+                return jsonify([node] if node else [])  # Gibt eine Liste mit einem oder keinem Element zurück
+            else:
+                # `get_all_nodes_as_list` wurde in der vorherigen Antwort korrigiert
+                nodes = database.get_all_nodes_as_list(vault_id=vault_id, user_id=current_user_id)
+                return jsonify(nodes)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes/details', methods=['GET'])
     @jwt_required()
     def get_nodes_details():
-        """
-        Fetches a list of full node objects (including content) for a given list of IDs.
-        This is specifically for features like the print preview.
-        """
+        current_user_id = int(get_jwt_identity())
         try:
             vault_id = _get_vault_id_from_request()
             node_ids = request.args.getlist('node_ids', type=str)
             if not node_ids:
-                return jsonify([])  # Gib einfach eine leere Liste zurück, kein Fehler
+                return jsonify([])
 
-            # Wir brauchen eine neue Datenbankfunktion dafür (siehe Schritt 2)
-            nodes = database.get_nodes_by_ids(node_ids=node_ids, vault_id=vault_id)
+            # MODIFIZIERT: Funktion braucht user_id zur Autorisierung
+            nodes = database.get_nodes_by_ids(node_ids=node_ids, vault_id=vault_id, user_id=current_user_id)
             return jsonify(nodes)
-
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:  # NEU
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes/content', methods=['GET'])
     @jwt_required()
     def get_nodes_content():
-        """
-        **THIS IS THE FIX FOR THE ORIGINAL PROBLEM**
-        Fetches the concatenated content and titles for a list of node IDs.
-        """
+        current_user_id = int(get_jwt_identity())
         try:
             vault_id = _get_vault_id_from_request()
             node_ids = request.args.getlist('node_ids', type=str)
             if not node_ids:
                 return jsonify({"error": "node_ids query parameter is required"}), 400
 
-            result = database.get_content_for_nodes(node_ids=node_ids, vault_id=vault_id)
+            result = database.get_content_for_nodes(node_ids=node_ids, vault_id=vault_id, user_id=current_user_id)
             return jsonify(result)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
-
+    # ## KORRIGIERT ##: Dieser Endpunkt ist spezifischer als der alte `GET /api/nodes/<node_id>`
     @app.route('/api/nodes/<string:identifier>', methods=['GET'])
     @jwt_required()
-    def get_nodes(identifier):
-        """
-        Intelligenter Endpunkt, der einen Node findet, egal ob eine ID oder ein Titel übergeben wird.
-
-        - Wenn der 'identifier' eine gültige UUID ist, wird nach der Node-ID gesucht.
-        - Wenn nicht, wird er als Titel behandelt und nach dem Node-Titel gesucht.
-        """
+    def get_node_by_identifier(identifier):
+        current_user_id = int(get_jwt_identity())
         try:
             vault_id = _get_vault_id_from_request()
-
             node = None
-
-            # Logik zur Unterscheidung zwischen ID und Titel
             if is_valid_uuid(identifier):
-                # Es ist eine ID, suche direkt in der Datenbank.
-                node = database.get_node_by_id(identifier, vault_id=vault_id)
+                node = database.get_node_by_id(identifier, vault_id=vault_id, user_id=current_user_id)
             else:
-                # Es ist keine ID, also muss es ein Titel sein.
-                # Wichtig: Die Datenbankfunktion muss jetzt ein einzelnes Objekt zurückgeben!
-                node = database.get_node_by_title(identifier, vault_id=vault_id)
+                node = database.get_node_by_title(identifier, vault_id=vault_id, user_id=current_user_id)
 
             if node is None:
-                # Egal ob nach ID oder Titel gesucht wurde, wenn nichts gefunden wurde -> 404
                 return jsonify({"error": f"Node with identifier '{identifier}' not found in the specified vault"}), 404
-
-            # Wenn gefunden, gib das Node-Objekt zurück.
-            # Die DB-Funktionen sollten bereits ein Dictionary zurückgeben.
             return jsonify(node)
-
         except ValueError as e:
-            # Fängt Fehler wie eine fehlende vault_id ab.
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes', methods=['POST'])
     @jwt_required()
     def create_node():
+        current_user_id = int(get_jwt_identity())
         data = request.json
         vault_id = data.get('vault_id')
         title = data.get('title')
         if not vault_id or not title:
             return jsonify({"error": "vault_id and title are required"}), 400
         try:
+            # ## KORRIGIERT ##: `author_id` wird übergeben
             new_node = database.create_node(
                 title=title,
                 content=data.get('content', ''),
                 parent_id=data.get('parent_id'),
-                vault_id=vault_id
+                vault_id=vault_id,
+                author_id=current_user_id
             )
-            # We call get_node_by_id to get the full dict representation
-            return jsonify(database.get_node_by_id(new_node.id, vault_id)), 201
+            # `get_node_by_id` benötigt die user_id für die Berechtigungsprüfung
+            return jsonify(database.get_node_by_id(new_node.id, vault_id, user_id=current_user_id)), 201
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
         except Exception as e:
             logging.error(f"Error creating node: {e}")
             return jsonify({"error": "An internal server error occurred"}), 500
@@ -281,32 +300,37 @@ def create_app(config_class=Config):
     @app.route('/api/nodes/<string:node_id>', methods=['PUT'])
     @jwt_required()
     def update_node(node_id):
+        current_user_id = int(get_jwt_identity())
         data = request.json
         vault_id = data.get('vault_id')
         if not vault_id:
             return jsonify({"error": "vault_id is required"}), 400
         try:
-            # DIESE EINE ZEILE LÖST DAS PROBLEM AN DER QUELLE
             data.pop('vault_id', None)
-
-            updated_node = database.update_node(node_id, vault_id, **data)
+            updated_node = database.update_node(node_id, vault_id, user_id=current_user_id, **data)
             return jsonify(updated_node.to_dict(include_content=True))
         except ValueError as e:
             return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes/<string:node_id>', methods=['DELETE'])
     @jwt_required()
     def delete_node_endpoint(node_id):
+        current_user_id = int(get_jwt_identity())
         try:
             vault_id = _get_vault_id_from_request()
-            database.delete_node(node_id, vault_id=vault_id)
+            database.delete_node(node_id, vault_id=vault_id, user_id=current_user_id)
             return jsonify({"message": "Node deleted successfully"}), 200
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes/move', methods=['POST'])
     @jwt_required()
     def move_node():
+        current_user_id = int(get_jwt_identity())
         data = request.json
         vault_id = data.get('vault_id')
         node_id = data.get('node_id')
@@ -314,14 +338,17 @@ def create_app(config_class=Config):
         if not vault_id or not node_id:
             return jsonify({"error": "vault_id and node_id are required"}), 400
         try:
-            database.move_node(node_id, new_parent_id, vault_id=vault_id)
+            database.move_node(node_id, new_parent_id, vault_id=vault_id, user_id=current_user_id)
             return jsonify({"message": "Node moved successfully"})
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes/<string:node_id>/propose-update', methods=['POST'])
     @jwt_required()
     def propose_node_update(node_id):
+        current_user_id = int(get_jwt_identity())
         data = request.json
         vault_id = data.get('vault_id')
         if not vault_id:
@@ -331,37 +358,36 @@ def create_app(config_class=Config):
                 target_node_id=node_id,
                 chat_history=data.get('chat_history', []),
                 context_node_ids=data.get('context_node_ids', []),
-                model=data.get('model', 'gemini-2.5-pro'),
-                vault_id=vault_id
+                model=data.get('model', 'gemini-1.5-pro-latest'),
+                vault_id=vault_id,
+                user_id=current_user_id
             )
             return jsonify(proposal)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/nodes/<node_id>/rename', methods=['PATCH'])
     @jwt_required()
     def rename_node(node_id):
-        """
-        Renames a node. Expects a JSON body with a 'title' key and 'vault_id' key.
-        """
+        current_user_id = int(get_jwt_identity())
         data = request.get_json()
         new_title = data.get('title')
-        vault_id = data.get('vault_id')  # Add this line
+        vault_id = data.get('vault_id')
 
-        # Validate that the new title is provided and not just whitespace
         if not new_title or not new_title.strip():
             return jsonify({"error": "New title cannot be empty"}), 400
-
-        # Validate vault_id
         if not vault_id:
             return jsonify({"error": "vault_id is required"}), 400
 
         try:
-            # Pass vault_id to your database function
-            updated_node = database.rename_node(node_id, new_title.strip(), vault_id=vault_id)
+            updated_node = database.rename_node(node_id, new_title.strip(), vault_id=vault_id, user_id=current_user_id)
             return jsonify(updated_node)
         except ValueError as e:
             return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
         except AttributeError:
             logging.error("database.rename_node function is not implemented.")
             return jsonify({"error": "Server-side function not implemented."}), 501
@@ -369,136 +395,175 @@ def create_app(config_class=Config):
     # ==============================================================================
     # CHAT API
     # ==============================================================================
-
-    # --- NON-STREAMING CHAT ENDPOINTS (Existing) ---
+    @app.route('/api/llm/models', methods=['GET'])
+    @jwt_required()
+    def get_available_models():
+        """Provides the list of available LLM models from the config."""
+        # Access the configuration using Flask's `current_app` context
+        models = app.config['AVAILABLE_LLM_MODELS']
+        return jsonify(models)
 
     @app.route('/api/chat/sessions', methods=['GET'])
     @jwt_required()
     def list_chat_sessions():
+        current_user_id = int(get_jwt_identity())
         try:
             vault_id = _get_vault_id_from_request()
-            sessions = chatservice.list_sessions(vault_id=vault_id)
+            sessions = chatservice.list_sessions(vault_id=vault_id, user_id=current_user_id)
             return jsonify(sessions)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/chat/sessions/<string:session_id>', methods=['GET'])
     @jwt_required()
     def get_chat_session_history(session_id):
-        history = chatservice.get_session_history(session_id)
-        if history is None:
-            return jsonify({"error": "Session not found"}), 404
-        return jsonify(history)
+        current_user_id = int(get_jwt_identity())
+        try:
+            history = chatservice.get_session_history(session_id, user_id=current_user_id)
+            return jsonify(history)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+
+    ## WIEDERHERGESTELLT und für Multi-User angepasst (NON-STREAMING) ##
+    @app.route('/api/chat/sessions', methods=['POST'])
+    @jwt_required()
+    def create_chat_session_non_stream():
+        current_user_id = int(get_jwt_identity())
+        data = request.get_json()
+        try:
+            vault_id = data.get('vault_id')
+            if not vault_id:
+                return jsonify({"error": "vault_id is required"}), 400
+
+            user_input = data.get('user_input')
+            if not user_input:
+                return jsonify({"error": "User input is required"}), 400
+
+            # HINWEIS: Sie müssen `chatservice.create_new_chat_session` anpassen,
+            # damit es `user_id` akzeptiert und weitergibt.
+            response_data = chatservice.create_new_chat_session(
+                user_input=user_input,
+                node_ids=data.get('node_ids', []),
+                model=data.get('model', 'claude-3-sonnet-20240229'),
+                vault_id=vault_id,
+                user_id=current_user_id
+            )
+            return jsonify(response_data), 201
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        except Exception as e:
+            logging.error(f"API Error creating chat session: {e}")
+            return jsonify({"error": "Failed to create new chat session."}), 500
+
+    ## WIEDERHERGESTELLT und für Multi-User angepasst (NON-STREAMING) ##
+    @app.route('/api/chat/sessions/<string:session_id>/messages', methods=['POST'])
+    @jwt_required()
+    def add_message_to_session_non_stream(session_id):
+        current_user_id = int(get_jwt_identity())
+        data = request.get_json()
+        user_input = data.get('user_input')
+        if not user_input:
+            return jsonify({"error": "User input is required"}), 400
+
+        try:
+            # HINWEIS: Sie müssen `chatservice.add_message_to_session` anpassen,
+            # damit es `user_id` zur Autorisierung verwendet.
+            response_data = chatservice.add_message_to_session(
+                session_id=session_id,
+                user_input=user_input,
+                node_ids=data.get('node_ids', []),
+                user_id=current_user_id
+            )
+            return jsonify(response_data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        except Exception as e:
+            logging.error(f"API Error adding message to session {session_id}: {e}")
+            return jsonify({"error": "Failed to process message."}), 500
 
     @app.route('/api/chat/sessions/<string:session_id>', methods=['DELETE'])
     @jwt_required()
     def delete_chat_session(session_id):
-        """Deletes a chat session and all of its associated messages."""
+        current_user_id = int(get_jwt_identity())
         try:
-            database.delete_chat_session(session_id)
+            database.delete_chat_session(session_id, user_id=current_user_id)
             return jsonify({"message": f"Session with ID {session_id} deleted successfully."}), 200
         except ValueError as e:
-            # This error is raised by the database function if the session is not found
             return jsonify({"error": str(e)}), 404
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
-    @app.route('/api/chat/sessions', methods=['POST'])
-    @jwt_required()
-    def create_chat_session():
-        # This endpoint is kept for non-streaming clients or backup use
-        data = request.json
-        vault_id = data.get('vault_id')
-        user_input = data.get('user_input')
-        if not vault_id or not user_input:
-            return jsonify({"error": "vault_id and user_input are required"}), 400
-        try:
-            response = chatservice.create_new_chat_session(
-                user_input=user_input,
-                node_ids=data.get('node_ids', []),
-                model=data.get('model', 'claude-3-sonnet-20240229'),
-                vault_id=vault_id
-            )
-            return jsonify(response), 201
-        except Exception as e:
-            logging.error(f"Error in create_chat_session: {e}")
-            return jsonify({"error": str(e)}), 500
-
-    @app.route('/api/chat/sessions/<string:session_id>/messages', methods=['POST'])
-    @jwt_required()
-    def add_message_to_session(session_id):
-        # This endpoint is kept for non-streaming clients or backup use
-        data = request.json
-        user_input = data.get('user_input')
-        if not user_input:
-            return jsonify({"error": "user_input is required"}), 400
-        try:
-            response = chatservice.add_message_to_session(
-                session_id=session_id,
-                user_input=user_input,
-                node_ids=data.get('node_ids', [])
-            )
-            return jsonify(response)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 404
-        except Exception as e:
-            logging.error(f"Error in add_message_to_session for session {session_id}: {e}")
-            return jsonify({"error": str(e)}), 500
-
-    # --- STREAMING CHAT ENDPOINTS (NEW) ---
-
+    # --- STREAMING CHAT ENDPOINTS ---
     @app.route('/api/chat/sessions/stream', methods=['POST'])
     @jwt_required()
     def stream_new_chat_session():
-        """Creates a new chat session and streams the response within an app context."""
+        current_user_id = int(get_jwt_identity())
         data = request.json
         vault_id = data.get('vault_id')
         user_input = data.get('user_input')
+        print("stream_new_chat_session", data.get('model', 'local'))
         if not vault_id or not user_input:
             return jsonify({"error": "vault_id and user_input are required"}), 400
 
-        # We create the generator first, but DON'T execute it yet.
-        generator = chatservice.stream_new_chat_session(
-            user_input=user_input,
-            node_ids=data.get('node_ids', []),
-            model=data.get('model', 'claude-3-sonnet-20240229'),
-            vault_id=vault_id
-        )
+        #return "b"
+        try:
+            generator = chatservice.stream_new_chat_session(
+                user_input=user_input,
+                node_ids=data.get('node_ids', []),
+                #model=data.get('model', 'claude-3-haiku-20240307'),
+                #todo
+                model=data.get('model', 'local'),
+                vault_id=vault_id,
+                user_id=current_user_id
+            )
 
-        # THIS IS THE FIX: A wrapper generator that keeps the context alive.
-        def stream_with_context():
-            with app.app_context():
-                # yield from will pull from the original generator and pass it through
-                yield from generator
+            def stream_with_context():
+                with app.app_context(): yield from generator
 
-        # We return a response from the NEW generator that has the context.
-        return Response(stream_with_context(), mimetype='text/event-stream')
+            return Response(stream_with_context(), mimetype='text/event-stream')
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
 
     @app.route('/api/chat/sessions/<string:session_id>/messages/stream', methods=['POST'])
     @jwt_required()
     def stream_message_to_session(session_id):
-        """Adds a message to an existing session and streams the response within an app context."""
+        current_user_id = int(get_jwt_identity())
         data = request.json
+        print(data)
         user_input = data.get('user_input')
+        print("stream_message_to_session", data.get('model', 'local'))
         if not user_input:
             return jsonify({"error": "user_input is required"}), 400
 
-        # Create the original generator
-        generator = chatservice.stream_message_in_session(
-            session_id=session_id,
-            user_input=user_input,
-            node_ids=data.get('node_ids', [])
-        )
+        #return "a"
+        try:
+            generator = chatservice.stream_message_in_session(
+                session_id=session_id,
+                user_input=user_input,
+                node_ids=data.get('node_ids', []),
+                user_id=current_user_id
+            )
 
-        # THE SAME FIX: Wrap it in a function that provides the app context
-        def stream_with_context():
-            with app.app_context():
-                yield from generator
+            def stream_with_context():
+                with app.app_context(): yield from generator
 
-        return Response(stream_with_context(), mimetype='text/event-stream')
+            return Response(stream_with_context(), mimetype='text/event-stream')
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
 
     # ==============================================================================
     # FILE SERVING & CLI
     # ==============================================================================
-
+    # (Rest der Datei: /api/image, Frontend Serving, CLI Befehle sind identisch und korrekt)
+    # ... Ihre CLI-Befehle und Frontend-Serving-Logik von oben ...
     @app.route('/api/image/<path:filename>')
     @jwt_required()
     def serve_secure_image(filename):
@@ -507,26 +572,34 @@ def create_app(config_class=Config):
         except FileNotFoundError:
             return jsonify({"error": "Image not found"}), 404
 
-    # Catch-all route for frontend serving in production
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve_frontend(path):
-        # API-Aufrufe sind bereits durch ihre spezifischen Routen abgedeckt.
-        # Alles andere muss an das Frontend weitergeleitet werden.
-        # PythonAnywhere's "Static Files" wird echte statische Dateien (CSS, JS) abfangen.
-        # Diese Route fängt nur die "virtuellen" React-Router-Pfade ab.
+        if APP_ENV != 'production':
+            return "This route is for production serving only. In dev, use the React dev server.", 404
 
-        # Der Pfad zum Build-Verzeichnis des Frontends
         static_folder_path = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
-
-        # Prüfe, ob die angeforderte Ressource eine existierende Datei ist (z.B. `favicon.ico`)
         if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
             return send_from_directory(static_folder_path, path)
         else:
-            # Für alle anderen Pfade, liefere die Haupt-HTML-Datei der App aus
             return send_from_directory(static_folder_path, 'index.html')
 
-    # CLI commands here...
+    @app.cli.command('create-user')
+    @click.argument('username')
+    @click.argument('display_name')
+    @click.argument('password')
+    @click.option('--admin', is_flag=True, help='Make this user an administrator.')
+    def create_user_command(username, password, display_name, admin):
+        if User.query.filter_by(username=username).first():
+            print(f"🔥 Error: User '{username}' already exists.")
+            return
+        user = User(username=username, display_name=display_name, user_type='human', is_admin=admin)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        admin_status = " as an administrator" if admin else ""
+        print(f"✅ User '{username}' (Display: '{display_name}') created successfully{admin_status}.")
+
     @app.cli.command('init-db')
     @click.option('--root-title', default='Summary', help='The title for the root node of the knowledge base.')
     def init_db_command(root_title):

@@ -9,10 +9,54 @@ providing a secure and object-oriented way to interact with the data.
 import uuid
 from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Create the SQLAlchemy database instance.
 # This will be initialized with the Flask app in the main application file.
 db = SQLAlchemy()
+
+
+class User(db.Model):
+    """
+    Represents a user of the system.
+    Can be a human user who logs in, or a service account for an LLM.
+    """
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)  # z.B. 'richard', 'claude-3-opus'
+    display_name = db.Column(db.String(120), nullable=False)  # z.B. 'Richard', 'Claude 3 Opus'
+    password_hash = db.Column(db.String(256), nullable=True) # String-Länge sicherheitshalber erhöhen
+    user_type = db.Column(db.String(20), nullable=False, default='human')  # 'human' or 'llm_assistant'
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    owned_vaults = db.relationship('Vault', backref='owner', lazy=True)
+    owned_chat_sessions = db.relationship('ChatSession', backref='owner', lazy=True)
+    authored_versions = db.relationship('Version', backref='author', lazy=True)
+    authored_messages = db.relationship('ChatMessage', backref='author', lazy=True)
+
+    def set_password(self, password):
+        """Creates a password hash using werkzeug."""
+        if self.user_type == 'human':
+            # Die Methode 'pbkdf2:sha256' ist der Standard und sehr sicher.
+            self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        """Checks a password against the hash using werkzeug."""
+        if self.password_hash:
+            return check_password_hash(self.password_hash, password)
+        return False
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'display_name': self.display_name,
+            'user_type': self.user_type,
+            'is_admin': self.is_admin
+        }
 
 class Vault(db.Model):
     """
@@ -24,6 +68,8 @@ class Vault(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255), nullable=False, unique=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
 
     # Relationships to nodes and sessions within this vault.
     # The cascade rule ensures that when a vault is deleted, all its
@@ -124,6 +170,7 @@ class Version(db.Model):
     # --- Relationships ---
     # Foreign key linking this version back to its parent Node.
     node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False, index=True)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
 
 
 # NEU: Assoziationstabelle für den Many-to-Many-Kontext
@@ -143,9 +190,10 @@ class ChatSession(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title = db.Column(db.String(255), nullable=True)  # Kann nach der 1. Frage generiert werden
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    llm_model = db.Column(db.String(100), nullable=False)
+
 
     vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     # Eine Sitzung hat viele Nachrichten
     messages = db.relationship('ChatMessage', backref='session', lazy=True, cascade="all, delete-orphan")
 
@@ -160,7 +208,11 @@ class ChatMessage(db.Model):
     content = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    llm_model_source = db.Column(db.String(100),
+                                 nullable=True)  # z.B. 'claude-3-5-sonnet-20240620', nur für role='assistant'
     # Many-to-Many-Beziehung zu den Kontext-Versionen
     # Gilt nur für 'user'-Nachrichten, aber die Verknüpfung ist hier definiert.
     context_versions = db.relationship('Version', secondary=chat_message_context, lazy='subquery',
                                        backref=db.backref('context_for_messages', lazy=True))
+

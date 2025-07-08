@@ -109,7 +109,7 @@ const ChatHistoryPanel = ({ onLoadSession, onClose }) => {
                 <div>
                     <strong className="session-title d-block text-dark mb-1">{session.title || 'Untitled Chat'}</strong>
                     <small className="session-meta d-block text-muted">
-                    {formatDate(session.created_at)} ({session.llm_model})
+                    {formatDate(session.created_at)} 
                     </small>
                 </div>
                 <button

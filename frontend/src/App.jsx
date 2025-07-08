@@ -10,7 +10,6 @@ import Login from './components/Login';
 import NodesView from './pages/NodesView'; 
 import NodeList from './pages/NodeList'; 
 import VaultSettings from './pages/settings/VaultSettings';
-import IFSLandkarteSVGExport from './components/special_nodes/IFSLandkarteSVGExport';
 import ProtectedRoute from './ProtectedRoute';
 // Globale Stile
 import './App.css';
@@ -53,12 +52,6 @@ const router = createBrowserRouter(
         </ProtectedRoute>
       } />
       
-      {/* SVG Export Route - jetzt auch geschützt */}
-      <Route path="/exportSVG" element={
-        <ProtectedRoute>
-          <IFSLandkarteSVGExport />
-        </ProtectedRoute>
-      } />
     </Route>
   )
 );
@@ -67,13 +60,13 @@ function App() {
   return (
     // VAULT-FIX: Reihenfolge der Provider getauscht.
     // AppProvider muss außen sein, damit AuthProvider darauf zugreifen kann.
-    <AppProvider>
-      <AuthProvider>
+    <AuthProvider>
+	  <AppProvider>
         <DndProvider backend={HTML5Backend}>
           <RouterProvider router={router} />
         </DndProvider>
-      </AuthProvider>
-    </AppProvider>
+      </AppProvider>
+	</AuthProvider>
   );
 }
 

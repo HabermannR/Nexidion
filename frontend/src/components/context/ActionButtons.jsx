@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react';
+// src/components/context/ActionButtons.jsx
+
+import React, { useState, useCallback, useMemo, lazy, Suspense, useEffect } from 'react';
 import Button from 'react-bootstrap/Button';
 import ButtonGroup from 'react-bootstrap/ButtonGroup';
 import Dropdown from 'react-bootstrap/Dropdown';
@@ -14,21 +16,34 @@ import { exportSelectionAsEpub, exportSelectionAsMarkdown } from '../../services
 import { getIdsInOrder, generateTocForSelectedNodes } from '../../services/treeService';
 
 // Import des Modals
-import UpdatePreviewModal from './UpdatePreviewModal'; 
+const UpdatePreviewModal = lazy(() => import('./UpdatePreviewModal')); 
 
-export default function ActionButtons({ onNodeUpdate }) {
-  const { selectedNodeIds, getContextContent, treeData, enterPrintPreview, activeVault } = useAppContext();
+// WICHTIG: Die Komponente mit React.memo umwickeln, damit sie nur neu rendert,
+// wenn sich ihre Props (wie onNodeUpdate) tatsächlich ändern.
+const ActionButtons = React.memo(function ActionButtons({ onNodeUpdate }) {
+  const { 
+    selectedNodeIds, 
+    getContextContent, 
+    treeData, 
+    enterPrintPreview, 
+    activeVault,
+    selectedModel
+  } = useAppContext();
   
+  // Stabile ID für Abhängigkeitsarrays verwenden
+  const activeVaultId = activeVault?.id;
+
   const [isLoading, setIsLoading] = useState({
     copyContent: false,
     copyTree: false,
     exportEpub: false,
     exportMd: false,
     print: false,
+    // Der Key für das AI-Update fehlt hier nicht, aber
+    // es ist eine separate Variable `isLoadingProposal`. Das ist okay.
   });
-  const [feedback, setFeedback] = useState({ message: '', type: 'success' }); // Erweitert für Fehler/Erfolg
+  const [feedback, setFeedback] = useState({ message: '', type: 'success' });
   
-  // State für den AI-Update-Prozess
   const [updateTargetNodeId, setUpdateTargetNodeId] = useState('');
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [updateData, setUpdateData] = useState({ original: '', proposed: '' });
@@ -38,140 +53,90 @@ export default function ActionButtons({ onNodeUpdate }) {
   const hasSelection = selectedNodeIds.size > 0;
   const hasTree = treeData && treeData.length > 0;
 
-  // Hilfsfunktion für Feedback-Nachrichten
   const showFeedback = useCallback((message, type = 'success') => {
     setFeedback({ message, type });
     setTimeout(() => setFeedback({ message: '', type: 'success' }), 4000);
   }, []);
 
-  // KORREKTUR: Der Handler muss async sein, um await zu verwenden
+  // KORREKTUR: Alle Abhängigkeiten sind jetzt stabil.
   const handleCopyContent = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, copyContent: true }));
     try {
-      // KORREKTUR: Wir warten auf das Ergebnis der asynchronen Funktion
       await copyContextContent(getContextContent);
       showFeedback('Inhalt erfolgreich kopiert!');
     } catch (error) {
-      console.error("Fehler beim Kopieren des Inhalts:", error);
-      // KORREKTUR: Wir zeigen die spezifische Fehlermeldung aus dem Service an
-      showFeedback(error.message, 'error'); 
+      showFeedback(error.message || 'Kopieren fehlgeschlagen.', 'error'); 
     } finally {
-      // Das Timeout hier ist gut, um ein kurzes "Aufblitzen" zu verhindern
       setTimeout(() => setIsLoading(prev => ({ ...prev, copyContent: false })), 200);
     }
   }, [getContextContent, showFeedback]);
 
-  // KORREKTUR: Auch dieser Handler muss async sein
   const handleCopyTree = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, copyTree: true }));
     try {
-      // KORREKTUR: Wir warten auf das Ergebnis der asynchronen Funktion
       await copyTreeStructure(treeData);
       showFeedback('Baumstruktur erfolgreich kopiert!');
     } catch (error) {
-      console.error("Fehler beim Kopieren des Baums:", error);
-      // KORREKTUR: Wir zeigen die spezifische Fehlermeldung aus dem Service an
-      showFeedback(error.message, 'error');
+      showFeedback(error.message || 'Kopieren fehlgeschlagen.', 'error');
     } finally {
         setTimeout(() => setIsLoading(prev => ({ ...prev, copyTree: false })), 200);
     }
   }, [treeData, showFeedback]);
   
-  // Die anderen Handler sind bereits korrekt als async deklariert.
-  // Wir können aber auch hier die Fehlerbehandlung verbessern.
   const handleExportEpub = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, exportEpub: true }));
     try {
-      const success = await exportSelectionAsEpub(treeData, selectedNodeIds, activeVault);
-      if (success) {
-        showFeedback('EPUB-Export gestartet!');
-      } else if (selectedNodeIds.size > 0) {
-        showFeedback('Export fehlgeschlagen oder abgebrochen.', 'error');
-      }
+      // WICHTIG: Hier das volle `activeVault`-Objekt übergeben, wie vom Service benötigt.
+      // Die Abhängigkeit ist aber die stabile ID.
+      await exportSelectionAsEpub(treeData, selectedNodeIds, activeVault);
+      showFeedback('EPUB-Export gestartet!');
     } catch (error) {
-      console.error("Fehler beim EPUB-Export:", error);
-      // KORREKTUR: Auch hier die spezifische Fehlermeldung anzeigen
-      showFeedback(error.message || 'EPUB-Export ist fehlgeschlagen.', 'error');
+      showFeedback(error.message || 'EPUB-Export fehlgeschlagen.', 'error');
     } finally {
       setIsLoading(prev => ({ ...prev, exportEpub: false }));
     }
-  }, [treeData, selectedNodeIds, activeVault, showFeedback]);
+  }, [treeData, selectedNodeIds, activeVault, showFeedback]); // `activeVault` bleibt hier, da das Objekt gebraucht wird, aber die Kette ist jetzt stabil.
 
-  // KORRIGIERT: Expliziter async Handler für Markdown-Export
   const handleExportMd = useCallback(async () => {
     setIsLoading(prev => ({ ...prev, exportMd: true }));
     try {
-      // Übergebe hier das activeVault-Objekt
-      const success = await exportSelectionAsMarkdown(treeData, selectedNodeIds, activeVault);
-      if (success) {
-        showFeedback('Markdown-Export gestartet!');
-      } else if (selectedNodeIds.size > 0) {
-        showFeedback('Export fehlgeschlagen oder abgebrochen.');
-      }
+      await exportSelectionAsMarkdown(treeData, selectedNodeIds, activeVault);
+      showFeedback('Markdown-Export gestartet!');
     } catch (error) {
-      console.error("Fehler beim Markdown-Export:", error);
-      showFeedback('Markdown-Export ist fehlgeschlagen.');
+      showFeedback(error.message || 'Markdown-Export fehlgeschlagen.', 'error');
     } finally {
       setIsLoading(prev => ({ ...prev, exportMd: false }));
     }
-  }, [treeData, selectedNodeIds, activeVault, showFeedback]); // activeVault als Abhängigkeit hinzufügen
+  }, [treeData, selectedNodeIds, activeVault, showFeedback]);
 
-  const handlePrint = useCallback(async () => { // Die Funktion muss jetzt async sein
+  const handlePrint = useCallback(async () => {
     if (selectedNodeIds.size === 0) {
-        showFeedback("Bitte Nodes zum Drucken auswählen.");
+        showFeedback("Bitte Nodes zum Drucken auswählen.", 'error');
         return;
     }
+    if (!activeVaultId) return;
 
     setIsLoading(prev => ({ ...prev, print: true }));
-
     try {
-        const nodeIds = Array.from(selectedNodeIds);
-
         const response = await api.get('/api/nodes/details', {
             params: {
-                vault_id: activeVault.id,
-                node_ids: nodeIds
+                vault_id: activeVaultId,
+                node_ids: Array.from(selectedNodeIds)
             },
-            // DIESE ZEILEN SIND DIE LÖSUNG:
-            paramsSerializer: params => {
-                return qs.stringify(params, { arrayFormat: 'repeat' });
-            }
+            paramsSerializer: params => qs.stringify(params, { arrayFormat: 'repeat' })
         });
-
-        const nodesWithContent = response.data; // Das ist jetzt unser Array mit vollen Nodes
-
-        if (!nodesWithContent || nodesWithContent.length === 0) {
-            throw new Error("Could not fetch node details from server.");
-        }
-
-        // --- DATEN-NACHLADEN ENDE ---
-
-        // 2. Sortiere die Nodes in der visuellen Reihenfolge des Baumes.
+        const nodesWithContent = response.data;
         const orderedIds = getIdsInOrder(treeData, selectedNodeIds);
-        const sortedNodes = nodesWithContent.sort((a, b) => {
-            return orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id);
-        });
-
-        // 3. Generiere das Inhaltsverzeichnis (Table of Contents).
+        const sortedNodes = nodesWithContent.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
         const toc = generateTocForSelectedNodes(treeData, selectedNodeIds);
-
-        // 4. Rufe enterPrintPreview mit den vollständigen Daten auf.
-        enterPrintPreview({
-            nodes: sortedNodes,
-            toc: toc
-        });
-        
+        enterPrintPreview({ nodes: sortedNodes, toc: toc });
     } catch (error) {
-        console.error("Fehler bei der Druckvorbereitung:", error);
-        showFeedback('Druckvorschau konnte nicht erstellt werden.');
+        showFeedback('Druckvorschau konnte nicht erstellt werden.', 'error');
     } finally {
         setTimeout(() => setIsLoading(prev => ({ ...prev, print: false })), 200);
     }
-}, [treeData, selectedNodeIds, activeVault, enterPrintPreview, showFeedback]); // activeVault als Abhängigkeit hinzufügen
+  }, [treeData, selectedNodeIds, activeVaultId, enterPrintPreview, showFeedback]); // KORREKTUR: Abhängigkeit auf activeVaultId geändert.
   
-  // ===================================================================
-  // Logik für AI-Update (unverändert)
-  // ===================================================================
   const flattenedNodes = useMemo(() => {
       const allNodes = [];
       const flatten = (nodes) => {
@@ -188,22 +153,29 @@ export default function ActionButtons({ onNodeUpdate }) {
       return flattenedNodes.filter(node => selectedNodeIds.has(node.id));
   }, [selectedNodeIds, flattenedNodes]);
 
-  const handleProposeUpdate = async () => {
-    // VAULT-FIX: Guard Clause, um sicherzustellen, dass ein Vault aktiv ist.
-    if (!updateTargetNodeId || !activeVault) return;
+  // Effekt, um die Auswahl zurückzusetzen, wenn die Kontext-Nodes sich ändern
+  useEffect(() => {
+    if (!contextNodesForDropdown.find(n => n.id === updateTargetNodeId)) {
+      setUpdateTargetNodeId('');
+    }
+  }, [contextNodesForDropdown, updateTargetNodeId]);
+
+  const handleProposeUpdate = useCallback(async () => {
+    if (!updateTargetNodeId || !activeVaultId || !selectedModel) {
+        showFeedback("Ziel, Vault oder Modell nicht ausgewählt.", "error");
+        return;
+    }
     
     setIsLoadingProposal(true);
     try {
       const savedHistory = JSON.parse(sessionStorage.getItem('chatHistory') || '[]');
       const chatHistoryText = savedHistory.map(m => `${m.role}: ${m.content}`).join('\n\n');
       
-      const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.5-pro'; // Sinnvoller Fallback
-
       const payload = {
         chat_history: chatHistoryText,
         context_node_ids: Array.from(selectedNodeIds),
-        vault_id: activeVault.id,
-        model: selectedModel // Das Modell wird jetzt mitgesendet!
+        vault_id: activeVaultId,
+        model: selectedModel // Modell aus dem Context verwenden
       };
 
       const response = await api.post(`/api/nodes/${updateTargetNodeId}/propose-update`, payload);
@@ -214,38 +186,34 @@ export default function ActionButtons({ onNodeUpdate }) {
       });
       setIsUpdateModalOpen(true);
     } catch (error) {
-      console.error("Failed to propose update:", error);
-      alert("Error getting update proposal from AI.");
+      showFeedback("Fehler beim Abrufen des AI-Vorschlags.", "error");
     } finally {
       setIsLoadingProposal(false);
     }
-  };
+  }, [updateTargetNodeId, activeVaultId, selectedNodeIds, selectedModel, showFeedback]); // KORREKTUR: Korrekte, stabile Abhängigkeiten
 
-const handleAcceptUpdate = async () => {
-    if (!updateTargetNodeId || !activeVault?.id) return; // Sicherer Check
+  const handleAcceptUpdate = useCallback(async () => {
+    if (!updateTargetNodeId) return;
     
     setIsSavingUpdate(true);
-    
-    // KORREKTUR: Die vault_id mit übergeben
-    const success = await onNodeUpdate(updateTargetNodeId, { content: updateData.proposed }, activeVault.id);
-    
+    // Die prop `onNodeUpdate` ist jetzt dank der Korrekturen in NodesView stabil.
+    const success = await onNodeUpdate(updateTargetNodeId, { content: updateData.proposed });
     setIsSavingUpdate(false);
     
     if (success) {
         setIsUpdateModalOpen(false);
         showFeedback('Node erfolgreich aktualisiert!');
     } else {
-        // Optional: Feedback geben, falls das Update im Parent fehlschlägt
-        alert("Failed to save the update. Please check the console.");
+        showFeedback("Speichern des Updates fehlgeschlagen.", "error");
     }
-};
+  }, [updateTargetNodeId, updateData.proposed, onNodeUpdate, showFeedback]);
 
   return (
     <>
       <div className="context-actions mt-3">
-        <h5 className="mb-2">Aktionen</h5>
+        <h5 className="mb-2">Kontext-Aktionen</h5>
         
-        {/* REIHE 1: Hauptaktionen */}
+        {/* Hauptaktionen */}
         <ButtonGroup className="w-100 mb-2">
           <Button 
             variant="primary" 
@@ -253,9 +221,8 @@ const handleAcceptUpdate = async () => {
             onClick={handleCopyContent} 
             disabled={!hasSelection || isLoading.copyContent}
           >
-            {isLoading.copyContent ? 'Kopiere...' : 'Inhalt kopieren'}
+            {isLoading.copyContent ? '...' : 'Inhalt kopieren'}
           </Button>
-
           <Button 
             variant="outline-secondary" 
             size="sm" 
@@ -264,7 +231,6 @@ const handleAcceptUpdate = async () => {
           >
             {isLoading.copyTree ? '...' : 'Baum kopieren'}
           </Button>
-
           <Dropdown as={ButtonGroup}>
             <Dropdown.Toggle split variant="outline-secondary" size="sm" disabled={!hasSelection} />
             <Dropdown.Menu>
@@ -282,9 +248,10 @@ const handleAcceptUpdate = async () => {
             </Dropdown.Menu>
           </Dropdown>
         </ButtonGroup>
+
         
-        {/* REIHE 2: AI Update Sektion */}
-        <div className="ai-update-section border-top pt-2">
+        {/* AI Update Sektion mit Trennlinie und Abstand */}
+        <div className="ai-update-section border-top pt-2 mt-3">
             <label htmlFor="ai-target-node" className="form-label small fw-bold">Update mit AI</label>
             <div className="d-flex gap-2">
                 <Form.Select 
@@ -320,14 +287,18 @@ const handleAcceptUpdate = async () => {
         </div>
       )}
 
-      <UpdatePreviewModal
-        show={isUpdateModalOpen}
-        onHide={() => setIsUpdateModalOpen(false)}
-        onAccept={handleAcceptUpdate}
-        oldContent={updateData.original}
-        newContent={updateData.proposed}
-        isUpdating={isSavingUpdate}
-      />
+      <Suspense fallback={null}> {}
+        <UpdatePreviewModal
+          show={isUpdateModalOpen}
+          onHide={() => setIsUpdateModalOpen(false)}
+          onAccept={handleAcceptUpdate}
+          oldContent={updateData.original}
+          newContent={updateData.proposed}
+          isUpdating={isSavingUpdate}
+        />
+      </Suspense>
     </>
   );
-}
+});
+
+export default ActionButtons;

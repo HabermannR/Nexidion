@@ -7,7 +7,6 @@ import Alert from 'react-bootstrap/Alert';
 import DiffViewer from '../common/DiffViewer';
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
-import IFSLandkarte from '../special_nodes/IFSLandkarte.jsx';
 import ResizableImage from '../common/ResizableImage.jsx'; 
 
 // Import der CSS-Datei
@@ -29,45 +28,63 @@ export default function ContentArea({
     versionForDiffCompare
 }) {
 
-    // Diese Hilfsfunktion scannt Text und wandelt [[Links]] in klickbare Elemente um.
-    const renderTextWithInternalLinks = (children) => {
-        return React.Children.map(children, child => {
-            if (typeof child === 'string') {
-                const linkRegex = /\[\[\s*([^|\]\s][^|\]]*?)\s*(?:\|\s*(.+?)\s*)?\]\]/g;
-                const parts = [];
-                let lastIndex = 0;
-                const matches = [...child.matchAll(linkRegex)];
+	// Diese Hilfsfunktion scannt Text und wandelt [[Links]] in klickbare Elemente um.
+	const renderTextWithInternalLinks = (children) => {
+		return React.Children.map(children, child => {
+			// Wir verarbeiten nur reine Text-Knoten für unsere Link-Syntax.
+			if (typeof child === 'string') {
+				const linkRegex = /\[\[\s*([^|\]\s][^|\]]*?)\s*(?:\|\s*(.+?)\s*)?\]\](\w*)?/g;
+				const parts = [];
+				let lastIndex = 0;
+				const matches = [...child.matchAll(linkRegex)];
 
-                if (matches.length === 0) { return child; }
+				if (matches.length === 0) {
+					return child; // Kein Link gefunden, den Originaltext zurückgeben.
+				}
 
-                matches.forEach((match, index) => {
-                    const [fullMatch, target, displayText] = match;
-                    const matchIndex = match.index;
+				matches.forEach((match, index) => {
+					const [fullMatch, target, displayText, suffix] = match;
+					const matchIndex = match.index;
 
-                    if (matchIndex > lastIndex) {
-                        parts.push(child.substring(lastIndex, matchIndex));
-                    }
-                    parts.push(
-                        <span key={`${target}-${index}`} onClick={() => onLinkClick(target)} className="internal-link">
-                            {displayText || target}
-                        </span>
-                    );
-                    lastIndex = matchIndex + fullMatch.length;
-                });
+					// Text vor dem Link hinzufügen
+					if (matchIndex > lastIndex) {
+						parts.push(child.substring(lastIndex, matchIndex));
+					}
 
-                if (lastIndex < child.length) {
-                    parts.push(child.substring(lastIndex));
-                }
-                return parts;
-            }
-            if (React.isValidElement(child) && child.props.children) {
-                return React.cloneElement(child, { children: renderTextWithInternalLinks(child.props.children) });
-            }
-            return child;
-        });
-    };
+					// Der finale Text, der im Link angezeigt werden soll.
+					// Wir kombinieren den Alias (displayText) oder das Ziel (target) mit dem Suffix.
+					const finalDisplayText = (displayText || target) + (suffix || '');
 
-    // Konfiguration für ReactMarkdown, um unsere Link-Logik und resizable Bilder zu nutzen.
+					// STABILE LÖSUNG:
+					// Wir erstellen ein einfaches <span> mit dem Text.
+					// Wir verzichten auf eine weitere Runde Markdown-Verarbeitung hier drin.
+					parts.push(
+						<span key={`${target}-${index}`} onClick={() => onLinkClick(target)} className="internal-link">
+							{finalDisplayText}
+						</span>
+					);
+
+					lastIndex = matchIndex + fullMatch.length;
+				});
+
+				// Restlichen Text nach dem letzten Link hinzufügen
+				if (lastIndex < child.length) {
+					parts.push(child.substring(lastIndex));
+				}
+
+				return parts;
+			}
+
+			// Für bereits existierende React-Elemente (z.B. ein <strong>-Tag vom Parser),
+			// rufen wir die Funktion rekursiv für deren Kinder auf.
+			if (React.isValidElement(child) && child.props.children) {
+				return React.cloneElement(child, { children: renderTextWithInternalLinks(child.props.children) });
+			}
+
+			// Alle anderen Kinder (z.B. null) unverändert zurückgeben.
+			return child;
+		});
+	};    // Konfiguration für ReactMarkdown, um unsere Link-Logik und resizable Bilder zu nutzen.
     const componentRenderers = {
         p: ({ node, ...props }) => <p {...props}>{renderTextWithInternalLinks(props.children)}</p>,
         li: ({ node, ...props }) => <li {...props}>{renderTextWithInternalLinks(props.children)}</li>,
@@ -130,10 +147,6 @@ export default function ContentArea({
                         newTitle={`v${versionForDiffCompare.version} (vom ${new Date(versionForDiffCompare.timestamp).toLocaleString('de-DE')})`}
                     />
                 </div>
-            
-            /* ZUSTAND 2: SPEZIAL-NODE 'IFS Landkarte' */
-            ) : node.title === 'IFS Landkarte' ? (
-                <IFSLandkarte onLinkClick={onLinkClick} />
             
             /* ZUSTAND 3: NORMALE ANSICHT (alt oder aktuell) / EDITOR */
             ) : (

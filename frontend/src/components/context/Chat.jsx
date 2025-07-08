@@ -1,20 +1,36 @@
+// src/components/chat/Chat.jsx 
+
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import api from '../../api/axios'; // Kept for non-streaming calls
+import api from '../../api/axios';
 import { useAppContext } from '../../context/AppContext';
-import ChatHistoryPanel from './ChatHistoryPanel'; 
+import ChatHistoryPanel from './ChatHistoryPanel';
 import './Chat.css';
 
-// KORREKTUR 1: Neue, memo-isierte Komponente zur Leistungssteigerung
-// Diese Komponente wird nur neu gerendert, wenn sich das `message`-Objekt ändert.
-// Sie löst auch das Farbproblem (Korrektur 2).
 const ChatMessage = React.memo(({ message }) => {
   const isUser = message.role === 'user';
 
+  // Hilfsfunktion für den Display-Namen des LLMs
+  const getModelDisplayName = (llmModel) => {
+    if (!llmModel) return 'Assistant';
+    
+    // Vereinfachte Darstellung für gängige Modelle
+    if (llmModel.includes('claude-3-5-sonnet')) return 'Claude 3.5 Sonnet';
+    if (llmModel.includes('claude-3-sonnet')) return 'Claude 3 Sonnet';
+    if (llmModel.includes('claude-3-haiku')) return 'Claude 3 Haiku';
+    if (llmModel.includes('claude-3-opus')) return 'Claude 3 Opus';
+    if (llmModel.includes('gpt-4o')) return 'GPT-4o';
+    if (llmModel.includes('gpt-4')) return 'GPT-4';
+    if (llmModel.includes('gpt-3.5')) return 'GPT-3.5';
+    
+    // Fallback: Zeige die ersten 20 Zeichen des Modellnamens
+    return llmModel.length > 20 ? llmModel.substring(0, 20) + '...' : llmModel;
+  };
+
   return (
     <div className={`message ${message.role}`}>
-      <strong>{isUser ? 'You' : 'Assistant'}:</strong>
+      <strong>{isUser ? 'You' : getModelDisplayName(message.llm_model_source)}:</strong>
       {/* KORREKTUR 2: Wendet die richtige CSS-Klasse basierend auf der Rolle an */}
       <div className={isUser ? 'user-message-content' : 'markdown-content'}>
         {isUser ? (
@@ -31,157 +47,124 @@ const ChatMessage = React.memo(({ message }) => {
 });
 
 const Chat = () => {
-  // --- STATE MANAGEMENT ---
-  const [chatHistory, setChatHistory] = useState(() => {
-    try {
-      const savedHistory = sessionStorage.getItem('chatHistory');
-      return savedHistory ? JSON.parse(savedHistory) : [];
-    } catch (error) {
-      console.error("Failed to parse chat history from sessionStorage", error);
-      return [];
-    }
-  });
+  // --- 1. GLOBALER ZUSTAND AUS DEM CONTEXT ---
+  const {
+    selectedNodeIds,
+    activeVault,
+    chatHistory,
+    chatSessionId,
+    setChatSessionId,
+    isChatLoading,
+    setIsChatLoading,
+    appendMessage,
+    appendStreamChunk,
+    startNewChat,
+    loadChatSession,
+    selectedModel,     
+    isLoadingModels,
+  } = useAppContext();
 
-  const [sessionId, setSessionId] = useState(() => sessionStorage.getItem('sessionId') || null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
-  
-  // NEW: State for the streaming toggle, persisted in localStorage
-  const [isStreamingEnabled, setIsStreamingEnabled] = useState(() => {
-    const saved = localStorage.getItem('isStreamingEnabled');
-    // Default to true (streaming on) if not set
-    return saved !== null ? JSON.parse(saved) : true;
-  });
-
-    // KORREKTUR: Hol diese nicht mehr aus dem Context...
-  // const { selectedNodeIds, chatInputValue, setChatInputValue, activeVault } = useAppContext();
-  
-  // ...sondern hole nur, was du wirklich global brauchst
-  const { selectedNodeIds, activeVault } = useAppContext(); 
-
-  // ...und deklariere den Input-State LOKAL!
-   const [chatInputValue, setChatInputValue] = useState(
+  // --- 2. LOKALER UI- & INPUT-ZUSTAND ---
+  // Dieser State ist nur für diese Komponente relevant und sorgt für Performance.
+  const [chatInputValue, setChatInputValue] = useState(
     () => sessionStorage.getItem('chatInputDraft') || ''
   );
-  const chatDisplayRef = useRef(null);
-  const previousVaultIdRef = useRef();
-
-  // --- EFFECTS ---
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [isStreamingEnabled, setIsStreamingEnabled] = useState(() => {
+    const saved = localStorage.getItem('isStreamingEnabled');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
   
+  const chatDisplayRef = useRef(null);
+  const previousVaultIdRef = useRef(activeVault?.id); // Für den Reset-Check
+
+  // --- 3. EFFEKTE (REAKTIONEN AUF ZUSTANDSÄNDERUNGEN) ---
+
+  // Effekt für den lokalen Input-Entwurf
   useEffect(() => {
     sessionStorage.setItem('chatInputDraft', chatInputValue);
   }, [chatInputValue]);
   
-  // Scroll on new messages
+  // Effekt zum automatischen Scrollen
   useEffect(() => {
     if (chatDisplayRef.current) {
       chatDisplayRef.current.scrollTop = chatDisplayRef.current.scrollHeight;
     }
   }, [chatHistory]);
 
-  // Persist history and session ID
-  useEffect(() => {
-    sessionStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-  }, [chatHistory]);
-
-  useEffect(() => {
-    if (sessionId) {
-      sessionStorage.setItem('sessionId', sessionId);
-    } else {
-      sessionStorage.removeItem('sessionId');
-    }
-  }, [sessionId]);
-
-  // NEW: Persist the streaming preference
+  // Effekt zum Speichern der Streaming-Einstellung
   useEffect(() => {
     localStorage.setItem('isStreamingEnabled', JSON.stringify(isStreamingEnabled));
   }, [isStreamingEnabled]);
   
-  // Clear chat when vault changes
+  // Effekt, der auf den globalen Vault-Wechsel reagiert und den LOKALEN Input zurücksetzt.
+  // Der globale Chat-Verlauf wird bereits im AppContext zurückgesetzt.
   useEffect(() => {
-    const previousVaultId = previousVaultIdRef.current;
     const currentVaultId = activeVault?.id;
-    if (currentVaultId && previousVaultId !== undefined && currentVaultId !== previousVaultId) {
-      console.log('Vault has changed. Clearing chat state.');
-      setChatHistory([]);
-      setSessionId(null);
-      setChatInputValue(''); // Dies löscht den lokalen State UND den sessionStorage-Draft (wegen des anderen useEffects)
+    if (currentVaultId !== previousVaultIdRef.current) {
+      setChatInputValue('');
+      previousVaultIdRef.current = currentVaultId;
     }
-    previousVaultIdRef.current = currentVaultId;
   }, [activeVault]);
 
-  // --- HANDLERS ---
+  // --- 4. HANDLER (AKTIONEN AUSLÖSEN) ---
+
   const handleNewChat = () => {
     if (window.confirm("Are you sure? This will start a new conversation and clear the current one.")) {
-      setChatHistory([]);
-      setSessionId(null);
-      setChatInputValue('');
+      startNewChat(); // Ruft die globale Funktion auf
+      setChatInputValue(''); // Setzt den lokalen Input zurück
     }
   };
 
   const handleLoadSession = async (sessionIdToLoad) => {
-    // ... (This function remains unchanged)
-    if (isLoading) return;
     if (chatHistory.length > 0 && !window.confirm("Loading a past session will replace the current one. Continue?")) {
       return;
     }
-    setIsLoading(true);
-    try {
-      // Axios is fine here as this is not a streaming request
-      const response = await api.get(`/api/chat/sessions/${sessionIdToLoad}`);
-      const sessionData = response.data;
-      if (activeVault && sessionData.vault_id !== activeVault.id) {
-          alert("This chat session belongs to a different vault and cannot be loaded here.");
-          return;
-      }
-      setChatHistory(sessionData.messages || []);
-      setSessionId(sessionData.id);
-      setChatInputValue('');
-    } catch (error) {
-      console.error("Failed to load session history:", error);
-      alert("Could not load the selected session.");
-    } finally {
-      setIsLoading(false);
+    const success = await loadChatSession(sessionIdToLoad); // Ruft globale Funktion auf
+    if (success) {
       setIsHistoryPanelOpen(false);
     }
   };
 
-  // --- CORE LOGIC: REFACTORED CHAT SUBMIT ---
-// In Ihrer Chat.jsx Datei
-
-const handleChatSubmit = async (event) => {
+  // Der Kern: Die Submit-Funktion. Sie nutzt globale Funktionen, um den globalen State zu ändern.
+  const handleChatSubmit = async (event) => {
     event.preventDefault();
-    if (!chatInputValue.trim() || isLoading || !activeVault) return;
 
-    const userInput = chatInputValue.trim();
-    const currentSessionId = sessionId;
-    const selectedModel = localStorage.getItem('selectedModel') || 'claude-3-sonnet-20240229';
-	console.log(selectedModel)
+    // KORRIGIERTE PRÜFUNG
+    if (!chatInputValue.trim() || isChatLoading || !activeVault || !selectedModel) {
+      if (!selectedModel) {
+          // Gibt dem Benutzer nützliches Feedback
+          console.warn("Submit blocked: No model selected or models are still loading.");
+      }
+      return;
+	}
+
+    // DIE PROBLEMATISCHE ZEILE WURDE ENTFERNT.
+    // Wir verwenden jetzt direkt `selectedModel` aus dem Context.
     
-    const jwtToken = localStorage.getItem('token'); 
-    const headers = {
-      'Content-Type': 'application/json',
-    };
+    const userInput = chatInputValue.trim();
+    const currentSessionId = chatSessionId;
+    const jwtToken = localStorage.getItem('token');
+    
+    appendMessage({ role: 'user', content: userInput });
+    setChatInputValue('');
+    setIsChatLoading(true);
 
+    const headers = { 'Content-Type': 'application/json' };
     if (jwtToken) {
       headers['Authorization'] = `Bearer ${jwtToken}`;
     }
 
-    setChatInputValue('');
-    setIsLoading(true);
-
     const payload = {
       user_input: userInput,
       node_ids: Array.from(selectedNodeIds),
+      // DIESE ZEILE FUNKTIONIERT JETZT PERFEKT, da `selectedModel` immer aktuell ist.
       ...(!currentSessionId && { model: selectedModel, vault_id: activeVault.id })
     };
 
     if (isStreamingEnabled) {
-      setChatHistory(prev => [
-        ...prev,
-        { role: 'user', content: userInput },
-        { role: 'assistant', content: '' }
-      ]);
+      // Leere Assistenten-Nachricht als Platzhalter für den Stream hinzufügen
+      appendMessage({ role: 'assistant', content: '' });
       
       try {
         const endpoint = currentSessionId
@@ -195,21 +178,24 @@ const handleChatSubmit = async (event) => {
         });
 
         if (!response.ok) {
-           const errorText = await response.text();
-            let errorMessage = errorText;
-            try {
-                errorMessage = JSON.parse(errorText).msg || errorText; 
-            } catch {
-                // keep raw text
-            }
-            throw new Error(errorMessage);
-        }
+		   const errorText = await response.text();
+		   let errorMessage = errorText; // Fallback
+		   try {
+			 // Versuche, die JSON-Fehlermeldung zu parsen
+			 const errorJson = JSON.parse(errorText);
+			 errorMessage = errorJson.msg || JSON.stringify(errorJson);
+		   } catch (e) {
+			 // Wenn das Parsen fehlschlägt, ist die errorText wahrscheinlich HTML oder einfacher Text.
+			 // Wir verwenden sie direkt.
+			 console.warn("Could not parse error response as JSON.", e);
+		   }
+		   throw new Error(errorMessage);
+		}
         
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let newSessionIdFromStream = null;
 
-        // DER try-Block umschließt die while-Schleife
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -219,68 +205,46 @@ const handleChatSubmit = async (event) => {
           if (!currentSessionId && !newSessionIdFromStream && chunk.startsWith("session_id:")) {
             const parts = chunk.split('\n\n');
             newSessionIdFromStream = parts[0].replace("session_id:", "").trim();
-            setSessionId(newSessionIdFromStream);
+            setChatSessionId(newSessionIdFromStream); // Globale Session-ID setzen
             chunk = parts.slice(1).join('\n\n');
           }
 
-          setChatHistory(prev => {
-            const newHistory = [...prev];
-            const lastMessage = newHistory[newHistory.length - 1];
-            // Wichtig: Erstelle ein NEUES Objekt für die letzte Nachricht,
-            // damit React.memo die Änderung erkennt.
-            newHistory[newHistory.length - 1] = {
-              ...lastMessage,
-              content: lastMessage.content + chunk
-            };
-            return newHistory;
-          });
-        } // <-- Hier endet die while-Schleife
+          appendStreamChunk(chunk); // Globalen Chunk anhängen
+        }
 
-      } catch (error) { // <-- Der catch-Block gehört zum try-Block darüber
+      } catch (error) {
         console.error('Failed to stream chat response', error);
-        const errorMessage = error.message || "Sorry, an error occurred.";
-        setChatHistory(prev => {
-          const newHistory = [...prev];
-          // Überprüfen, ob es überhaupt eine letzte Nachricht gibt, sicher ist sicher
-          if (newHistory.length > 0) {
-            newHistory[newHistory.length - 1].content = `**Error:** ${errorMessage}`;
-          }
-          return newHistory;
-        });
+        appendStreamChunk(`\n\n**Error:** ${error.message || "An unexpected error occurred."}`);
       } finally {
-        setIsLoading(false);
+        setIsChatLoading(false);
       }
 
-    } else {
-      // --- NON-STREAMING LOGIC ---
-      setChatHistory(prev => [...prev, { role: 'user', content: userInput }]);
+    } else { // Non-streaming Logik
       try {
         const endpoint = currentSessionId ? `/api/chat/sessions/${currentSessionId}/messages` : '/api/chat/sessions';
         const response = await api.post(endpoint, payload);
         const assistantResponse = response.data;
         
-        setChatHistory(prev => [...prev, { role: 'assistant', content: assistantResponse.content }]);
-        if (assistantResponse.session_id && !sessionId) {
-          setSessionId(assistantResponse.session_id);
+        appendMessage({ role: 'assistant', content: assistantResponse.content });
+        if (assistantResponse.session_id && !chatSessionId) {
+          setChatSessionId(assistantResponse.session_id);
         }
       } catch (error) {
-        console.error('Failed to generate chat response', error);
         const errorMessage = error.response?.data?.error || "Sorry, an error occurred.";
-        setChatHistory(prev => [...prev, { role: 'assistant', content: `**Error:** ${errorMessage}` }]);
+        appendMessage({ role: 'assistant', content: `**Error:** ${errorMessage}` });
       } finally {
-        setIsLoading(false);
+        setIsChatLoading(false);
       }
     }
   };
 
-  // --- JSX RENDER ---
+  // --- 5. JSX RENDER ---
+  // Das JSX ist rein deklarativ und verwendet die State-Variablen.
   return (
     <div className={`d-flex flex-column h-100 bg-light border rounded-3 overflow-hidden chat-window ${isHistoryPanelOpen ? 'history-open' : ''}`}>
-      {/* 1. Header with the new toggle switch */}
       <div className="d-flex justify-content-between align-items-center p-2 border-bottom bg-white">
         <h4 className="h6 mb-0">Chat with Context</h4>
         <div className="d-flex align-items-center gap-3">
-          {/* NEW: Streaming Toggle */}
           <div className="form-check form-switch" title="Toggle response streaming">
             <input
               className="form-check-input"
@@ -290,9 +254,7 @@ const handleChatSubmit = async (event) => {
               checked={isStreamingEnabled}
               onChange={e => setIsStreamingEnabled(e.target.checked)}
             />
-            <label className="form-check-label small" htmlFor="streamingToggle">
-              Stream
-            </label>
+            <label className="form-check-label small" htmlFor="streamingToggle">Stream</label>
           </div>
           <div className="d-flex gap-2">
             <button onClick={() => setIsHistoryPanelOpen(true)} className="btn btn-sm btn-outline-secondary" title="View chat history">History</button>
@@ -303,34 +265,39 @@ const handleChatSubmit = async (event) => {
         </div>
       </div>
 
-      {/* 2. Chat display area (Spinner logic removed for simplicity) */}
        <div className="flex-grow-1 p-3 overflow-auto" ref={chatDisplayRef}>
         {chatHistory.length === 0 && (
           <div className="message assistant">
             <div className="markdown-content">Select nodes and ask a question to start a chat!</div>
           </div>
         )}
-        {/* KORREKTUR 1: Nutze die neue, performante Komponente */}
         {chatHistory.map((message, index) => (
-          <ChatMessage key={index} message={message} />
+          <ChatMessage key={`${chatSessionId || 'new'}-${index}`} message={message} />
         ))}
+        {isChatLoading && chatHistory[chatHistory.length-1]?.role !== 'assistant' && (
+             <div className="spinner-border spinner-border-sm" role="status"><span className="visually-hidden">Loading...</span></div>
+        )}
       </div>
 
-      {/* 3. Input form */}
-      <form onSubmit={handleChatSubmit} className="d-flex align-items-start p-2 border-top bg-white gap-2">
+     <form onSubmit={handleChatSubmit} className="d-flex align-items-start p-2 border-top bg-white gap-2">
         <textarea
           value={chatInputValue}
           onChange={(e) => setChatInputValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); handleChatSubmit(e); } }}
-          placeholder="Ask about your selected context..."
+          placeholder={isLoadingModels ? "Loading models..." : "Ask about your selected context..."}
           className="form-control"
-          disabled={isLoading}
+          disabled={isChatLoading || isLoadingModels} // Deaktiviert, während Modelle laden
           rows="2"
         />
-        <button type="submit" className="btn btn-primary" disabled={isLoading || !chatInputValue.trim()}>Send</button>
+        <button 
+          type="submit" 
+          className="btn btn-primary" 
+          disabled={isChatLoading || !chatInputValue.trim() || isLoadingModels || !selectedModel} // Umfassende Deaktivierung
+        >
+          Send
+        </button>
       </form>
 
-      {/* 4. History Panel */}
       {isHistoryPanelOpen && (
         <ChatHistoryPanel 
           onLoadSession={handleLoadSession}

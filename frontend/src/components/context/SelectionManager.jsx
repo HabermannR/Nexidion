@@ -11,7 +11,7 @@ const STORAGE_KEY = 'knowledgeBaseSelections';
 
 export default function SelectionManager() {
   // Holen uns den aktiven Vault aus dem Context.
-  const { selectedNodeIds, setSelectedNodeIds, activeVault } = useAppContext();
+  const { selectedNodeIds, setSelectedNodeIds, activeVault, clearNodeSelection  } = useAppContext();
   
   // Dieser State hält jetzt ALLE Auswahlen für ALLE Vaults
   const [allSavedSelections, setAllSavedSelections] = useState({});
@@ -125,6 +125,14 @@ export default function SelectionManager() {
       <div className="d-grid">
         <Button variant="secondary" size="sm" onClick={handleSave} disabled={selectedNodeIds.size === 0}>
           Aktuelle Auswahl speichern
+        </Button>
+		<Button 
+            variant="tertiary" // oder "outline-danger"
+            size="sm" 
+            onClick={clearNodeSelection} 
+            disabled={selectedNodeIds.size === 0}
+        >
+            Aktuelle Auswahl leeren ({selectedNodeIds.size})
         </Button>
       </div>
     </div>

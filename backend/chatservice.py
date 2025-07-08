@@ -1,88 +1,90 @@
+# chatservice.py (Multi-User-Version)
+
 import logging
-import re
+from models import db
 import database
 import llm
-# db wird für das Transaktionsmanagement importiert (commit/rollback)
-from models import db, ChatSession
 
-
+logger = logging.getLogger(__name__)
 # ==============================================================================
 # SESSION MANAGEMENT
 # ==============================================================================
 
-def list_sessions(vault_id: int) -> list[dict]:
+def list_sessions(vault_id: int, user_id: int) -> list[dict]:
     """
-    Retrieves a list of all chat sessions for a specific vault.
-    Delegates the database query to the database layer.
+    MODIFIZIERT: Ruft die Chat-Sitzungen für einen bestimmten Benutzer in einem Vault ab.
+    Delegiert die Abfrage vollständig an die Datenbankschicht, die die Autorisierung durchführt.
     """
-    return database.list_chat_sessions(vault_id)
+    return database.list_chat_sessions(vault_id=vault_id, user_id=user_id)
 
 
-def get_session_history(session_id: str) -> dict | None:
+def get_session_history(session_id: str, user_id: int) -> dict | None:
     """
-    Retrieves the complete history of a single chat session.
-    Delegates the database query to the database layer.
+    MODIFIZIERT: Ruft die Historie einer Sitzung ab.
+    Delegiert die Abfrage an die Datenbankschicht, die den Besitz der Sitzung überprüft.
     """
-    return database.get_chat_session_history(session_id)
+    return database.get_chat_session_history(session_id=session_id, user_id=user_id)
 
 
 # ==============================================================================
-# CORE CHAT LOGIC (REFAKORISIERT)
+# CORE CHAT LOGIC (NON-STREAMING)
 # ==============================================================================
 
-def create_new_chat_session(user_input: str, node_ids: list, model: str, vault_id: int) -> dict:
+def create_new_chat_session(user_input: str, node_ids: list, model: str, vault_id: int, user_id: int) -> dict:
     """
-    Creates a new chat session. The user message is saved immediately.
-    The AI response is generated and saved in a second, independent step.
+    MODIFIZIERT: Erstellt eine neue Chat-Sitzung, die einem Benutzer gehört.
     """
     # === TRANSAKTION 1: Session und User-Nachricht erstellen und SOFORT speichern ===
     try:
+        # Titel für die neue Session generieren
         title = (user_input[:77] + '...') if len(user_input) > 80 else user_input
-        new_session = database.create_chat_session(title=title, llm_model=model, vault_id=vault_id)
+        # Session in der DB erstellen, gehört jetzt dem `user_id`
+        new_session = database.create_chat_session(title=title, vault_id=vault_id, owner_id=user_id)
 
-        context_versions = database.get_versions_for_node_ids(node_ids, vault_id)
+        # Kontext für die Benutzernachricht holen (Autorisierungscheck passiert in der DB-Funktion)
+        context_versions = database.get_versions_for_node_ids(node_ids, vault_id, user_id)
+        # Benutzernachricht speichern, mit dem `user_id` als Autor
         database.add_chat_message(
             session_id=new_session.id,
             role='user',
             content=user_input,
+            author_id=user_id,
             context_versions=context_versions
         )
-        db.session.commit()  # Commit für Session und User-Nachricht
+        db.session.commit()
     except Exception as e:
-        logging.error(f"FATAL: Could not even create session or save user message: {e}")
+        logger.error(f"FATAL: Could not create session or save user message for user {user_id}: {e}")
         db.session.rollback()
-        raise  # Wenn das fehlschlägt, ist etwas fundamental falsch.
+        raise
 
     # === TRANSAKTION 2: KI-Antwort generieren und speichern ===
     try:
-        # Lade die Session neu, um den aktuellen Chatverlauf (inkl. der eben gespeicherten User-Nachricht) zu haben
-        session_with_history = database.get_chat_session_by_id(new_session.id)
-        chat_history = [{'role': msg.role, 'content': msg.content} for msg in session_with_history.messages]
+        # Holen Sie sich den Assistant-User aus der DB, um ihn als Autor zu verwenden
+        assistant_user = llm.get_llm_user(model)
 
-        context_data = database.get_content_for_nodes(node_ids, vault_id=vault_id)
+        # Verlauf und Kontext holen
+        history = database.get_chat_session_history(new_session.id, user_id)
+        chat_history = history.get('messages', [])
+        context_data = database.get_content_for_nodes(node_ids, vault_id, user_id)
         context_content = context_data.get('content', '')
+        system_prompt = f"You are a helpful assistant... <context>\n{context_content}\n</context>"
 
-        system_prompt = (
-            "You are a helpful assistant for a knowledge base. "
-            "Use the following context to answer the user's question. "
-            "If the context is empty, use your general knowledge.\n\n"
-            f"<context>\n{context_content}\n</context>"
-        )
-        # Für die LLM brauchen wir nur die letzte User-Nachricht, da die History schon alles enthält
-        messages_for_llm = chat_history
-
+        # LLM-Antwort generieren
         assistant_response_text = llm.generate_response(
-            messages=messages_for_llm,
+            messages=chat_history,
             system_prompt=system_prompt,
-            model=new_session.llm_model
+            model=model
         )
 
+        # KI-Nachricht speichern, mit dem `assistant_user` als Autor
         database.add_chat_message(
             session_id=new_session.id,
             role='assistant',
-            content=assistant_response_text
+            content=assistant_response_text,
+            author_id=assistant_user.id,
+            llm_model_source=model  # Speichert das verwendete Modell
         )
-        db.session.commit()  # Commit NUR für die KI-Antwort
+        db.session.commit()
 
         return {
             "session_id": new_session.id,
@@ -90,210 +92,208 @@ def create_new_chat_session(user_input: str, node_ids: list, model: str, vault_i
             "role": "assistant"
         }
     except Exception as e:
-        logging.error(f"AI response failed for new session {new_session.id}, but user message was saved: {e}")
-        db.session.rollback()  # Wichtig: Rollt nur den Versuch zurück, die KI-Nachricht zu speichern.
-        # Gib eine leere Antwort zurück, um zu signalisieren, dass die KI fehlgeschlagen ist.
-        # Das Frontend kann dann den Chat neu laden und sieht die User-Nachricht allein.
+        logger.error(f"AI response failed for new session {new_session.id}, but user message was saved: {e}")
+        db.session.rollback()
         return {"session_id": new_session.id, "content": None, "role": "assistant"}
 
 
-def add_message_to_session(session_id: str, user_input: str, node_ids: list) -> dict:
+def add_message_to_session(session_id: str, user_input: str, node_ids: list, user_id: int) -> dict:
     """
-    Adds a user message to a session immediately.
-    The AI response is generated and saved in a second, independent step.
+    MODIFIZIERT: Fügt eine Nachricht zu einer bestehenden Sitzung hinzu und prüft den Besitz.
     """
+    # === Autorisierung und Vorbereitung ===
     session = database.get_chat_session_by_id(session_id)
     if not session:
         raise ValueError(f"Session with id {session_id} not found.")
-    vault_id_from_session = session.vault_id
+    if session.owner_id != user_id:
+        raise PermissionError("You do not have permission to access this chat session.")
 
     # === TRANSAKTION 1: User-Nachricht SOFORT speichern ===
     try:
-        context_versions = database.get_versions_for_node_ids(node_ids, vault_id_from_session)
+        context_versions = database.get_versions_for_node_ids(node_ids, session.vault_id, user_id)
         database.add_chat_message(
             session_id=session.id,
             role='user',
             content=user_input,
+            author_id=user_id,
             context_versions=context_versions
         )
         db.session.commit()
     except Exception as e:
-        logging.error(f"FATAL: Could not save user message to session {session_id}: {e}")
+        logger.error(f"FATAL: Could not save user message to session {session_id} for user {user_id}: {e}")
         db.session.rollback()
         raise
 
     # === TRANSAKTION 2: KI-Antwort generieren und speichern ===
     try:
-        # Lade die Session neu, um den aktuellen Chatverlauf (inkl. der eben gespeicherten User-Nachricht) zu haben
-        session_with_history = database.get_chat_session_by_id(session_id)
-        chat_history = [{'role': msg.role, 'content': msg.content} for msg in session_with_history.messages]
+        # Bestimme das Modell für die Antwort. Nimm das der letzten Assistenten-Nachricht oder ein Default.
+        last_assistant_msg = next(
+            (msg for msg in reversed(session.messages) if msg.role == 'assistant' and msg.llm_model_source), None)
+        model_to_use = last_assistant_msg.llm_model_source if last_assistant_msg else 'claude-3-haiku-20240307'  # Fallback
 
-        context_data = database.get_content_for_nodes(node_ids, vault_id=vault_id_from_session)
-        context_content = context_data.get('content', '')
+        assistant_user = llm.get_llm_user(model_to_use)
+
+        history = database.get_chat_session_history(session_id, user_id)
+        chat_history = history.get('messages', [])
+        context_data = database.get_content_for_nodes(node_ids, session.vault_id, user_id)
+        system_prompt = f"You are a helpful assistant... <context>\n{context_data.get('content', '')}\n</context>"
+
+        assistant_response_text = llm.generate_response(
+            messages=chat_history,
+            system_prompt=system_prompt,
+            model=model_to_use
+        )
+
+        database.add_chat_message(
+            session_id=session.id,
+            role='assistant',
+            content=assistant_response_text,
+            author_id=assistant_user.id,
+            llm_model_source=model_to_use
+        )
+        db.session.commit()
+
+        return {"session_id": session_id, "content": assistant_response_text, "role": "assistant"}
+    except Exception as e:
+        logger.error(f"AI response failed for session {session_id}, but user message was saved: {e}")
+        db.session.rollback()
+        return {"session_id": session_id, "content": None, "role": "assistant"}
+
+
+# ==============================================================================
+# CORE CHAT LOGIC (STREAMING)
+# ==============================================================================
+
+def stream_new_chat_session(user_input: str, node_ids: list, model: str, vault_id: int, user_id: int):
+    """
+    MODIFIZIERT: Erstellt eine neue Chat-Sitzung für einen Benutzer und streamt die Antwort.
+    """
+    # Schritt 1: Session und User-Nachricht erstellen
+    try:
+        title = (user_input[:77] + '...') if len(user_input) > 80 else user_input
+        new_session = database.create_chat_session(title=title, vault_id=vault_id, owner_id=user_id)
+        context_versions = database.get_versions_for_node_ids(node_ids, vault_id, user_id)
+        database.add_chat_message(
+            session_id=new_session.id,
+            role='user',
+            content=user_input,
+            author_id=user_id,
+            context_versions=context_versions
+        )
+        db.session.commit()
+    except Exception as e:
+        logger.error(f"STREAM FATAL for user {user_id}: {e}")
+        db.session.rollback()
+        yield f"error: Failed to start the chat session."
+        return
+
+    yield f"session_id:{new_session.id}\n\n"
+
+    logger.info(f"chatservice Initiating stream for model {model}")
+    # Schritt 2: Streamen und am Ende speichern
+    full_assistant_response = ""
+    try:
+        logger.info(f"Test")
+        assistant_user_id = llm.get_llm_user(model).id
+        logger.info(f"assistant_user {assistant_user_id}")
+        history = database.get_chat_session_history(new_session.id, user_id)
+        chat_history = history.get('messages', [])
+        context_data = database.get_content_for_nodes(node_ids, vault_id, user_id)
 
         system_prompt = (
             "You are a helpful assistant for a knowledge base. "
             "Use the following context to answer the user's question. "
             "If the context is empty, use your general knowledge.\n\n"
-            f"<context>\n{context_content}\n</context>"
+            f"<context>\n{context_data.get('content', '')}\n</context>"
         )
-        messages_for_llm = chat_history
-
-        assistant_response_text = llm.generate_response(
-            messages=messages_for_llm,
-            system_prompt=system_prompt,
-            model=session.llm_model
-        )
-
-        database.add_chat_message(
-            session_id=session.id,
-            role='assistant',
-            content=assistant_response_text
-        )
-        db.session.commit()
-
-        return {
-            "session_id": session_id,
-            "content": assistant_response_text,
-            "role": "assistant"
-        }
-    except Exception as e:
-        logging.error(f"AI response failed for session {session_id}, but user message was saved: {e}")
-        db.session.rollback()
-        # Gib eine leere Antwort zurück. Das Frontend kann darauf reagieren.
-        return {"session_id": session_id, "content": None, "role": "assistant"}
-
-
-def stream_new_chat_session(user_input: str, node_ids: list, model: str, vault_id: int):
-    """
-    Erstellt eine neue Chat-Sitzung und streamt die KI-Antwort DIREKT.
-    Dies ist ein GENERATOR.
-    """
-    # Schritt 1: Session und User-Nachricht erstellen (unverändert)
-    try:
-        title = (user_input[:77] + '...') if len(user_input) > 80 else user_input
-        new_session = database.create_chat_session(title=title, llm_model=model, vault_id=vault_id)
-        context_versions = database.get_versions_for_node_ids(node_ids, vault_id)
-        database.add_chat_message(
-            session_id=new_session.id,
-            role='user',
-            content=user_input,
-            context_versions=context_versions
-        )
-        db.session.commit()
-    except Exception as e:
-        logging.error(f"STREAM FATAL: Could not create session or save user message: {e}")
-        db.session.rollback()
-        yield f"error: Failed to start the chat session."
-        return
-
-    # Schritt 2: Session-ID an das Frontend senden (unverändert)
-    yield f"session_id:{new_session.id}\n\n"
-
-    # Schritt 3: Streamen und am Ende speichern
-    full_assistant_response = ""
-    try:
-        session_with_history = database.get_chat_session_by_id(new_session.id)
-        chat_history = [{'role': msg.role, 'content': msg.content} for msg in session_with_history.messages]
-        context_data = database.get_content_for_nodes(node_ids, vault_id=vault_id)
-        system_prompt = (
-            f"You are a helpful assistant... <context>\n{context_data.get('content', '')}\n</context>"
-        )
-
-        # Holen Sie sich den rohen Stream und leiten Sie jeden Teil sofort weiter.
-        raw_stream = llm.generate_response_stream(
-            messages=chat_history,
-            system_prompt=system_prompt,
-            model=new_session.llm_model
-        )
-
-        # 2. Wickeln Sie den rohen Stream in unseren Filter-Generator
+        logger.info(f"start stream")
+        raw_stream = llm.generate_response_stream(messages=chat_history, system_prompt=system_prompt, model=model)
         filtered_stream = _filter_think_tags_from_stream(raw_stream)
 
-        # 3. Iterieren Sie über den gefilterten Stream
         for chunk in filtered_stream:
             full_assistant_response += chunk
             yield chunk
 
-        # Nach dem Stream speichern (unverändert)
-        database.add_chat_message(
-            session_id=new_session.id,
-            role='assistant',
-            content=full_assistant_response
-        )
-        db.session.commit()
-
+        if full_assistant_response:
+            database.add_chat_message(
+                session_id=new_session.id,
+                role='assistant',
+                content=full_assistant_response,
+                author_id=assistant_user_id,
+                llm_model_source=model
+            )
+            db.session.commit()
     except Exception as e:
-        logging.error(f"STREAM AI FAILED for new session {new_session.id}: {e}")
+        logger.error(f"STREAM AI FAILED for new session {new_session.id}: {e}", exc_info=True)
         db.session.rollback()
-        yield f"\n\nerror: The AI failed to generate a response. Your message has been saved."
+        yield f"\n\nerror: The AI failed to generate a response."
 
 
-def stream_message_in_session(session_id: str, user_input: str, node_ids: list):
+
+def stream_message_in_session(session_id: str, user_input: str, node_ids: list, user_id: int):
     """
-    Adds a message to an existing session and streams the AI response.
-    This is a GENERATOR.
+    MODIFIZIERT: Fügt Nachricht zu bestehender Session hinzu, prüft Besitz und streamt.
     """
+    # Autorisierung
     session = database.get_chat_session_by_id(session_id)
     if not session:
         yield f"error: Session with id {session_id} not found."
         return
-    vault_id = session.vault_id
+    if session.owner_id != user_id:
+        yield f"error: You do not have permission to access this chat session."
+        return
 
-    # === Step 1: Save the user message immediately (like your Transaction 1) ===
+    # Schritt 1: Benutzernachricht speichern
     try:
-        context_versions = database.get_versions_for_node_ids(node_ids, vault_id)
+        context_versions = database.get_versions_for_node_ids(node_ids, session.vault_id, user_id)
         database.add_chat_message(
-            session_id=session.id,
-            role='user',
-            content=user_input,
-            context_versions=context_versions
+            session_id=session.id, role='user', content=user_input, author_id=user_id, context_versions=context_versions
         )
         db.session.commit()
     except Exception as e:
-        logging.error(f"STREAM FATAL: Could not save user message to session {session_id}: {e}")
+        logger.error(f"STREAM FATAL for user {user_id}: {e}")
         db.session.rollback()
-        yield f"error: Failed to save your message. Please try again."
+        yield f"error: Failed to save your message."
         return
 
     # Schritt 2: Streamen und am Ende speichern
     full_assistant_response = ""
     try:
-        session_with_history = database.get_chat_session_by_id(session_id)
-        chat_history = [{'role': msg.role, 'content': msg.content} for msg in session_with_history.messages]
-        context_data = database.get_content_for_nodes(node_ids, vault_id=session_with_history.vault_id)
+        last_assistant_msg = next((msg for msg in reversed(session.messages) if msg.role == 'assistant' and msg.llm_model_source), None)
+        model_to_use = last_assistant_msg.llm_model_source if last_assistant_msg else 'claude-3-haiku-20240307'
+
+        assistant_user_id = llm.get_llm_user(model_to_use).id
+        history = database.get_chat_session_history(session.id, user_id)
+        chat_history = history.get('messages', [])
+        context_data = database.get_content_for_nodes(node_ids, session.vault_id, user_id)
         system_prompt = (
-            f"You are a helpful assistant... <context>\n{context_data.get('content', '')}\n</context>"
+            "You are a helpful assistant for a knowledge base. "
+            "Use the following context to answer the user's question. "
+            "If the context is empty, use your general knowledge.\n\n"
+            f"<context>\n{context_data.get('content', '')}\n</context>"
         )
 
-        # Holen Sie sich den rohen Stream und leiten Sie jeden Teil sofort weiter.
-        raw_stream = llm.generate_response_stream(
-            messages=chat_history,
-            system_prompt=system_prompt,
-            model=session_with_history.llm_model
-        )
-
-        # 2. Wickeln Sie den rohen Stream in unseren Filter-Generator
+        raw_stream = llm.generate_response_stream(messages=chat_history, system_prompt=system_prompt,
+                                                  model=model_to_use)
         filtered_stream = _filter_think_tags_from_stream(raw_stream)
 
-        # 3. Iterieren Sie über den gefilterten Stream
         for chunk in filtered_stream:
             full_assistant_response += chunk
             yield chunk
 
-        # Nach dem Stream speichern (unverändert)
         if full_assistant_response:
             database.add_chat_message(
                 session_id=session.id,
                 role='assistant',
-                content=full_assistant_response
+                content=full_assistant_response,
+                author_id=assistant_user_id,
+                llm_model_source=model_to_use
             )
             db.session.commit()
-
     except Exception as e:
-        logging.error(f"STREAM AI FAILED for session {session_id}: {e}")
+        logger.error(f"STREAM AI FAILED for session {session_id}: {e}")
         db.session.rollback()
-        yield f"\n\nerror: The AI failed to generate a response. Your message has been saved."
+        yield f"\n\nerror: The AI failed to generate a response."
 
 
 
@@ -301,16 +301,15 @@ def stream_message_in_session(session_id: str, user_input: str, node_ids: list):
 # ADVANCED FEATURES (e.g., Node Update Proposals)
 # ==============================================================================
 
-def propose_node_update_from_chat(target_node_id: str, chat_history: str, context_node_ids: list, model: str,
-                                  vault_id: int) -> dict:
+def propose_node_update_from_chat(target_node_id: str, chat_history: str, context_node_ids: list, model: str, vault_id: int, user_id: int) -> dict:
     """
-    Generates a suggestion to update a node's content based on a chat conversation.
+    MODIFIZIERT: Generiert einen Update-Vorschlag und prüft den Zugriff auf alle beteiligten Nodes.
     """
     try:
-        # --- DATA GATHERING ---
-        target_node_data = database.get_node_by_id(target_node_id, vault_id=vault_id)
+        # DATA GATHERING (Autorisierung passiert in den DB-Funktionen)
+        target_node_data = database.get_node_by_id(target_node_id, vault_id=vault_id, user_id=user_id)
         if not target_node_data:
-            raise ValueError(f"Target node with ID {target_node_id} not found in vault {vault_id}.")
+            raise ValueError(f"Target node with ID {target_node_id} not found in your vault.")
 
         target_title = target_node_data['title']
         original_content = target_node_data['content']
@@ -320,7 +319,7 @@ def propose_node_update_from_chat(target_node_id: str, chat_history: str, contex
         context_titles = []
         if context_node_ids:
             # Use the same reliable function, but this time we also need the titles.
-            context_data = database.get_content_for_nodes(context_node_ids, vault_id=vault_id)
+            context_data = database.get_content_for_nodes(node_ids=context_node_ids, vault_id=vault_id, user_id=user_id)
             context_content = context_data.get('content', '')
             context_titles = context_data.get('titles', [])
 
@@ -353,8 +352,7 @@ Here is the data for your task:
 ---
 {context_content}
 ---
-Now, please analyze all the information, follow all rules (especially the language rule), and provide the updated content for the node '{target_title}' in the required JSON format. Use your own knowledge. /no_think
-        """
+Now, please analyze all the information, follow all rules (especially the language rule), and provide the updated content for the node '{target_title}' in the required JSON format. Use your own knowledge."""
 
         # --- LLM CALL ---
         proposed_content = llm.generate_structured_response(
@@ -368,7 +366,7 @@ Now, please analyze all the information, follow all rules (especially the langua
         }
 
     except Exception as e:
-        logging.error(f"Error in propose_node_update_from_chat: {e}")
+        logger.error(f"Error in propose_node_update_from_chat: {e}")
         raise
 
 

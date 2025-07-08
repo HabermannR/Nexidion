@@ -9,27 +9,29 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 # Eine Klasse, die als Container für alle unsere Einstellungen dient.
 class Config:
-    # Neue Konfigurationen für das sichere Auth-System
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
-    
-    # --- HIER DIE LEBENSDAUER DES TOKENS VERLÄNGERN ---
-    # Setzt die Gültigkeit des Access Tokens auf 8 Stunden.
-    # Du kannst hier jeden beliebigen Wert einstellen (z.B. days=1 für einen Tag).
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
-    
-    
-    ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME')
-    ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH')
-
-    # 2. SQLALCHEMY_DATABASE_URI:
-    # Das ist die wichtigste Zeile für die Datenbank. Sie sagt SQLAlchemy:
-    # "Deine Datenbank ist eine SQLite-Datei (`sqlite:///`) und sie befindet sich
-    # in diesem Ordner (`basedir`) unter dem Namen `knowledge_base.db`."
+    ## --- DATABASE CONFIGURATION ---
     SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'knowledge_base.db')
-    #SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'Documentation.db')
-
-    # 3. SQLALCHEMY_TRACK_MODIFICATIONS:
-    # Eine Performance-Einstellung für SQLAlchemy. Wenn man sie auf False setzt,
-    # spart die App Ressourcen, da sie nicht jede einzelne Änderung verfolgen muss.
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
+    # --- AUTHENTICATION & SECURITY ---
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8) # Increased from 1 to 8 as a suggestion
+    
+    # --- LLM & EXTERNAL SERVICES ---
+    DEFAULT_CHAT_MODEL = os.getenv('DEFAULT_CHAT_MODEL', 'gpt-4o')
+    LOCAL_LLM_URL = os.getenv('LOCAL_LLM_URL', 'http://localhost:1234/v1')
+
+    # --- NEW: List of available LLM models for the frontend ---
+    # This becomes the single source of truth for your entire application.
+    AVAILABLE_LLM_MODELS = [
+        {'id': 'claude-sonnet-4-20250514', 'name': 'claude sonnet 4'},
+        {'id': 'gpt-4o', 'name': 'GPT-4o'},
+        {'id': 'o4-mini-2025-04-16', 'name': 'o4 mini'},
+        {'id': 'gpt-4.1-mini-2025-04-14', 'name': 'GPT-4.1'},
+        {'id': 'gemini-2.5-pro', 'name': 'gemini-2.5-pro'},
+        {'id': 'local', 'name': 'local'}
+    ]
+    # It's also good practice to list all expected API keys here, even if they are just fetching from os.environ
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

@@ -1,47 +1,46 @@
+// src/context/AuthContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
-// VAULT-FIX: Importiere den useAppContext, um auf seine Funktionen zugreifen zu können
-import { useAppContext } from './AppContext'; 
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  // Dein bestehender State ist perfekt, keine Änderungen hier
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  
-  // VAULT-FIX: Hole die fetchVaults-Funktion aus dem AppContext
-  const { fetchVaults } = useAppContext();
+  const [token, setToken] = useState(null);
+  // NEU: Ein Lade-Status für die initiale Auth-Prüfung
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      localStorage.setItem('token', token);
-      // VAULT-FIX: Wenn die Seite neu geladen wird und ein Token vorhanden ist,
-      // lade sofort die Vaults.
-      fetchVaults();
-    } else {
-      localStorage.removeItem('token');
+    try {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        setToken(storedToken);
+      }
+    } catch (error) {
+      console.error("Failed to read token from localStorage", error);
+    } finally {
+      // Egal was passiert, die initiale Prüfung ist jetzt abgeschlossen
+      setIsLoadingAuth(false);
     }
-    // VAULT-FIX: fetchVaults zur Abhängigkeitsliste hinzufügen.
-    // Da fetchVaults mit useCallback erstellt wurde, ändert es sich nicht
-    // und verursacht keine unnötigen Re-Renders.
-  }, [token, fetchVaults]);
+  }, []); // Läuft nur einmal beim App-Start
 
   const login = (newToken) => {
-    // Diese Funktion löst den obigen useEffect aus, der dann fetchVaults aufruft.
-    // Wir müssen fetchVaults hier nicht erneut aufrufen.
+    localStorage.setItem('token', newToken);
     setToken(newToken);
   };
 
   const logout = () => {
+    localStorage.removeItem('token');
     setToken(null);
+    localStorage.removeItem('activeVaultId');
+    sessionStorage.clear();
   };
 
   const isAuthenticated = !!token;
-  const isAdmin = false;
 
   const value = {
     token,
     isAuthenticated,
     isLoggedIn: isAuthenticated,
+    isLoadingAuth, // <--- Den neuen Status exportieren
     login,
     logout,
   };
