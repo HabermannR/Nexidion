@@ -1,28 +1,25 @@
-# chatservice.py (Multi-User-Version)
+# backend/chatservice.py
 
 import logging
-from models import db
-import database
-import llm
+from backend.models import db, ChatMessage  # Corrected imports
+import backend.database as database
+import backend.llm as llm
 
 logger = logging.getLogger(__name__)
+
+
 # ==============================================================================
 # SESSION MANAGEMENT
 # ==============================================================================
 
 def list_sessions(vault_id: int, user_id: int) -> list[dict]:
-    """
-    MODIFIZIERT: Ruft die Chat-Sitzungen für einen bestimmten Benutzer in einem Vault ab.
-    Delegiert die Abfrage vollständig an die Datenbankschicht, die die Autorisierung durchführt.
-    """
+    """Delegates to the database layer for listing sessions for a user."""
     return database.list_chat_sessions(vault_id=vault_id, user_id=user_id)
 
 
 def get_session_history(session_id: str, user_id: int) -> dict | None:
-    """
-    MODIFIZIERT: Ruft die Historie einer Sitzung ab.
-    Delegiert die Abfrage an die Datenbankschicht, die den Besitz der Sitzung überprüft.
-    """
+    """Delegates to the database layer for getting session history, which handles auth."""
+    # This now assumes database layer returns a full DTO, not a raw object
     return database.get_chat_session_history(session_id=session_id, user_id=user_id)
 
 
@@ -66,8 +63,12 @@ def create_new_chat_session(user_input: str, node_ids: list, model: str, vault_i
         history = database.get_chat_session_history(new_session.id, user_id)
         chat_history = history.get('messages', [])
         context_data = database.get_content_for_nodes(node_ids, vault_id, user_id)
-        context_content = context_data.get('content', '')
-        system_prompt = f"You are a helpful assistant... <context>\n{context_content}\n</context>"
+        system_prompt = (
+            "You are a helpful assistant for a knowledge base. "
+            "Use the following context to answer the user's question. "
+            "If the context is empty, use your general knowledge.\n\n"
+            f"<context>\n{context_data.get('content', '')}\n</context>"
+        )
 
         # LLM-Antwort generieren
         assistant_response_text = llm.generate_response(
@@ -136,7 +137,12 @@ def add_message_to_session(session_id: str, user_input: str, node_ids: list, use
         history = database.get_chat_session_history(session_id, user_id)
         chat_history = history.get('messages', [])
         context_data = database.get_content_for_nodes(node_ids, session.vault_id, user_id)
-        system_prompt = f"You are a helpful assistant... <context>\n{context_data.get('content', '')}\n</context>"
+        system_prompt = (
+            "You are a helpful assistant for a knowledge base. "
+            "Use the following context to answer the user's question. "
+            "If the context is empty, use your general knowledge.\n\n"
+            f"<context>\n{context_data.get('content', '')}\n</context>"
+        )
 
         assistant_response_text = llm.generate_response(
             messages=chat_history,
@@ -165,104 +171,136 @@ def add_message_to_session(session_id: str, user_input: str, node_ids: list, use
 # ==============================================================================
 
 def stream_new_chat_session(user_input: str, node_ids: list, model: str, vault_id: int, user_id: int):
-    """
-    MODIFIZIERT: Erstellt eine neue Chat-Sitzung für einen Benutzer und streamt die Antwort.
-    """
-    # Schritt 1: Session und User-Nachricht erstellen
+    # Step 1: Create session and user message
     try:
         title = (user_input[:77] + '...') if len(user_input) > 80 else user_input
         new_session = database.create_chat_session(title=title, vault_id=vault_id, owner_id=user_id)
         context_versions = database.get_versions_for_node_ids(node_ids, vault_id, user_id)
         database.add_chat_message(
-            session_id=new_session.id,
-            role='user',
-            content=user_input,
-            author_id=user_id,
+            session_id=new_session.id, role='user', content=user_input, author_id=user_id,
             context_versions=context_versions
         )
         db.session.commit()
     except Exception as e:
-        logger.error(f"STREAM FATAL for user {user_id}: {e}")
+        logger.error(f"STREAM FATAL on create for user {user_id}: {e}", exc_info=True)
         db.session.rollback()
         yield f"error: Failed to start the chat session."
         return
 
     yield f"session_id:{new_session.id}\n\n"
 
-    logger.info(f"chatservice Initiating stream for model {model}")
-    # Schritt 2: Streamen und am Ende speichern
+    # Step 2: Create an EMPTY assistant message immediately
+    try:
+        assistant_user_id = llm.get_llm_user(model).id
+        assistant_message = database.add_chat_message(
+            session_id=new_session.id, role='assistant', content="", author_id=assistant_user_id, llm_model_source=model
+        )
+        db.session.commit()
+    except Exception as e:
+        logger.error(f"STREAM FATAL: Could not create empty assistant message: {e}", exc_info=True)
+        db.session.rollback()
+        yield f"error: Failed to prepare the AI response."
+        return
+
+    # === PRIMARY FIX: Correct yield format ===
+    yield f"message_id:{assistant_message.id}\n\n"
+
+    # Step 3: Stream the response from the LLM
     full_assistant_response = ""
     try:
-        logger.info(f"Test")
-        assistant_user_id = llm.get_llm_user(model).id
-        logger.info(f"assistant_user {assistant_user_id}")
+        # === CONSISTENCY FIX: Use same data gathering as non-streaming functions ===
         history = database.get_chat_session_history(new_session.id, user_id)
         chat_history = history.get('messages', [])
         context_data = database.get_content_for_nodes(node_ids, vault_id, user_id)
-
         system_prompt = (
             "You are a helpful assistant for a knowledge base. "
             "Use the following context to answer the user's question. "
             "If the context is empty, use your general knowledge.\n\n"
             f"<context>\n{context_data.get('content', '')}\n</context>"
         )
-        logger.info(f"start stream")
+
         raw_stream = llm.generate_response_stream(messages=chat_history, system_prompt=system_prompt, model=model)
         filtered_stream = _filter_think_tags_from_stream(raw_stream)
 
         for chunk in filtered_stream:
             full_assistant_response += chunk
             yield chunk
-
-        if full_assistant_response:
-            database.add_chat_message(
-                session_id=new_session.id,
-                role='assistant',
-                content=full_assistant_response,
-                author_id=assistant_user_id,
-                llm_model_source=model
-            )
-            db.session.commit()
     except Exception as e:
         logger.error(f"STREAM AI FAILED for new session {new_session.id}: {e}", exc_info=True)
-        db.session.rollback()
-        yield f"\n\nerror: The AI failed to generate a response."
+        yield f"error: The AI stream was interrupted."
+    finally:
+        # Step 4: Update the message with the final content
+        if full_assistant_response:
+            try:
+                message_to_update = db.session.get(ChatMessage, assistant_message.id)
+                if message_to_update:
+                    message_to_update.content = full_assistant_response.strip()
+                    db.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to update final message content for {assistant_message.id}: {e}", exc_info=True)
+                db.session.rollback()
 
 
-
-def stream_message_in_session(session_id: str, user_input: str, node_ids: list, user_id: int):
+def stream_message_in_session(session_id: str, user_input: str, node_ids: list, user_id: int,
+                              default_model_from_config: str, model: str | None = None):
     """
-    MODIFIZIERT: Fügt Nachricht zu bestehender Session hinzu, prüft Besitz und streamt.
+    KORRIGIERT: Fügt eine Nachricht zu einer bestehenden Sitzung hinzu und streamt die Antwort.
+    - Der Parameter 'model_override' wurde in 'model' umbenannt, um konsistent zu sein.
+    - Die Logik zur Modellauswahl wurde verbessert: Sie verwendet das explizite Modell,
+      fällt auf das letzte Modell der Sitzung zurück und erst dann auf den globalen Default.
     """
-    # Autorisierung
     session = database.get_chat_session_by_id(session_id)
     if not session:
-        yield f"error: Session with id {session_id} not found."
-        return
-    if session.owner_id != user_id:
-        yield f"error: You do not have permission to access this chat session."
+        yield f"error: Session with id {session_id} not found or permission denied.\n\n"
         return
 
-    # Schritt 1: Benutzernachricht speichern
+    # Step 1: Determine model to use and save user message
     try:
+        # === FIX: Verbesserte und konsistente Logik zur Modellauswahl ===
+        if model:
+            model_to_use = model
+            logger.info(f"Using explicit model override for session {session_id}: '{model_to_use}'")
+        else:
+            # Finde die letzte Assistant-Nachricht, um das Modell der Konversation zu übernehmen
+            last_assistant_msg = next(
+                (msg for msg in reversed(session.messages) if msg.role == 'assistant' and msg.llm_model_source), None)
+            if last_assistant_msg and last_assistant_msg.llm_model_source:
+                model_to_use = last_assistant_msg.llm_model_source
+                logger.info(f"Continuing session {session_id} with last used model: '{model_to_use}'")
+            else:
+                model_to_use = default_model_from_config
+                logger.info(f"No previous model in session {session_id}. Using default: '{model_to_use}'")
+
         context_versions = database.get_versions_for_node_ids(node_ids, session.vault_id, user_id)
         database.add_chat_message(
             session_id=session.id, role='user', content=user_input, author_id=user_id, context_versions=context_versions
         )
         db.session.commit()
     except Exception as e:
-        logger.error(f"STREAM FATAL for user {user_id}: {e}")
+        logger.error(f"STREAM FATAL saving user message for user {user_id}: {e}", exc_info=True)
         db.session.rollback()
         yield f"error: Failed to save your message."
         return
 
-    # Schritt 2: Streamen und am Ende speichern
+    # Step 2: Create EMPTY assistant message
+    try:
+        assistant_user_id = llm.get_llm_user(model_to_use).id
+        assistant_message = database.add_chat_message(
+            session_id=session.id, role='assistant', content="", author_id=assistant_user_id,
+            llm_model_source=model_to_use
+        )
+        db.session.commit()
+    except Exception as e:
+        logger.error(f"STREAM FATAL: Could not create empty assistant message: {e}", exc_info=True)
+        db.session.rollback()
+        yield f"error: Failed to prepare the AI response."
+        return
+
+    yield f"message_id:{assistant_message.id}\n\n"
+
+    # Step 3: Stream the response
     full_assistant_response = ""
     try:
-        last_assistant_msg = next((msg for msg in reversed(session.messages) if msg.role == 'assistant' and msg.llm_model_source), None)
-        model_to_use = last_assistant_msg.llm_model_source if last_assistant_msg else 'claude-3-haiku-20240307'
-
-        assistant_user_id = llm.get_llm_user(model_to_use).id
         history = database.get_chat_session_history(session.id, user_id)
         chat_history = history.get('messages', [])
         context_data = database.get_content_for_nodes(node_ids, session.vault_id, user_id)
@@ -280,21 +318,100 @@ def stream_message_in_session(session_id: str, user_input: str, node_ids: list, 
         for chunk in filtered_stream:
             full_assistant_response += chunk
             yield chunk
-
-        if full_assistant_response:
-            database.add_chat_message(
-                session_id=session.id,
-                role='assistant',
-                content=full_assistant_response,
-                author_id=assistant_user_id,
-                llm_model_source=model_to_use
-            )
-            db.session.commit()
     except Exception as e:
-        logger.error(f"STREAM AI FAILED for session {session_id}: {e}")
-        db.session.rollback()
-        yield f"\n\nerror: The AI failed to generate a response."
+        logger.error(f"STREAM AI FAILED for session {session_id}: {e}", exc_info=True)
+        yield f"error: The AI stream was interrupted."
+    finally:
+        # Step 4: Update final content
+        if full_assistant_response:
+            try:
+                message_to_update = db.session.get(ChatMessage, assistant_message.id)
+                if message_to_update:
+                    message_to_update.content = full_assistant_response.strip()
+                    db.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to update final message content for {assistant_message.id}: {e}", exc_info=True)
+                db.session.rollback()
 
+
+def retry_specific_message_stream(session_id: str, message_id: int, user_id: int, model: str = None):
+    session = database.get_chat_session_by_id(session_id)
+    if not session:
+        yield f"error: Session with id {session_id} not found.\n\n"
+        return
+
+    target_message = db.session.get(ChatMessage, message_id)
+    if not target_message or target_message.session_id != session.id:
+        yield f"error: Message {message_id} not found in this session.\n\n"
+        return
+
+    message_index = session.messages.index(target_message)
+    prompting_message = session.messages[message_index - 1] if message_index > 0 else None
+    if not prompting_message:
+        yield f"error: Cannot retry the first message."
+        return
+
+    # Model selection logic: use provided model, fallback to latest assistant model, then original message model
+    if model:
+        model_to_use = model
+        logger.info(f"Retrying message {message_id} with explicitly provided model: '{model_to_use}'")
+    else:
+        # Find the most recent assistant message to get the "current" session model
+        latest_assistant_message = None
+        for msg in reversed(session.messages):
+            if msg.role == 'assistant' and msg.llm_model_source:
+                latest_assistant_message = msg
+                break
+
+        if latest_assistant_message and latest_assistant_message.llm_model_source:
+            model_to_use = latest_assistant_message.llm_model_source
+            logger.info(f"Retrying message {message_id} using latest assistant model: '{model_to_use}'")
+        else:
+            # Fallback to original message model
+            model_to_use = target_message.llm_model_source
+            logger.info(f"Retrying message {message_id} using original message model: '{model_to_use}'")
+
+    # Prepare message for retry
+    try:
+        assistant_user = llm.get_llm_user(model_to_use)
+        target_message.content = ""
+        target_message.author_id = assistant_user.id
+        target_message.llm_model_source = model_to_use  # Update with the model being used
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        yield f"error: Could not prepare message for retry with model '{model_to_use}': {str(e)}"
+        return
+
+    # Stream new response
+    full_new_response = ""
+    try:
+        # === CONSISTENCY FIX: Use same data gathering pattern ===
+        history_for_llm = database.get_chat_session_history(session.id, user_id)['messages'][:message_index]
+        context_node_ids = [v.node_id for v in prompting_message.context_versions]
+        context_data = database.get_content_for_nodes(context_node_ids, session.vault_id, user_id)
+        system_prompt = (
+            "You are a helpful assistant for a knowledge base. "
+            "Use the following context to answer the user's question. "
+            "If the context is empty, use your general knowledge.\n\n"
+            f"<context>\n{context_data.get('content', '')}\n</context>"
+        )
+
+        raw_stream = llm.generate_response_stream(messages=history_for_llm, system_prompt=system_prompt,
+                                                  model=model_to_use)
+        filtered_stream = _filter_think_tags_from_stream(raw_stream)
+
+        for chunk in filtered_stream:
+            full_new_response += chunk
+            yield chunk
+    except Exception as e:
+        logger.error(f"STREAM RETRY FAILED for message {target_message.id} with model '{model_to_use}': {e}",
+                     exc_info=True)
+        yield f"error: The AI stream was interrupted during retry with model '{model_to_use}'."
+    finally:
+        if full_new_response:
+            target_message.content = full_new_response.strip()
+            db.session.commit()
 
 
 # ==============================================================================

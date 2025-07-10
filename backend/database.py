@@ -12,7 +12,7 @@ scoped to a specific vault_id and authenticated user to ensure data isolation.
 from sqlalchemy import case, func
 from sqlalchemy.orm import joinedload, selectinload
 
-from models import db, Vault, Node, Version, ChatSession, ChatMessage, User
+from backend.models import db, Vault, Node, Version, ChatSession, ChatMessage, User
 
 
 def init_db():
@@ -48,13 +48,12 @@ def _verify_vault_access(vault_id: int, user_id: int) -> Vault:
     Helper-Funktion, um den Zugriff auf einen Vault zu überprüfen.
     Gibt den Vault zurück, wenn der Zugriff erlaubt ist, andernfalls wird ein Fehler ausgelöst.
     """
-    vault = Vault.query.get(vault_id)
+    vault = db.session.get(Vault, vault_id)
     if not vault:
         raise ValueError(f"Vault with ID {vault_id} not found.")
     if vault.owner_id != user_id:
         raise PermissionError("You do not have permission to access this vault.")
     return vault
-
 
 # ==============================================================================
 # VAULT-RELATED FUNCTIONS
@@ -74,11 +73,11 @@ def create_vault_with_root_node(name: str, owner_id: int) -> Vault:
     if not name_stripped:
         raise ValueError("Vault name cannot be empty.")
 
-    if Vault.query.filter_by(name=name_stripped, owner_id=owner_id).first():
+    if db.session.execute(db.select(Vault).filter_by(name=name_stripped, owner_id=owner_id)).first():
         raise ValueError(f"You already own a vault named '{name_stripped}'.")
 
     # Sicherstellen, dass der Besitzer existiert
-    if not User.query.get(owner_id):
+    if not db.session.get(User, owner_id):
         raise ValueError(f"Owner with ID {owner_id} not found.")
 
     try:
@@ -137,9 +136,16 @@ def delete_vault(vault_id: int, user_id: int):
 # NODE-RELATED FUNCTIONS
 # ==============================================================================
 
-def get_all_nodes_as_tree(vault_id: int, user_id: int) -> list[dict]:
-    """Holt den Baum, nachdem der Zugriff auf den Vault verifiziert wurde."""
-    test = _verify_vault_access(vault_id, user_id)
+def get_all_nodes_as_tree(vault_id: int, user_id: int) -> list[dict]:  # Hinzufügen: user_id
+    """
+    Holt die komplette Node-Hierarchie für einen Vault als Baumstruktur.
+    Prüft vorher, ob der angegebene Benutzer Zugriff auf den Vault hat.
+    """
+    # === KORREKTUR: Die Berechtigungsprüfung hinzufügen ===
+    _verify_vault_access(vault_id, user_id)
+    # =======================================================
+
+    # Der Rest der Funktion kann gleich bleiben
     all_nodes = (
         Node.query
         .options(joinedload(Node.current_version_object))
@@ -431,9 +437,16 @@ def get_chat_session_history(session_id: str, user_id: int) -> dict | None:
 
 def get_chat_session_by_id(session_id: str) -> ChatSession | None:
     """Holt eine ChatSession und lädt die Nachrichten und deren Autoren vorab."""
-    return ChatSession.query.options(
-        selectinload(ChatSession.messages).joinedload(ChatMessage.author)
-    ).get(session_id)
+    # Erstelle die Abfrage im neuen Stil mit db.select()
+    stmt = (
+        db.select(ChatSession)
+        .options(
+            selectinload(ChatSession.messages).joinedload(ChatMessage.author)
+        )
+        .filter_by(id=session_id)  # Filtere nach der ID
+    )
+    # Führe die Abfrage aus und gib das einzelne Ergebnis zurück
+    return db.session.execute(stmt).scalar_one_or_none()
 
 
 def create_chat_session(title: str, vault_id: int, owner_id: int) -> ChatSession:
@@ -447,7 +460,7 @@ def create_chat_session(title: str, vault_id: int, owner_id: int) -> ChatSession
 
 def delete_chat_session(session_id: str, user_id: int):
     """Löscht eine Chat-Sitzung und prüft den Besitz."""
-    session = ChatSession.query.get(session_id)
+    session = db.session.get(ChatSession, session_id)
     if not session:
         raise ValueError(f"Chat session with ID {session_id} not found.")
     if session.owner_id != user_id:

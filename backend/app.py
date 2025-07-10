@@ -16,10 +16,10 @@ import click
 # Load environment variables from .env file, especially for local development
 load_dotenv()
 
-from config import Config
-from models import db, User
-import chatservice
-import database
+from backend.config import Config
+from backend.models import db, User
+import backend.chatservice as chatservice
+import backend.database as database
 
 #import time
 #from flask import g
@@ -80,13 +80,24 @@ def create_app(config_class=Config):
     # HELPER FUNCTIONS
     # ==============================================================================
     def _get_vault_id_from_request():
-        vault_id = request.args.get('vault_id', type=int)
-        if not vault_id:
+        # Zuerst aus den Query-Parametern versuchen
+        vault_id_str = request.args.get('vault_id')
+
+        # Wenn nicht in Query-Parametern, aus dem JSON-Body versuchen
+        if not vault_id_str:
             if request.is_json and 'vault_id' in request.json:
-                vault_id = request.json.get('vault_id', type=int)
-        if not vault_id:
+                vault_id_str = request.json.get('vault_id')
+
+        # Wenn wir immer noch nichts haben, Fehler werfen
+        if not vault_id_str:
             raise ValueError("A 'vault_id' parameter is required (in query string or JSON body).")
-        return vault_id
+
+        # Jetzt, wo wir einen String haben, versuchen wir ihn in einen int zu konvertieren
+        try:
+            return int(vault_id_str)
+        except (ValueError, TypeError):
+            # Fängt den Fall ab, dass jemand z.B. "abc" oder 'null' sendet
+            raise ValueError(f"The 'vault_id' must be a valid integer, but got '{vault_id_str}'.")
 
     def is_valid_uuid(val):
         try:
@@ -507,17 +518,14 @@ def create_app(config_class=Config):
         data = request.json
         vault_id = data.get('vault_id')
         user_input = data.get('user_input')
-        print("stream_new_chat_session", data.get('model', 'local'))
+        #print("stream_new_chat_session", data.get('model', 'local'))
         if not vault_id or not user_input:
             return jsonify({"error": "vault_id and user_input are required"}), 400
 
-        #return "b"
         try:
             generator = chatservice.stream_new_chat_session(
                 user_input=user_input,
                 node_ids=data.get('node_ids', []),
-                #model=data.get('model', 'claude-3-haiku-20240307'),
-                #todo
                 model=data.get('model', 'local'),
                 vault_id=vault_id,
                 user_id=current_user_id
@@ -535,29 +543,68 @@ def create_app(config_class=Config):
     def stream_message_to_session(session_id):
         current_user_id = int(get_jwt_identity())
         data = request.json
-        print(data)
         user_input = data.get('user_input')
-        print("stream_message_to_session", data.get('model', 'local'))
+        model = data.get('model')
+
         if not user_input:
             return jsonify({"error": "user_input is required"}), 400
 
-        #return "a"
         try:
+            # === THE FIX: Get the default model from the app config here ===
+            default_model = app.config.get('DEFAULT_CHAT_MODEL', 'gpt-4o')  # Use a safe fallback
+
             generator = chatservice.stream_message_in_session(
                 session_id=session_id,
                 user_input=user_input,
                 node_ids=data.get('node_ids', []),
-                user_id=current_user_id
+                user_id=current_user_id,
+                model=model,
+                default_model_from_config=default_model
             )
 
             def stream_with_context():
-                with app.app_context(): yield from generator
+                # The app_context is available here, but we've already extracted the config value
+                with app.app_context():
+                    yield from generator
 
             return Response(stream_with_context(), mimetype='text/event-stream')
         except PermissionError as e:
             return jsonify({"error": str(e)}), 403
         except ValueError as e:
             return jsonify({"error": str(e)}), 404
+
+    @app.route('/api/chat/sessions/<string:session_id>/messages/<int:message_id>/retry', methods=['POST'])
+    @jwt_required()
+    def retry_stream_message(session_id, message_id):
+        """
+        MODIFIZIERT: Löst eine erneute Generierung einer spezifischen Assistenten-Nachricht aus.
+        - Die Route konvertiert message_id jetzt direkt in einen Integer.
+        - Die manuelle Validierung ist daher nicht mehr nötig.
+        """
+        current_user_id = int(get_jwt_identity())
+
+        data = request.get_json() or {}
+        model = data.get('model')
+
+        try:
+            # message_id ist jetzt garantiert ein Integer
+            generator = chatservice.retry_specific_message_stream(
+                session_id=session_id,
+                message_id=message_id,
+                user_id=current_user_id,
+                model=model
+            )
+
+            def stream_with_context():
+                with app.app_context():
+                    yield from generator
+
+            return Response(stream_with_context(), mimetype='text/event-stream')
+
+        except Exception as e:
+            logging.error(f"Failed to initiate retry for message {message_id} in session {session_id}: {e}",
+                          exc_info=True)
+            return jsonify({"error": "An internal server error occurred while trying to retry."}), 500
 
     # ==============================================================================
     # FILE SERVING & CLI

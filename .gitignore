@@ -35,9 +35,9 @@ Knowledge Base export/
 secure_images/
 backend/migrations/
 testgitignore.py
-backend/sync_docs.py
-backend/benchmark.py
-backend/reorder.py
+backend/scripts/sync_docs.py
+backend/scripts/benchmark.py
+backend/scripts/reorder.py
 backend/my_export.json
 
 .gitignore

@@ -1,7 +1,16 @@
-/* src/components/Chat/Chat.css (UPDATED VERSION) */
+/* In src/components/chat/Chat.css hinzufügen oder existierende Regeln ersetzen */
 
 /* ======================================================== */
-/* <<< CHAT MESSAGE STYLING >>> */
+/* <<< CHAT WINDOW & LAYOUT >>> */
+/* ======================================================== */
+
+.chat-window {
+  position: relative; /* Wichtig für die Positionierung des History-Panels */
+}
+
+
+/* ======================================================== */
+/* <<< CHAT MESSAGE STYLING (UPDATED) >>> */
 /* ======================================================== */
 
 .message {
@@ -19,10 +28,48 @@
   align-self: flex-start;
   align-items: flex-start;
 }
-.message strong {
+
+/* NEU: Ein Container für den Sprecher-Namen und den Retry-Button */
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%; /* Stellt sicher, dass der Container die volle Breite der Nachricht einnimmt */
+  padding: 0 0.5rem; /* Etwas Abstand links und rechts */
+  margin-bottom: 0.25rem;
+}
+
+/* Der alte `strong`-Selektor wird jetzt durch diesen ersetzt/ergänzt */
+.message-header strong {
   font-size: 0.8rem;
   color: #6c757d; /* Bootstrap secondary color */
-  margin-bottom: 0.25rem;
+}
+
+/* NEU: Styling für den Retry-Button */
+.retry-button {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: #6c757d; /* Gleiche Farbe wie der Sprecher-Name für Unauffälligkeit */
+  opacity: 0; /* Standardmäßig unsichtbar */
+  transition: opacity 0.2s, color 0.2s;
+  line-height: 1; /* Verhindert vertikales Wackeln */
+}
+
+/* Mache den Button sichtbar, wenn man über die GANZE Nachricht hovert */
+.message.assistant:hover .retry-button {
+  opacity: 0.6;
+}
+
+.retry-button:hover {
+  opacity: 1;
+  color: #212529; /* Dunklere Farbe beim Hover */
+}
+
+.retry-button:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
 }
 
 /* User message bubble */
@@ -53,6 +100,7 @@
 /* ======================================================== */
 /* <<< HISTORY PANEL ANIMATION & STYLING >>> */
 /* ======================================================== */
+
 .chat-history-panel {
   position: absolute;
   top: 0;
@@ -62,8 +110,9 @@
   z-index: 100;
   transform: translateX(100%);
   transition: transform 0.3s ease-in-out;
-  /* Prevent scrolling issues */
   overflow: hidden;
+  background-color: white; /* Gib dem Panel eine Hintergrundfarbe */
+  border-left: 1px solid #dee2e6; /* Eine subtile Trennlinie */
 }
 
 /* Slide-in-Animation */
@@ -76,7 +125,6 @@
   height: 100%;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  /* Prevent scroll event bubbling */
   overscroll-behavior: contain;
 }
 
@@ -106,6 +154,10 @@
   font-weight: 600;
   color: #333;
   margin-bottom: 4px;
+  /* Verhindert, dass langer Text das Layout bricht */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .session-meta {

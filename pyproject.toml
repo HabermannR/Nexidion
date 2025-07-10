@@ -1,0 +1,16 @@
+# pyproject.toml
+
+
+[tool.pytest.ini_options]
+# Füge hier alle Standard-Optionen hinzu, die du immer verwenden willst
+addopts = "--cov=backend --cov-report=html --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["backend"]  # Das Verzeichnis, das gecovert werden soll
+omit = [
+    "backend/scripts/*"  # Schließt alles im scripts-Ordner aus
+]
+[tool.coverage.report]
+# Hiermit kannst du auch den Report konfigurieren, wenn du möchtest
+show_missing = true
+skip_covered = false

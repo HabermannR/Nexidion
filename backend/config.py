@@ -18,7 +18,7 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8) # Increased from 1 to 8 as a suggestion
     
     # --- LLM & EXTERNAL SERVICES ---
-    DEFAULT_CHAT_MODEL = os.getenv('DEFAULT_CHAT_MODEL', 'gpt-4o')
+    DEFAULT_CHAT_MODEL = os.getenv('DEFAULT_CHAT_MODEL', 'gemini-2.5-pro')
     LOCAL_LLM_URL = os.getenv('LOCAL_LLM_URL', 'http://localhost:1234/v1')
 
     # --- NEW: List of available LLM models for the frontend ---
@@ -29,7 +29,9 @@ class Config:
         {'id': 'o4-mini-2025-04-16', 'name': 'o4 mini'},
         {'id': 'gpt-4.1-mini-2025-04-14', 'name': 'GPT-4.1'},
         {'id': 'gemini-2.5-pro', 'name': 'gemini-2.5-pro'},
-        {'id': 'local', 'name': 'local'}
+        {'id': 'local', 'name': 'local'},
+        {'id': 'mock', 'name': 'Mock LLM (Free Test)'},
+        {'id': 'mock2', 'name': 'Mock2 LLM (Free Test)'}
     ]
     # It's also good practice to list all expected API keys here, even if they are just fetching from os.environ
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
