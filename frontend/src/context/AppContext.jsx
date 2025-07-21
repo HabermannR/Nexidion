@@ -1,67 +1,65 @@
 // src/context/AppContext.jsx
 
-import React, { createContext, useState, useContext, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useCallback, useMemo, useEffect } from 'react';
 import api from '../api/axios';
 import { useAuth } from './AuthContext';
-import qs from 'qs';
 
 const AppContext = createContext(null);
 
 export const useAppContext = () => useContext(AppContext);
 
-// src/context/AppContext.jsx
-
 export const AppProvider = ({ children }) => {
   // =======================================================
-  // 1. ZUSTANDSDEFINITIONEN
+  // 1. STATE DEFINITIONS
   // =======================================================
   const { isLoggedIn, isLoadingAuth } = useAuth();
 
-  // Zustand: Nodes & Layout
+  // State: Nodes & Layout
   const [selectedNodeIds, setSelectedNodeIds] = useState(new Set());
   const [globalTreeData, setGlobalTreeData] = useState([]);
   const [isPrintPreviewActive, setIsPrintPreviewActive] = useState(false);
   const [printPreviewData, setPrintPreviewData] = useState({ nodes: [], toc: [] });
   const [collapsedNodes, setCollapsedNodes] = useState(new Set());
-  
-  // Zustand: Vaults
+
+  // State: Vaults
   const [vaults, setVaults] = useState([]);
   const [activeVault, setActiveVault] = useState(null);
   const [isLoadingVaults, setIsLoadingVaults] = useState(true);
 
-  // Zustand: Globaler Chat
+  // State: Global Chat
   const [chatHistory, setChatHistory] = useState([]);
   const [chatSessionId, setChatSessionId] = useState(null);
+  const [activeSessionTitle, setActiveSessionTitle] = useState(null); // <-- NEUER STATE
   const [isChatLoading, setIsChatLoading] = useState(false);
-  
-  // Zustand: LLM-Modelle & Lade-Logik
+
+  // State: LLM Models & Loading Logic
   const [validModels, setValidModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [selectedModel, setSelectedModel] = useState(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-  
+
   // =======================================================
-  // 2. CALLBACK-FUNKTIONEN
+  // 2. CALLBACK FUNCTIONS
   // =======================================================
 
-  // --- Datenlade-Funktionen ---
+  // --- Data Fetching ---
   const fetchVaults = useCallback(async () => {
     setIsLoadingVaults(true);
     try {
-        const response = await api.get('/api/vaults');
-        setVaults(response.data || []);
+      const response = await api.get('/api/vaults/');
+      setVaults(response.data || []);
     } catch (error) {
-        console.error("Failed to fetch vaults:", error);
-        setVaults([]);
+      console.error("Failed to fetch vaults:", error);
+      setVaults([]);
     } finally {
-        setIsLoadingVaults(false);
+      setIsLoadingVaults(false);
     }
   }, []);
 
   const fetchModels = useCallback(async () => {
     setIsLoadingModels(true);
     try {
-      const response = await api.get('/api/llm/models');
+      const response = await api.get('/api/llm/models/');
       setValidModels(response.data || []);
     } catch (error) {
       console.error("Failed to fetch LLM models:", error);
@@ -71,27 +69,26 @@ export const AppProvider = ({ children }) => {
     }
   }, []);
 
-  // --- Vault-Management ---
+  // --- Vault Management ---
   const changeActiveVault = useCallback((newVault) => {
     setActiveVault(prevActiveVault => {
-        const isActualChange = prevActiveVault && newVault && prevActiveVault.id !== newVault.id;
-        if (isActualChange) {
-            console.log("Vault-Wechsel erkannt. Setze Kontext zurück.");
-            setGlobalTreeData([]);
-            setSelectedNodeIds(new Set());
-            setChatHistory([]);
-            setChatSessionId(null);
-        }
-        if (newVault) {
-            localStorage.setItem('activeVaultId', newVault.id);
-        } else {
-            localStorage.removeItem('activeVaultId');
-        }
-        return newVault;
+      const isActualChange = prevActiveVault && newVault && prevActiveVault.id !== newVault.id;
+      if (isActualChange) {
+        setGlobalTreeData([]);
+        setSelectedNodeIds(new Set());
+        setChatHistory([]);
+        setChatSessionId(null);
+      }
+      if (newVault) {
+        localStorage.setItem('activeVaultId', newVault.id);
+      } else {
+        localStorage.removeItem('activeVaultId');
+      }
+      return newVault;
     });
   }, []);
 
-  // --- Node-Management ---
+  // --- Node Management ---
   const toggleNodeCollapse = useCallback((nodeId) => {
     setCollapsedNodes(prevSet => {
       const newSet = new Set(prevSet);
@@ -111,12 +108,13 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   const getContextContent = useCallback(async () => {
-    if (selectedNodeIds.size === 0 || !activeVault) return { content: "", titles: [] };
+    if (selectedNodeIds.size === 0 || !activeVault) {
+      return { content: "", titles: [] };
+    }
     try {
-      const response = await api.get('/api/nodes/content', {
-        params: { vault_id: activeVault.id, node_ids: Array.from(selectedNodeIds) },
-        paramsSerializer: params => qs.stringify(params, { arrayFormat: 'repeat' })
-      });
+      const url = `/api/vaults/${activeVault.id}/nodes/content`;
+      const payload = { node_ids: Array.from(selectedNodeIds) };
+      const response = await api.post(url, payload);
       return response.data;
     } catch (error) {
       console.error("Failed to fetch context content:", error);
@@ -124,13 +122,13 @@ export const AppProvider = ({ children }) => {
       return { content: "", titles: [] };
     }
   }, [selectedNodeIds, activeVault]);
- 
+
   // --- Tree ---
   const clearNodeSelection = useCallback(() => {
     setSelectedNodeIds(new Set());
   }, []);
 
-  // --- Druckvorschau ---
+  // --- Print Preview ---
   const enterPrintPreview = useCallback((data) => {
     setPrintPreviewData(data);
     setIsPrintPreviewActive(true);
@@ -140,30 +138,30 @@ export const AppProvider = ({ children }) => {
     setIsPrintPreviewActive(false);
     setPrintPreviewData({ nodes: [], toc: [] });
   }, []);
-  
-  // --- Chat-Funktionen ---
+
+  // --- Chat Functions (fokussiert auf State-Management) ---
   const startNewChat = useCallback(() => {
     setChatHistory([]);
     setChatSessionId(null);
+    setActiveSessionTitle(null);
     setIsChatLoading(false);
   }, []);
 
   const loadChatSession = useCallback(async (sessionIdToLoad) => {
-    if (isChatLoading) return false;
+    if (isChatLoading || !activeVault) return false;
+
     setIsChatLoading(true);
     try {
-      const response = await api.get(`/api/chat/sessions/${sessionIdToLoad}`);
+      const response = await api.get(`/api/vaults/${activeVault.id}/sessions/${sessionIdToLoad}`);
       const sessionData = response.data;
-      if (activeVault && sessionData.vault_id !== activeVault.id) {
-          alert("This chat session belongs to a different vault.");
-          return false;
-      }
+
       const messagesWithStrIds = (sessionData.messages || []).map(msg => ({
         ...msg,
         id: String(msg.id)
       }));
       setChatHistory(messagesWithStrIds);
       setChatSessionId(String(sessionData.id));
+      setActiveSessionTitle(sessionData.title);
       return true;
     } catch (error) {
       console.error("Failed to load session history:", error);
@@ -175,36 +173,27 @@ export const AppProvider = ({ children }) => {
   }, [activeVault, isChatLoading]);
 
   const appendMessage = useCallback((message) => {
-      const messageWithId = message.id ? message : { ...message, id: `temp-ui-${Date.now()}` };
-      setChatHistory(prev => [...prev, messageWithId]);
+    // Fügt eine komplette, neue Nachricht zur Historie hinzu.
+    setChatHistory(prev => [...prev, message]);
   }, []);
-  
-  const updateMessageContent = useCallback((messageId, newContent) => {
-    setChatHistory(prev => 
-        prev.map(msg => 
-            msg.id === messageId ? { ...msg, content: newContent } : msg
+
+  const updateMessage = useCallback((messageId, updates) => {
+    // Ersetzt Eigenschaften einer bestehenden Nachricht (z.B. ID von temp zu real, oder ganzer Inhalt).
+    setChatHistory(prev =>
+        prev.map(msg =>
+            msg.id === messageId ? { ...msg, ...updates } : msg
         )
     );
   }, []);
-  
-  const appendChunkToMessage = useCallback((chunk, targetId) => {
-      setChatHistory(prev => {
-          const messageIndex = prev.findIndex(msg => msg.id === targetId);
-          if (messageIndex === -1) return prev; 
-          const newHistory = [...prev];
-          const updatedMessage = { 
-              ...newHistory[messageIndex],
-              content: newHistory[messageIndex].content + chunk
-          };
-          newHistory[messageIndex] = updatedMessage;
-          return newHistory;
-      });
-  }, []);
 
-  const replaceMessageId = useCallback((tempId, newId) => {
-    setChatHistory(currentHistory =>
-        currentHistory.map(msg =>
-            msg.id === tempId ? { ...msg, id: newId } : msg
+  const appendChunkToMessage = useCallback((messageId, chunk) => {
+    // Hängt einen Text-Chunk an den `content` einer bestehenden Nachricht an.
+    // Ideal für Streaming.
+    setChatHistory(prev =>
+        prev.map(msg =>
+            msg.id === messageId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
         )
     );
   }, []);
@@ -212,15 +201,14 @@ export const AppProvider = ({ children }) => {
   const changeSelectedModel = useCallback((modelId) => {
     setSelectedModel(modelId);
   }, []);
-  
+
   // =======================================================
-  // 3. SEITENEFFEKTE (useEffect)
+  // 3. SIDE EFFECTS (useEffect)
   // =======================================================
-  
-  // HOOK 1: Führt den initialen Ladevorgang aus, wenn der Benutzer eingeloggt ist.
+
+  // HOOK 1: Initial data load on login.
   useEffect(() => {
     if (!isLoadingAuth && isLoggedIn && !initialLoadComplete) {
-      console.log("Auth confirmed. Performing initial data load...");
       fetchVaults();
       fetchModels();
       try {
@@ -246,19 +234,14 @@ export const AppProvider = ({ children }) => {
     }
   }, [isLoggedIn, isLoadingAuth, initialLoadComplete, fetchVaults, fetchModels]);
 
-  // HOOK 2: Bereinigt den Zustand, wenn der Benutzer sich ausloggt.
+  // HOOK 2: State cleanup on logout.
   useEffect(() => {
     if (!isLoadingAuth && !isLoggedIn) {
       console.log("User is logged out. Clearing all application state...");
-      setVaults([]);
-      setActiveVault(null);
-      setGlobalTreeData([]);
-      setSelectedNodeIds(new Set());
-      setCollapsedNodes(new Set());
-      setChatHistory([]);
-      setChatSessionId(null);
-      setValidModels([]);
-      setSelectedModel(null);
+      setVaults([]); setActiveVault(null); setGlobalTreeData([]);
+      setSelectedNodeIds(new Set()); setCollapsedNodes(new Set());
+      setChatHistory([]); setChatSessionId(null);
+      setValidModels([]); setSelectedModel(null);
       setIsPrintPreviewActive(false);
       sessionStorage.removeItem('chatHistory');
       sessionStorage.removeItem('chatSessionId');
@@ -268,7 +251,7 @@ export const AppProvider = ({ children }) => {
     }
   }, [isLoggedIn, isLoadingAuth]);
 
-  // HOOK 3: Wählt einen Standard-Vault aus, nachdem die Vaults geladen wurden.
+  // HOOK 3: Set default vault after vaults load.
   useEffect(() => {
     if (vaults.length > 0 && !activeVault) {
       const lastVaultId = localStorage.getItem('activeVaultId');
@@ -277,7 +260,7 @@ export const AppProvider = ({ children }) => {
     }
   }, [vaults, activeVault]);
 
-  // HOOK 4: Wählt ein Standard-Modell aus, nachdem die Modelle geladen wurden.
+  // HOOK 4: Set default model after models load.
   useEffect(() => {
     if (validModels.length > 0 && !isLoadingModels) {
       const storedModelId = localStorage.getItem('selectedModel');
@@ -286,19 +269,16 @@ export const AppProvider = ({ children }) => {
     }
   }, [validModels, isLoadingModels]);
 
-  // HOOK 5: Speichert das ausgewählte Modell im localStorage.
+  // HOOK 5: Persist selected model.
   useEffect(() => {
     if (selectedModel) {
       localStorage.setItem('selectedModel', selectedModel);
     }
   }, [selectedModel]);
 
-  // HOOK 6: Speichert den Chat-Verlauf im sessionStorage.
+  // HOOK 6: Persist chat history.
   useEffect(() => {
-    // Nicht speichern, bevor der initiale Ladevorgang abgeschlossen ist.
-    if (!initialLoadComplete || isChatLoading) {
-      return;
-    }
+    if (!initialLoadComplete || isChatLoading) return;
     try {
       sessionStorage.setItem('chatHistory', JSON.stringify(chatHistory));
       if (chatSessionId) {
@@ -311,38 +291,49 @@ export const AppProvider = ({ children }) => {
     }
   }, [chatHistory, chatSessionId, isChatLoading, initialLoadComplete]);
 
-  // HOOK 7: Speichert die Node-Auswahl im localStorage.
+  // HOOK 7: Persist node selection.
   useEffect(() => {
     if (activeVault) {
-        try {
-          const idsToStore = Array.from(selectedNodeIds);
-          localStorage.setItem('selectedNodeIds', JSON.stringify(idsToStore));
-        } catch (error) {
-          console.error("Failed to persist node selection to localStorage", error);
-        }
+      try {
+        const idsToStore = Array.from(selectedNodeIds);
+        localStorage.setItem('selectedNodeIds', JSON.stringify(idsToStore));
+      } catch (error) {
+        console.error("Failed to persist node selection to localStorage", error);
+      }
     }
   }, [selectedNodeIds, activeVault]);
-  
+
   // =======================================================
-  // 4. MEMOISIERUNG DES CONTEXT-WERTS UND RENDER
+  // 4. MEMOIZED CONTEXT VALUE AND RENDER
   // =======================================================
   const value = useMemo(() => ({
-    // ... (der value-Teil bleibt unverändert)
+    // State
     selectedNodeIds, treeData: globalTreeData, isPrintPreviewActive, printPreviewData,
     collapsedNodes, vaults, activeVault, isLoadingVaults, chatHistory,
-    chatSessionId, isChatLoading, validModels, isLoadingModels, selectedModel,      
+    chatSessionId, isChatLoading, validModels, isLoadingModels, selectedModel,
+    // Setters & Functions
     setSelectedNodeIds, setTreeDataForContext: setGlobalTreeData, setChatHistory,
     setChatSessionId, setIsChatLoading, clearNodeSelection, toggleNodeSelection,
     getContextContent, enterPrintPreview, exitPrintPreview, toggleNodeCollapse,
-    fetchVaults, changeActiveVault, startNewChat, loadChatSession, appendMessage,
-    appendChunkToMessage, updateMessageContent, replaceMessageId, fetchModels, changeSelectedModel
+    fetchVaults, changeActiveVault, startNewChat, loadChatSession,
+    // Fokussierte Chat-Update-Funktionen
+    appendMessage,
+    updateMessage,
+    appendChunkToMessage,
+    activeSessionTitle, setActiveSessionTitle,
+    fetchModels, changeSelectedModel,
+    api,
   }), [
-      selectedNodeIds, globalTreeData, isPrintPreviewActive, printPreviewData,
-      collapsedNodes, vaults, activeVault, isLoadingVaults, chatHistory,
-      chatSessionId, isChatLoading, validModels, isLoadingModels, selectedModel,      
-      clearNodeSelection, toggleNodeSelection, getContextContent, enterPrintPreview, exitPrintPreview,
-      toggleNodeCollapse, fetchVaults, changeActiveVault, startNewChat,
-      loadChatSession, appendMessage, appendChunkToMessage, updateMessageContent, replaceMessageId, fetchModels, changeSelectedModel
+    // Alle State-Werte
+    selectedNodeIds, globalTreeData, isPrintPreviewActive, printPreviewData,
+    collapsedNodes, vaults, activeVault, isLoadingVaults, chatHistory,
+    chatSessionId, isChatLoading, validModels, isLoadingModels, selectedModel,
+    // Alle Callback-Funktionen
+    clearNodeSelection, toggleNodeSelection, getContextContent, enterPrintPreview, exitPrintPreview,
+    toggleNodeCollapse, fetchVaults, changeActiveVault, startNewChat,
+    loadChatSession, appendMessage, updateMessage, appendChunkToMessage,
+    activeSessionTitle, setActiveSessionTitle, fetchModels, changeSelectedModel,
+    api,
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -1,45 +1,38 @@
-/* src/App.css (FINALE VERSION, DIE FÜR ALLE SPALTEN GILT) */
+/* src/App.css (NEUE, VEREINFACHTE VERSION) */
 
+/*
+  Grundlegendes App-Shell-Layout für ALLE Bildschirmgrößen.
+  Die Seite selbst ist nie scrollbar.
+*/
 html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: hidden; /* VERHINDERT BODY-SCROLLING */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+/*
+  Der Hauptcontainer, der die App umschließt.
+  Er nutzt Flexbox, um TopBar und <main> zu verteilen.
+*/
 .app-container {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background-color: #f8f9fa; /* Eine leichte Hintergrundfarbe kann helfen */
 }
 
+/*
+  Der <main>-Bereich, der den gesamten restlichen Platz einnimmt.
+  Das ist der Container, dessen KINDER scrollbar werden.
+*/
 .app-container main {
-  flex-grow: 1;
+  flex-grow: 1; /* Wichtigste Regel: Fülle den verfügbaren Platz */
+
+  /*
+    Dieser "Flexbox-Hack" ist entscheidend, damit Kind-Elemente mit
+    `overflow: auto` korrekt funktionieren und nicht überlaufen.
+  */
   min-height: 0;
-  display: flex;
-}
-
-.app-container .container-fluid {
-  flex-grow: 1; 
-  display: flex;
-  flex-direction: column;
-  min-height: 0; 
-}
-
-.app-container .row {
-  flex-grow: 1;
-  min-height: 0;
-}
-
-@media (max-width: 991.98px) {
-  html, body {
-    overflow: auto; /* Erlaube dem Body zu scrollen! */
-    height: auto;
-  }
-  
-  .app-container, .app-container main, .app-container .container-fluid, .app-container .row {
-      height: auto; /* Setze alle Höhenbeschränkungen zurück */
-      min-height: initial; /* Setze alle min-height Beschränkungen zurück */
-      overflow: visible; /* Verhindere internes Scrollen */
-  }
 }

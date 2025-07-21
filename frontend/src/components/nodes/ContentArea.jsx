@@ -2,6 +2,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Alert from 'react-bootstrap/Alert';
+import Button from 'react-bootstrap/Button';
 
 // Import der Unterkomponenten
 import DiffViewer from '../common/DiffViewer';
@@ -25,7 +26,8 @@ export default function ContentArea({
     onCancelEdit,
     contentToDisplay, // Inhalt für die Einzelansicht (aktuell oder alt)
     versionForDiffBase,
-    versionForDiffCompare
+    versionForDiffCompare,
+    onShowCurrent
 }) {
 
 	// Diese Hilfsfunktion scannt Text und wandelt [[Links]] in klickbare Elemente um.
@@ -109,9 +111,21 @@ export default function ContentArea({
             </div>
         );
     }
-    
-    // Wir bestimmen, ob wir im Diff-Modus sind.
+
     const isDiffMode = !!(versionForDiffBase && versionForDiffCompare);
+
+    let olderVersion = null;
+    let newerVersion = null;
+
+    if (isDiffMode) {
+        olderVersion = versionForDiffBase.version < versionForDiffCompare.version
+            ? versionForDiffBase
+            : versionForDiffCompare;
+
+        newerVersion = versionForDiffBase.version > versionForDiffCompare.version
+            ? versionForDiffBase
+            : versionForDiffCompare;
+    }
 
     return (
         <div className="content-area-wrapper p-3">
@@ -119,20 +133,16 @@ export default function ContentArea({
                 title={node.title}
                 isEditing={isEditing}
                 onEditClick={() => {
-					// Den Editor mit dem aktuell angezeigten Inhalt (kann auch eine alte Version sein) initialisieren.
-					onContentChange(contentToDisplay); 
-					
-					// Dann in den Bearbeitungsmodus wechseln.
-					onSetIsEditing(true);
-				}}
+                    onContentChange(contentToDisplay);
+                    onSetIsEditing(true);
+                }}
                 onRenameClick={() => {
                     const newTitle = prompt("Neuen Titel eingeben für:", node.title);
                     if (newTitle && newTitle.trim() && newTitle.trim() !== node.title) {
                         onRename(node.id, newTitle.trim());
                     }
                 }}
-                // Im Diff-Modus sind die Aktionen (Bearbeiten, Umbenennen) deaktiviert.
-                disableActions={isDiffMode}
+                disableActions={isDiffMode || !!versionForDiffBase} // Aktionen auch bei Einzel-Version-Ansicht sperren
             />
 
             {successMessage && <Alert variant="success" className="mt-3">{successMessage}</Alert>}
@@ -140,22 +150,51 @@ export default function ContentArea({
             {/* ZUSTAND 1: DIFF-ANSICHT */}
             {isDiffMode ? (
                 <div className="mt-3">
+                    {/* =================================================================== */}
+                    {/* NEU: Hinzufügen einer Alert-Box mit "Zurück"-Button für den Diff-Modus */}
+                    {/* =================================================================== */}
+                    <Alert variant="secondary" className="mb-3 small">
+                        <div className="d-flex justify-content-between align-items-center">
+                            <span>
+                                Du vergleichst Version <strong>{olderVersion.version}</strong> mit Version <strong>{newerVersion.version}</strong>.
+                            </span>
+                            <Button
+                                variant="outline-dark"
+                                size="sm"
+                                onClick={onShowCurrent} // Derselbe Handler wird hier wiederverwendet
+                            >
+                                Vergleich beenden
+                            </Button>
+                        </div>
+                    </Alert>
+
                     <DiffViewer
-                        oldContent={versionForDiffBase.content}
-                        newContent={versionForDiffCompare.content}
-                        oldTitle={`v${versionForDiffBase.version} (vom ${new Date(versionForDiffBase.timestamp).toLocaleString('de-DE')})`}
-                        newTitle={`v${versionForDiffCompare.version} (vom ${new Date(versionForDiffCompare.timestamp).toLocaleString('de-DE')})`}
+                        oldContent={olderVersion.content}
+                        newContent={newerVersion.content}
+                        oldTitle={`v${olderVersion.version} (älter) - ${new Date(olderVersion.timestamp).toLocaleString('de-DE')}`}
+                        newTitle={`v${newerVersion.version} (neuer) - ${new Date(newerVersion.timestamp).toLocaleString('de-DE')}`}
                     />
                 </div>
-            
-            /* ZUSTAND 3: NORMALE ANSICHT (alt oder aktuell) / EDITOR */
+
+            /* ZUSTAND 2 & 3: NORMALE ANSICHT (alt oder aktuell) / EDITOR */
             ) : (
                 <>
-                    {/* Zeige einen Hinweis an, wenn eine alte Version (aber kein Diff) angezeigt wird */}
+                    {/* Dieser Teil ist bereits korrekt */}
                     {versionForDiffBase && !isDiffMode && (
-                         <Alert variant="info" className="mt-3 small">
-                            Du betrachtest Version {versionForDiffBase.version} vom {new Date(versionForDiffBase.timestamp).toLocaleString('de-DE')}.
-                         </Alert>
+                        <Alert variant="info" className="mt-3 small">
+                            <div className="d-flex justify-content-between align-items-center">
+                                <span>
+                                    Du betrachtest Version <strong>{versionForDiffBase.version}</strong> vom {new Date(versionForDiffBase.timestamp).toLocaleString('de-DE')}.
+                                </span>
+                                <Button
+                                    variant="outline-primary"
+                                    size="sm"
+                                    onClick={onShowCurrent}
+                                >
+                                    Zurück zur aktuellen Version
+                                </Button>
+                            </div>
+                        </Alert>
                     )}
 
                     <NodeEditor
@@ -168,7 +207,7 @@ export default function ContentArea({
                             <div className="view-content mt-3 markdown-content">
                                 <ReactMarkdown
                                     remarkPlugins={[remarkGfm]}
-                                    components={componentRenderers} 
+                                    components={componentRenderers}
                                 >
                                     {contentToDisplay || ''}
                                 </ReactMarkdown>

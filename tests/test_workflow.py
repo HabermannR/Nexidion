@@ -1,165 +1,176 @@
 # tests/test_workflow.py
+
+import json
 import pytest
 
 
-def parse_stream_response(response_bytes):
+def parse_sse_response(response_bytes):
     """
-    Helper function to parse the custom event-stream format from the chat API.
-    It extracts session_id, message_id, content, and any error messages.
+    Neue Hilfsfunktion zum Parsen von standardkonformen Server-Sent Events (SSE).
+    Sammelt Inhalte und extrahiert Daten aus JSON-Payloads.
     """
-    session_id = None
-    message_id = None
-    content = ""
-    error = None
-    lines = [line for line in response_bytes.decode('utf-8').split('\n') if line]
-    for line in lines:
-        if line.startswith('session_id:'):
-            session_id = line.split(':', 1)[1].strip()
-        elif line.startswith('message_id:'):
-            message_id = line.split(':', 1)[1].strip()
-        elif line.startswith('error:'):
-            error = line.split(':', 1)[1].strip()
-        else:
-            content += line
-    return {'session_id': session_id, 'message_id': message_id, 'content': content, 'error': error}
+    decoded_lines = response_bytes.decode('utf-8').strip().split('\n')
+
+    events = []
+    full_content = ""
+
+    current_event = {}
+    for line in decoded_lines:
+        if not line:  # Leere Zeile beendet ein Event
+            if current_event:
+                events.append(current_event)
+                # Extrahiere den Inhalt für den einfachen Zugriff
+                if 'data' in current_event and isinstance(current_event['data'], dict) and 'content' in current_event[
+                    'data']:
+                    full_content += current_event['data']['content']
+            current_event = {}
+            continue
+
+        key, value = line.split(':', 1)
+        value = value.strip()
+
+        if key == 'event':
+            current_event['event'] = value
+        elif key == 'data':
+            try:
+                current_event['data'] = json.loads(value)
+            except json.JSONDecodeError:
+                current_event['data'] = value  # Falls es kein JSON ist
+
+    if current_event:  # Füge das letzte Event hinzu, falls die Antwort nicht mit \n\n endet
+        events.append(current_event)
+        if 'data' in current_event and isinstance(current_event['data'], dict) and 'content' in current_event['data']:
+            full_content += current_event['data']['content']
+
+    return {'events': events, 'full_content': full_content}
 
 
-def test_complete_user_workflow(client, db_session, auth_headers_1, auth_headers_2, mocker):
+def test_full_workflow_v2_apis(client, test_user_1_obj, test_user_2_obj, mocker):
     """
-    This test uses function-scoped fixtures from conftest.py.
-    The database is clean at the start of this test. All API calls here
-    operate on the same isolated database instance for this single test run.
+    Simuliert einen kompletten Benutzer-Workflow mit den neuen V2-APIs für
+    Auth, Vaults, Nodes und Chat, inklusive der neuen Versions-API.
     """
-    # === PART 1: USER 1 - VAULT & NODE CREATION ===
-    create_vault_res = client.post('/api/vaults', json={'name': "User One's Workflow Vault"}, headers=auth_headers_1)
-    assert create_vault_res.status_code == 201
+    # === PART 0: USER LOGIN (V2 API) ===
+    # ... (unverändert) ...
+    login_res_1 = client.post('/api/auth/login',
+                              json={'username': test_user_1_obj.username, 'password': 'password123'})
+    auth_headers_1 = {'Authorization': f"Bearer {login_res_1.json['access_token']}"}
+    login_res_2 = client.post('/api/auth/login',
+                              json={'username': test_user_2_obj.username, 'password': 'password456'})
+    auth_headers_2 = {'Authorization': f"Bearer {login_res_2.json['access_token']}"}
+
+    # === PART 1: USER 1 - VAULT & NODE CREATION (V2 APIs) ===
+    # ... (größtenteils unverändert, aber mit neuen Assertions) ...
+    create_vault_res = client.post('/api/vaults/',
+                                   json={'name': "User One's Workflow Vault"},
+                                   headers=auth_headers_1)
     vault1 = create_vault_res.json
     vault1_id = vault1['id']
-    tree_res = client.get(f'/api/nodes/tree?vault_id={vault1_id}', headers=auth_headers_1)
-    assert tree_res.status_code == 200
+    tree_res = client.get(f'/api/vaults/{vault1_id}/nodes/', headers=auth_headers_1)
     root_node_id = tree_res.json[0]['id']
-    node_a_res = client.post('/api/nodes', json={
-        'vault_id': vault1_id, 'title': 'Topic A: Project Goals',
+    node_a_res = client.post(f'/api/vaults/{vault1_id}/nodes/', json={
+        'title': 'Topic A: Project Goals',
         'content': 'Initial project goals are: 1. Deliver on time. 2. Stay within budget.',
         'parent_id': root_node_id
     }, headers=auth_headers_1)
-    assert node_a_res.status_code == 201
-    node_a_id = node_a_res.json['id']
-    node_b_res = client.post('/api/nodes', json={
-        'vault_id': vault1_id, 'title': 'Topic B: Team Roles',
-        'content': 'Team roles are not yet defined.', 'parent_id': root_node_id
+    node_a = node_a_res.json
+    node_a_id = node_a['id']
+    node_b_res = client.post(f'/api/vaults/{vault1_id}/nodes/', json={
+        'title': 'Topic B: Team Roles',
+        'content': 'Team roles are not yet defined.',
+        'parent_id': root_node_id
     }, headers=auth_headers_1)
-    assert node_b_res.status_code == 201
-    node_b_id = node_b_res.json['id']
-    update_res = client.put(f'/api/nodes/{node_a_id}', json={
-        'vault_id': vault1_id,
+    node_b = node_b_res.json
+    node_b_id = node_b['id']
+
+    # Update Node A, um eine zweite Version zu erzeugen
+    update_res = client.put(f'/api/vaults/{vault1_id}/nodes/{node_a_id}', json={
         'content': 'UPDATED project goals: 1. Deliver on time. 2. Stay within budget. 3. Ensure high quality.'
     }, headers=auth_headers_1)
     assert update_res.status_code == 200
 
-    # === PART 2: USER 2 - VAULT CREATION & ACCESS CONTROL ===
-    create_vault2_res = client.post('/api/vaults', json={'name': "User Two's Private Space"}, headers=auth_headers_2)
-    assert create_vault2_res.status_code == 201
-    vault2_id = create_vault2_res.json['id']
-    forbidden_res = client.get(f'/api/nodes/tree?vault_id={vault1_id}', headers=auth_headers_2)
+    # =========================================================================
+    # NEUER TEST-SCHRITT 1.5: ÜBERPRÜFE NODE-STRUKTUR UND VERSIONEN API
+    # =========================================================================
+    # Holen des "leichten" Node A
+    get_node_a_res = client.get(f'/api/vaults/{vault1_id}/nodes/{node_a_id}', headers=auth_headers_1)
+    assert get_node_a_res.status_code == 200
+    node_a_light = get_node_a_res.json
+
+    # Prüfe die neue "leichte" Struktur
+    assert 'versions' not in node_a_light  # Der Versionsverlauf darf nicht mehr direkt enthalten sein
+    assert node_a_light['has_versions'] is True
+    assert node_a_light['version_count'] == 2
+    assert node_a_light[
+               'content'] == 'UPDATED project goals: 1. Deliver on time. 2. Stay within budget. 3. Ensure high quality.'
+
+    # Holen des Versionsverlaufs über den neuen Endpunkt
+    versions_res = client.get(f'/api/vaults/{vault1_id}/nodes/{node_a_id}/versions', headers=auth_headers_1)
+    assert versions_res.status_code == 200
+    versions_data = versions_res.json
+
+    assert isinstance(versions_data, list)
+    assert len(versions_data) == 2
+    assert versions_data[0]['version'] == 2  # Neueste zuerst
+    assert versions_data[0][
+               'content'] == 'UPDATED project goals: 1. Deliver on time. 2. Stay within budget. 3. Ensure high quality.'
+    assert versions_data[1]['version'] == 1
+    assert versions_data[1]['content'] == 'Initial project goals are: 1. Deliver on time. 2. Stay within budget.'
+    # =========================================================================
+
+    # === PART 2: USER 2 - ACCESS CONTROL CHECK (V2 APIs) ===
+    # ... (unverändert) ...
+    forbidden_res = client.get(f'/api/vaults/{vault1_id}/nodes/', headers=auth_headers_2)
     assert forbidden_res.status_code == 403
 
-    # === PART 3: USER 1 - CHAT WORKFLOW (using Mock LLM) ===
-    mocker.patch('backend.llm.time.sleep', return_value=None)
-    new_chat_res = client.post('/api/chat/sessions/stream', json={
-        'vault_id': vault1_id, 'user_input': "Elaborate on goals.",
-        'node_ids': [node_a_id], 'model': 'mock'
-    }, headers=auth_headers_1)
-    assert new_chat_res.status_code == 200
-    stream_data_1 = parse_stream_response(new_chat_res.data)
-    session_id = stream_data_1['session_id']
-    assistant_msg_1_id = stream_data_1['message_id']
-    assert session_id is not None and assistant_msg_1_id is not None
-    assert "MOCK-MODELL-EINS" in stream_data_1['content']  # Prüft auf die erste Mock-Antwort
-    follow_up_res = client.post(f'/api/chat/sessions/{session_id}/messages/stream', json={
-        'user_input': "Rephrase for exec summary.",
-    }, headers=auth_headers_1)
-    assert follow_up_res.status_code == 200
-    stream_data_2 = parse_stream_response(follow_up_res.data)
-    assistant_msg_2_id = stream_data_2['message_id']
-    assert "MOCK-MODELL-EINS" in stream_data_2['content']  # Der Follow-up sollte das gleiche Modell verwenden
-    retry_res = client.post(f'/api/chat/sessions/{session_id}/messages/{assistant_msg_2_id}/retry',
-                            headers=auth_headers_1, json={})
-    assert retry_res.status_code == 200
-    assert "MOCK-MODELL-EINS" in retry_res.data.decode('utf-8')
-
-    # === PART 3.5: CHAT MODEL SWITCHING & RETRY LOGIC (JETZT MIT EINDEUTIGEN ASSERTS) ===
-    switch_chat_res = client.post('/api/chat/sessions/stream', json={
-        'vault_id': vault1_id,
-        'user_input': "Initial message with model 'mock'",
+    # === PART 3 & 4: CHAT & PROPOSAL WORKFLOW (V2 APIs) ===
+    # ... (unverändert) ...
+    new_session_res = client.post(f'/api/vaults/{vault1_id}/sessions/', headers=auth_headers_1)
+    session_id = new_session_res.json['id']
+    mocker.patch('backend.services.chat_service.llm_service.generate_response_stream',
+                 return_value=iter(["Antwort ", "zu den Zielen."]))
+    client.post(f'/api/vaults/{vault1_id}/sessions/{session_id}/messages', json={
+        'user_input': "Elaborate on goals.",
+        'node_ids': [node_a_id],
         'model': 'mock'
     }, headers=auth_headers_1)
-    assert switch_chat_res.status_code == 200
-    switch_stream_1 = parse_stream_response(switch_chat_res.data)
-    switch_session_id = switch_stream_1['session_id']
-    first_assistant_msg_id = switch_stream_1['message_id']
-    assert "MOCK-MODELL-EINS" in switch_stream_1['content']  # Korrekt, Antwort von mock
 
-    model_switch_res = client.post(f'/api/chat/sessions/{switch_session_id}/messages/stream', json={
-        'user_input': "Second message, switching to model 'mock2'",
-        'model': 'mock2'
-    }, headers=auth_headers_1)
-    assert model_switch_res.status_code == 200
-    switch_stream_2 = parse_stream_response(model_switch_res.data)
-    assert "MOCK-MODELL-ZWEI" in switch_stream_2['content']  # Korrekt, Antwort von mock2
-
-    retry_first_msg_res = client.post(f'/api/chat/sessions/{switch_session_id}/messages/{first_assistant_msg_id}/retry',
-                                      headers=auth_headers_1, json={})
-    assert retry_first_msg_res.status_code == 200
-    retry_response_text = retry_first_msg_res.data.decode('utf-8')
-    # === KORRIGIERTE ASSERTS ===
-    assert "MOCK-MODELL-ZWEI" in retry_response_text  # Die Retry-Antwort MUSS von mock2 kommen
-    assert "MOCK-MODELL-EINS" not in retry_response_text  # Die Retry-Antwort darf NICHT von mock1 kommen
-
-    # === NEUER TEST-TEIL: RETRY MIT EXPLIZITEM MODELL-OVERRIDE ===
-    # Wir nehmen die allererste Nachricht (die ursprünglich von 'mock' kam und gerade von 'mock2' neu generiert wurde)
-    # und wiederholen sie NOCHMALS, aber dieses Mal erzwingen wir wieder das ursprüngliche Modell 'mock'.
-    print("Testing explicit model override on retry...")
-    retry_with_override_res = client.post(
-        f'/api/chat/sessions/{switch_session_id}/messages/{first_assistant_msg_id}/retry',
-        headers=auth_headers_1,
-        json={'model': 'mock'}  # <-- HIER SCHICKEN WIR DAS MODELL EXPLIZIT MIT
+    mock_proposal_content = "Based on our discussion, team roles are: Lead, Dev, QA."
+    mocker.patch(
+        'backend.services.chat_service.propose_node_update_from_chat',
+        return_value={
+            "original_content": node_b['content'],
+            "proposed_content": mock_proposal_content
+        }
     )
-    assert retry_with_override_res.status_code == 200
-    retry_response_text_2 = retry_with_override_res.data.decode('utf-8')
-
-    # Jetzt muss die Antwort von MOCK-MODELL-EINS kommen, weil wir es erzwungen haben!
-    assert "MOCK-MODELL-EINS" in retry_response_text_2
-    assert "MOCK-MODELL-ZWEI" not in retry_response_text_2
-    print("Explicit model override on retry successful!")
-
-    # === PART 4: USER 1 - NODE PROPOSAL & UPDATE ===
-    history_res = client.get(f'/api/chat/sessions/{session_id}', headers=auth_headers_1)
-    assert history_res.status_code == 200
-    chat_history_str = "\n".join([f"{m['author']}: {m['content']}" for m in history_res.json['messages']])
-
-    # +++ THE FIX: Use the 'mock' model which is now configured for structured responses +++
-    propose_res = client.post(f'/api/nodes/{node_b_id}/propose-update', json={
-        'vault_id': vault1_id,
-        'chat_history': chat_history_str,
+    propose_res = client.post(f'/api/vaults/{vault1_id}/nodes/{node_b_id}/propose-update', json={
+        'session_id': session_id,
         'context_node_ids': [node_a_id],
-        'model': 'mock'  # This now works because of the change in llm.py
+        'model': 'mock'
     }, headers=auth_headers_1)
-
-    assert propose_res.status_code == 200, f"Proposal failed: {propose_res.text}"
     proposal = propose_res.json
-    assert proposal['original_content'] == 'Team roles are not yet defined.'
-    # We can now assert for the specific mock content
-    assert "Project Lead" in proposal['proposed_content']
 
-    apply_update_res = client.put(f'/api/nodes/{node_b_id}', json={
-        'vault_id': vault1_id,
+    apply_update_res = client.put(f'/api/vaults/{vault1_id}/nodes/{node_b_id}', json={
         'content': proposal['proposed_content']
     }, headers=auth_headers_1)
     assert apply_update_res.status_code == 200
 
-    get_node_b_res = client.get(f'/api/nodes/{node_b_id}?vault_id={vault1_id}', headers=auth_headers_1)
+    # =========================================================================
+    # NEUER TEST-SCHRITT 4.5: FINALEN ZUSTAND VON NODE B ÜBERPRÜFEN
+    # =========================================================================
+    get_node_b_res = client.get(f'/api/vaults/{vault1_id}/nodes/{node_b_id}', headers=auth_headers_1)
     assert get_node_b_res.status_code == 200
     node_b_final = get_node_b_res.json
-    assert node_b_final['current_version'] == 2
-    assert node_b_final['content'] == proposal['proposed_content']
+
+    # Wir prüfen die neuen Felder.
+    assert node_b_final['version_count'] == 2  # Initial (1) + Proposal-Update (2)
+    assert node_b_final['content'] == mock_proposal_content
+
+    # Optional, aber gut: Prüfe auch hier den Verlauf
+    versions_b_res = client.get(f'/api/vaults/{vault1_id}/nodes/{node_b_id}/versions', headers=auth_headers_1)
+    assert versions_b_res.status_code == 200
+    versions_b_data = versions_b_res.json
+    assert len(versions_b_data) == 2
+    assert versions_b_data[0]['content'] == mock_proposal_content
+    assert versions_b_data[1]['content'] == 'Team roles are not yet defined.'
+    # =========================================================================

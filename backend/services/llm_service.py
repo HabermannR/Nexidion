@@ -1,74 +1,45 @@
-# backend/llm.py
+# backend/services/llm_service.py
+# (Dies ist dein bereinigtes und umbenanntes llm.py)
 
 import openai
 import anthropic
 from google import genai
 from google.genai import types as genai_types
 import time, random
-
-from backend.models import db, User
-# import uuid
-
 import logging
 import json
 from flask import current_app
 
-logger = logging.getLogger(__name__)
-# Cache, um nicht ständig die DB abzufragen
-_llm_user_cache = {}
+from backend.models import db, User
 
+logger = logging.getLogger(__name__)
+
+# Cache, um nicht ständig die DB abzufragen. Nützlich in einem einzelnen Worker-Prozess.
+_llm_user_cache = {}
 
 def get_llm_user(model_name: str) -> User:
     """
     Holt oder erstellt einen 'llm_assistant' User für ein gegebenes Modell.
-    KORRIGIERT: Verwendet db.session.merge(), um sicherzustellen, dass der
-    gecachte User immer an die aktuelle DB-Session gebunden ist.
+    Diese Funktion ist hier, da sie eng mit den LLM-Modellen verknüpft ist.
     """
-    logger.info(f"Entering function `get_llm_user` for model: {model_name}")
-
-    # Check if the object is in the cache
     if model_name in _llm_user_cache:
-        logger.info(f"Found user for '{model_name}' in cache. Merging with current session.")
-        cached_user = _llm_user_cache[model_name]
+        # 'merge' stellt sicher, dass das Objekt an die aktuelle DB-Session gebunden ist.
+        return db.session.merge(_llm_user_cache[model_name])
 
-        # === THE FIX ===
-        # This takes the detached object from the cache and returns a new
-        # object that is attached to the CURRENT database session.
-        live_user = db.session.merge(cached_user)
-        return live_user
-
-    logger.info(f"User for '{model_name}' not in cache. Searching in the database...")
     llm_user = User.query.filter_by(username=model_name, user_type='llm_assistant').first()
-
     if not llm_user:
-        #print(f"User for model '{model_name}' not found. Creating a new one.")
-        # FIX: Handle cases where model might start with 'mock' to generate a cleaner display name
+        display_name = model_name.replace('-', ' ').title()
         if model_name.startswith('mock'):
-            display_name = "Mock LLM" if model_name == 'mock' else f"Mock LLM ({model_name.replace('mock', '').upper()})"
-        else:
-            display_name = model_name.replace('-', ' ').title()
+            clean_model_name = model_name.replace('mock-', '').replace('-', ' ').title()
+            display_name = f"Mock LLM ({clean_model_name})"
 
-        # Creating a dummy password is fine for a system user
-        llm_user = User(
-            username=model_name,
-            display_name=display_name,
-            user_type='llm_assistant',
-            is_admin=False
-        )
-        # We don't need to handle passwords if they are not used for login.
-
+        llm_user = User(username=model_name, display_name=display_name, user_type='llm_assistant')
         db.session.add(llm_user)
-        # Committing here makes the user persistent and gives it an ID.
         db.session.commit()
-        # Refreshing ensures all attributes (like the auto-generated ID) are loaded.
         db.session.refresh(llm_user)
-        logger.info(f"Successfully created and committed new user with ID: {llm_user.id}")
 
-    # Store the fully loaded, committed user in the cache for subsequent requests.
     _llm_user_cache[model_name] = llm_user
-    logger.info(f"Returning user ID {llm_user.id} for model '{model_name}'.")
     return llm_user
-
 
 def _generate_structured_with_claude(system_prompt: str, user_prompt: str, model: str, max_tokens: int):
     """
@@ -262,50 +233,73 @@ def generate_structured_response(system_prompt: str, user_prompt: str, model: st
         raise ValueError(f"An unexpected error occurred in generate_structured_response: {e}")
 
 
-def generate_response(messages, system_prompt=None, model='claude-3-sonnet-20240229', max_tokens=4096):
+def generate_response(messages, system_prompt=None, model='claude-3-sonnet-20240229', max_tokens=10000):
     """
     Generates content using the specified LLM. Returns the full response as a single string.
     This re-uses the streaming logic for maximum code reuse.
     """
     logger.info(f"Generating non-streaming response with model {model}")
     try:
+        # Hier wird der Generator sofort vollständig durchlaufen und die Teile zu einem String verbunden.
         stream_generator = generate_response_stream(messages, system_prompt, model, max_tokens)
-        return "".join([chunk for chunk in stream_generator])
+        full_response = "".join(list(stream_generator))
+
+        # Prüfen, ob der Stream einen Fehler zurückgegeben hat
+        if "[ERROR in LLM Service:" in full_response:
+            logger.error(f"Error during non-streaming generation for model {model}: {full_response}")
+            raise RuntimeError(f"LLM service failed: {full_response}")
+
+        return full_response
+
     except Exception as e:
-        logger.error(f"Error during non-streaming generation for model {model}: {e}")
+        logger.error(f"Error during non-streaming generation for model {model}: {e}", exc_info=True)
+        # Wirf den Fehler weiter, damit der aufrufende Code (z.B. Titelgenerierung) ihn behandeln kann.
         raise
 
 
-def generate_response_stream(messages, system_prompt=None, model='claude-3-sonnet-20240229', max_tokens=4096):
+def generate_response_stream(messages, system_prompt=None, model='claude-3-sonnet-20240229', max_tokens=10000):
     """
     Acts as a router to stream a response from the correct provider.
-    This is a GENERATOR function.
+    This is a GENERATOR function that ALWAYS yields plain text chunks.
     """
-    logger.info(f"Entering function `generate_response_stream` for model {model}")
-    #print(f"--- Chat Stream Request ---\nModel: {model}\nSystem Prompt: {system_prompt}\nMessages: {json.dumps(messages, indent=2)}\n--------------------------")
+    # Diese Log-Ausgabe wird jetzt den korrekten Modellnamen anzeigen
+    logger.info(f"Entering function `generate_response_stream` for model '{model}'")
 
+    generator_function = None
     try:
-        # *** FIX 1: Handle any model starting with 'mock', not just the exact name ***
+        # KORREKTUR 2: Überprüfe den ECHTEN 'model'-Parameter
         if model.startswith('mock'):
-            #print(f"--- 🤖 MOCK MODEL ACTIVATED ({model}) 🤖 ---")
-            # *** FIX 2: Pass the specific model name to the generator ***
-            yield from _mock_llm_stream_generator(model)
-            return
-
+            generator_function = _mock_llm_stream_generator
         elif 'gpt' in model or model == 'local':
-            logger.info(f"Routing to `_generate_with_openai_streaming` for model: {model}")
-            yield from _generate_with_openai_streaming(messages, system_prompt, model, max_tokens)
+            generator_function = _generate_with_openai_streaming
         elif 'claude' in model:
-            logger.info(f"Routing to `_generate_with_claude_streaming` for model: {model}")
-            yield from _generate_with_claude_streaming(messages, system_prompt, model, max_tokens)
+            generator_function = _generate_with_claude_streaming
         elif 'gemini' in model:
-            logger.info(f"Routing to `_generate_with_gemini_streaming` for model: {model}")
-            yield from _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens)
+            generator_function = _generate_with_gemini_streaming
         else:
             raise ValueError(f"Streaming not supported or model family unknown: {model}")
+
+        logger.info(f"Router selected generator: {generator_function.__name__}")
+
+        # KORREKTUR 3: Übergebe die Parameter korrekt
+        if generator_function == _mock_llm_stream_generator:
+            # Der Mock-Generator braucht nur das Modell
+            stream = generator_function(model=model)  # <-- Übergebe den korrekten Modellnamen
+        else:
+            # Die anderen Generatoren brauchen alle Argumente
+            stream = generator_function(
+                messages=messages,
+                system_prompt=system_prompt,
+                model=model,  # <-- Übergebe den korrekten Modellnamen
+                max_tokens=max_tokens
+            )
+
+        for chunk in stream:
+            yield chunk
+
     except Exception as e:
-        logger.error(f"Error caught during stream routing in `generate_response_stream`: {e}")
-        raise
+        logger.error(f"Error during stream routing in `generate_response_stream`: {e}", exc_info=True)
+        yield f"[ERROR in LLM Service: {str(e)}]"
 
 
 def _generate_with_openai_streaming(messages, system_prompt, model, max_tokens):
@@ -352,7 +346,6 @@ def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
     """Handles streaming for Gemini with simple, correct logic."""
     logger.info(f"Entering function `_generate_with_gemini_streaming` for model {model}")
     client = genai.Client(api_key=current_app.config['GEMINI_API_KEY'])
-
     contents = []
     for message in messages:
         role = 'user' if message['role'] == 'user' else 'model'
@@ -382,15 +375,18 @@ def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
 
 def _mock_llm_stream_generator(model: str = 'mock'):
     """
-    A generator that simulates an LLM stream, producing different text based on the model name.
+    A generator that simulates an LLM stream, yielding PLAIN TEXT chunks,
+    just like the other real LLM generators.
     """
     if model == 'mock2':
         response_text = "Antwort von MOCK-MODELL-ZWEI. 🤖 Test für Modellwechsel erfolgreich!"
-    else:  # Default for 'mock' or any other variant
+    else:
         response_text = "Antwort von MOCK-MODELL-EINS. 🤖 Dies ist die ursprüngliche Antwort."
+
     words = response_text.split()
-    time.sleep(0.1)  # Simulate thinking
+    time.sleep(0.1)
     for word in words:
+        # KORREKTUR: Gib nur den Text-String mit einem Leerzeichen zurück.
         yield f"{word} "
         time.sleep(random.uniform(0.05, 0.1))
 
@@ -402,9 +398,30 @@ def _generate_structured_with_mock(system_prompt: str, user_prompt: str, model: 
     logger.info("🤖 MOCK MODEL: Generating a FAKE structured response for node proposal.")
     time.sleep(0.2)
     mock_new_content = (
-        "Based on our discussion about project goals and quality, the team roles can now be defined.\n\n"
-        "- **Project Lead:** Responsible for overall delivery.\n"
-        "- **Technical Lead:** Ensures high-quality code and architecture.\n"
-        "- **QA Specialist:** Focuses on testing and quality assurance."
+        """Based on our discussion about project goals and quality, the team roles can now be defined.
+- **Project Lead:** Responsible for overall delivery.\n
+- **Technical Lead:** Ensures high-quality code and architecture.\n
+- **QA Specialist:** Focuses on testing and quality assurance."""
     )
     return mock_new_content
+
+
+def generate_chat_title(chat_history: str, model: str) -> str:
+    """Generiert einen kurzen, prägnanten Titel für einen Chat-Verlauf."""
+    system_prompt = "Based on the following conversation, create a very short, concise title (4-6 words max). The title should summarize the main topic. Respond with ONLY the title and nothing else."
+
+    # Nutze die bestehende generate_response Funktion
+    # Du kannst hier auch ein kleineres, schnelleres Modell verwenden
+    title_model = 'gemini-2.5-flash'  # oder ein anderes
+    try:
+        # Wir nehmen nur die ersten paar Nachrichten für die Effizienz
+        short_history = chat_history[:1500]
+        response = generate_response(
+            messages=[{"role": "user", "content": short_history}],
+            system_prompt=system_prompt,
+            model=title_model
+        )
+        return response.strip().replace('"', '')
+    except Exception as e:
+        logger.error(f"Could not generate chat title: {e}")
+        return "Chat about Topic"

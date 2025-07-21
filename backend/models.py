@@ -88,7 +88,6 @@ class Vault(db.Model):
         }
 
 
-
 class Node(db.Model):
     """
     Represents a single node in the knowledge graph.
@@ -110,9 +109,12 @@ class Node(db.Model):
     vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
 
     # Defines the 'node.children' attribute, which provides a query to get all child nodes.
-    # Using lazy='dynamic' is efficient as it doesn't load all children into memory at once.
     # The database-level "ON DELETE SET NULL" is respected by this relationship.
-    children = db.relationship('Node', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
+    children = db.relationship(
+        'Node',
+        backref=db.backref('parent', remote_side=[id]),
+        order_by="Node.title"
+    )
 
     # Defines the 'node.versions' attribute.
     # The 'cascade="all, delete-orphan"' rule tells SQLAlchemy to automatically delete
@@ -143,13 +145,8 @@ class Node(db.Model):
             node_dict['content'] = content
 
         if include_children:
-            # ===================================================================
-            # KORREKTUR: Sortiere die Kinder, bevor sie verarbeitet werden.
-            # `self.children` ist eine "dynamic" Beziehung, also können wir .order_by() darauf anwenden.
-            # ===================================================================
-            sorted_children = self.children.order_by(Node.title).all()
-            node_dict['children'] = [child.to_dict(include_children=True, include_content=False) for child in
-                                     sorted_children]
+            node_dict['children'] = [child.to_dict(include_children=True, include_content=False)
+                                     for child in self.children]
 
         return node_dict
 
@@ -172,15 +169,40 @@ class Version(db.Model):
     node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False, index=True)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
 
+    def to_dict(self, include_content=True):  # WICHTIG: Füge das Argument hier hinzu
+        """
+        Gibt eine Dictionary-Repräsentation der Version zurück.
+        `include_content` steuert, ob der (potenziell große) Inhalt mitgesendet wird.
+        """
+        data = {
+            'id': self.id,
+            'node_id': self.node_id,
+            'version': self.version,
+            'timestamp': self.timestamp.isoformat() + 'Z',  # 'Z' für UTC hinzufügen ist gute Praxis
+            'author_id': self.author_id,
+            'author_name': self.author.display_name if self.author else "Unknown",
+            'content_length': len(self.content) if self.content else 0  # Nützliches Metadatum für die UI
+        }
+
+        # Den Inhalt nur hinzufügen, wenn explizit angefordert.
+        # Dein Service ruft es mit True auf, also wird der Inhalt mitgesendet.
+        if include_content and self.content is not None:
+            data['content'] = self.content
+        else:
+            # Selbst wenn include_content=True ist, aber der Inhalt None ist,
+            # soll er im JSON auch null sein.
+            data['content'] = None
+
+        return data
+
 
 # NEU: Assoziationstabelle für den Many-to-Many-Kontext
 # Eine Nachricht (message) kann viele Kontext-Versionen haben.
 # Eine Version kann der Kontext für viele Nachrichten sein.
 chat_message_context = db.Table('chat_message_context',
-                                db.Column('message_id', db.Integer, db.ForeignKey('chat_messages.id'),
-                                          primary_key=True),
-                                db.Column('version_id', db.Integer, db.ForeignKey('versions.id'), primary_key=True)
-                                )
+    db.Column('message_id', db.String(36), db.ForeignKey('chat_messages.id'), primary_key=True),
+    db.Column('version_id', db.Integer, db.ForeignKey('versions.id'), primary_key=True)
+)
 
 
 class ChatSession(db.Model):
@@ -188,21 +210,29 @@ class ChatSession(db.Model):
     __tablename__ = 'chat_sessions'
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = db.Column(db.String(255), nullable=True)  # Kann nach der 1. Frage generiert werden
+    title = db.Column(db.String(255), nullable=False, default="New Chat")
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-
 
     vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    # Eine Sitzung hat viele Nachrichten
-    messages = db.relationship('ChatMessage', backref='session', lazy=True, cascade="all, delete-orphan")
+
+    messages = db.relationship('ChatMessage', back_populates='session', lazy='dynamic', cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "created_at": self.created_at.isoformat(),
+            "vault_id": self.vault_id,
+            "owner_id": self.owner_id
+        }
 
 
 class ChatMessage(db.Model):
     """Represents a single message (from user or assistant) in a chat session."""
     __tablename__ = 'chat_messages'
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     session_id = db.Column(db.String(36), db.ForeignKey('chat_sessions.id'), nullable=False, index=True)
     role = db.Column(db.String(20), nullable=False)  # 'user' or 'assistant'
     content = db.Column(db.Text, nullable=False)
@@ -211,8 +241,21 @@ class ChatMessage(db.Model):
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     llm_model_source = db.Column(db.String(100),
                                  nullable=True)  # z.B. 'claude-3-5-sonnet-20240620', nur für role='assistant'
+    status = db.Column(db.String(20), nullable=False, default='active', index=True)  # 'active', 'retried', 'deleted'
+
+    session = db.relationship('ChatSession', back_populates='messages')
     # Many-to-Many-Beziehung zu den Kontext-Versionen
     # Gilt nur für 'user'-Nachrichten, aber die Verknüpfung ist hier definiert.
     context_versions = db.relationship('Version', secondary=chat_message_context, lazy='subquery',
                                        backref=db.backref('context_for_messages', lazy=True))
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat(),
+            "author_id": self.author_id,
+            "llm_model_source": self.llm_model_source,
+            "status": self.status
+        }

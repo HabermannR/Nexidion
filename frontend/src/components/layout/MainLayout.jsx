@@ -1,130 +1,132 @@
-// src/components/layout/MainLayout.jsx 
-
-import React, { useState, lazy, Suspense } from 'react'; 
+import React, { useState, lazy, Suspense } from 'react';
 import Offcanvas from 'react-bootstrap/Offcanvas';
 import Container from 'react-bootstrap/Container';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import Button from 'react-bootstrap/Button';
+import Spinner from 'react-bootstrap/Spinner';
+
+// Import der CSS-Datei
 import './MainLayout.css';
 
-// Die permanenten Komponenten werden jetzt hier importiert
-const ContextPanel = lazy(() => import('../context/ContextPanel'));
-import ProjectTree from '../nodes/ProjectTree';
+// Lazy-loaded Komponenten
+const ProjectTree = lazy(() => import('../nodes/ProjectTree'));
 
-const MainLayout = React.memo(function MainLayout({ // "function" Keyword hier ist guter Stil
-    // Props für den Baum
-    treeData,
-    activeNodeId,
-    onNodeClick,
-    onAddNode,
-    onDeleteNode,
-    onMoveNode,
-    // Props für den Hauptinhalt
-    mainContent,
-    // Props für die Versionen
-    versionHistory,
-    // Callback-Funktionen
-    onNodeUpdate,
-    // Props für mobile Versionen-Ansicht
-    onSelectVersionForMobile,
-    onCompareVersionForMobile,
-    onShowCurrentForMobile,
-    diffSelection
-}) {
-	
-    const [showTreePanel, setShowTreePanel] = useState(false);
-    const [showContextPanel, setShowContextPanel] = useState(false);
-    const [showVersionsPanel, setShowVersionsPanel] = useState(false);
+const MainLayout = React.memo(function MainLayout({
+                                                      treeData, activeNodeId, onNodeClick, onAddNode, onDeleteNode, onMoveNode,
+                                                      mainContent, versionHistory, contextPanel, onLoadVersions, areVersionsLoaded
+                                                  }) {
+    // States und Handler bleiben unverändert
+    const [showMobileTree, setShowMobileTree] = useState(false);
+    const [showMobileContext, setShowMobileContext] = useState(false);
+    const [showMobileVersions, setShowMobileVersions] = useState(false);
+    const [isTreeVisible, setIsTreeVisible] = useState(true);
+    const [contextLayoutMode, setContextLayoutMode] = useState('normal');
+    const [showDesktopVersions, setShowDesktopVersions] = useState(false);
 
-    // ====================================================================
-    // WIR ERSTELLEN DIE KOMPONENTEN-INSTANZEN HIER EINMAL
-    // ====================================================================
+    const handleToggleContext = () => {
+        setContextLayoutMode(currentMode => {
+            if (currentMode === 'normal') return 'expanded';
+            if (currentMode === 'expanded') return 'collapsed';
+            return 'normal';
+        });
+    };
 
+    const handleVersionsClick = (mode) => {
+        // Schritt 1: Lade die Daten, wenn nötig
+        if (!areVersionsLoaded && onLoadVersions) {
+            onLoadVersions();
+        }
+
+        // Schritt 2: Öffne das entsprechende Offcanvas
+        if (mode === 'mobile') {
+            setShowMobileVersions(true);
+        } else {
+            setShowDesktopVersions(true);
+        }
+    };
+
+    // Berechnung der Spaltenbreiten bleibt unverändert
+    const treeBaseWidth = 3;
+    const contextDisplayWidth = contextLayoutMode === 'expanded' ? 6 : 3;
+    const treeSpaceUsed = isTreeVisible ? treeBaseWidth : 0;
+    const contextSpaceUsed = contextLayoutMode === 'collapsed' ? 0 : contextDisplayWidth;
+    const mainColSize = 12 - treeSpaceUsed - contextSpaceUsed;
+
+    // Komponenten-Instanzen vorbereiten
     const treeComponent = (
-        <ProjectTree
-            treeData={treeData}
-            activeNodeId={activeNodeId}
-            onNodeClick={(node) => {
-                onNodeClick(node);
-                setShowTreePanel(false); // Panel nach Klick schließen
-            }}
-            onAddNode={onAddNode}
-            onDeleteNode={onDeleteNode}
-            onMoveNode={onMoveNode}
-        />
-    );
-
-    // Die EINE, PERMANENTE ContextPanel-Instanz
-    const contextPanelComponent = (
-        <Suspense fallback={<div className="p-3 text-center small">Lade Kontext...</div>}>
-            <ContextPanel onNodeUpdate={onNodeUpdate} />
+        <Suspense fallback={<div className="p-3 text-center small"><Spinner animation="border" size="sm" /> Lade Baum...</div>}>
+            <ProjectTree
+                treeData={treeData} activeNodeId={activeNodeId}
+                onNodeClick={(node) => { onNodeClick(node); setShowMobileTree(false); }}
+                onAddNode={onAddNode} onDeleteNode={onDeleteNode} onMoveNode={onMoveNode}
+            />
         </Suspense>
     );
 
-    // Die VersionHistory Komponente auch, falls sie im Offcanvas gebraucht wird
-    // Wir nehmen die Props von NodesView entgegen
-    const versionHistoryComponent = React.cloneElement(versionHistory, {
-        onSelectVersion: (v) => {
-            onSelectVersionForMobile(v);
-        },
-        onCompareVersion: (v) => {
-            onCompareVersionForMobile(v);
-            setShowVersionsPanel(false);
-        },
-        onShowCurrent: () => {
-            onShowCurrentForMobile();
-            setShowVersionsPanel(false);
-        }
+    const versionHistoryComponentForOffcanvas = React.cloneElement(versionHistory, {
+        onCompareVersion: (v) => { if (versionHistory.props.onCompareVersion) versionHistory.props.onCompareVersion(v); setShowMobileVersions(false); setShowDesktopVersions(false); },
+        onShowCurrent: () => { if (versionHistory.props.onShowCurrent) versionHistory.props.onShowCurrent(); setShowMobileVersions(false); setShowDesktopVersions(false); }
     });
 
     return (
-        <Container fluid className="main-layout-container">
+        <Container fluid className="main-layout-container g-0">
+            {/* MOBILE ACTION BAR: Wird nur auf Mobile angezeigt und ist jetzt korrekt im Layoutfluss */}
+            <div className="d-lg-none mobile-action-bar bg-light border-bottom p-2">
+                <Row className="g-2 align-items-center">
+                    <Col><Button variant="outline-secondary" className="w-100" onClick={() => setShowMobileTree(true)}>☰ Nav</Button></Col>
+                    <Col><Button variant="outline-secondary" className="w-100" onClick={() => handleVersionsClick('mobile')}>🕒 Ver</Button></Col>
+                    <Col><Button variant="outline-secondary" className="w-100" onClick={() => setShowMobileContext(true)}>⚙️ Context</Button></Col>
+                </Row>
+            </div>
+
             <Row className="main-layout-row g-0">
-                {/* 1. Desktop Tree View */}
-                <Col lg={3} className="d-none d-lg-flex tree-column p-0">
-                    {treeComponent}
-                </Col>
+                {/* 1. DESKTOP TREE VIEW (linke Spalte) */}
+                {isTreeVisible && (
+                    <Col lg={treeBaseWidth} className="d-none d-lg-flex tree-column">
+                        <div className="tree-wrapper">{treeComponent}</div>
+                    </Col>
+                )}
 
-                {/* 2. Main Content */}
-                <Col xs={12} lg={6} className="main-content-col order-2 order-lg-2">
-                    {mainContent}
-                </Col>
-
-                {/* 3. Mobile Action Bar */}
-                <Col xs={12} className="order-1 d-lg-none">
-                    <Row className="g-2 p-3 align-items-center bg-light border-bottom">
-                        <Col><Button variant="outline-secondary" className="w-100" onClick={() => setShowTreePanel(true)}>☰ Nav</Button></Col>
-                        <Col><Button variant="outline-secondary" className="w-100" onClick={() => setShowVersionsPanel(true)}>🕒 Ver</Button></Col>
-                        <Col><Button variant="outline-secondary" className="w-100" onClick={() => setShowContextPanel(true)}>⚙️ Context</Button></Col>
-                    </Row>
-                </Col>
-
-                {/* 4. Desktop Context/Version Sidebar */}
-                <Col lg={3} className="d-none d-lg-block order-lg-3 context-panel-col">
-                    <div className="desktop-sidebar-wrapper">
-                        {contextPanelComponent}
-                        <hr className="my-3" />
-                        {versionHistory}
+                {/* 2. MAIN CONTENT (mittlere Spalte - jetzt auch auf Mobile die scrollbare Spalte) */}
+                <Col xs={12} lg={mainColSize} className="main-content-col">
+                    <div className="desktop-action-bar d-none d-lg-flex p-2 align-items-center bg-light">
+                        <Button variant="outline-secondary" size="sm" onClick={() => setIsTreeVisible(p => !p)}>{isTreeVisible ? '☰ Nav Aus' : '☰ Nav Ein'}</Button>
+                        <div className="vr mx-2"></div>
+                        <Button variant="outline-secondary" size="sm" onClick={() => handleVersionsClick('desktop')}>🕒 Versionen</Button>
+                        <span className="flex-grow-1"></span>
+                        <Button variant="outline-secondary" size="sm" onClick={handleToggleContext}>{contextLayoutMode === 'collapsed' && 'Context Ein »'}{contextLayoutMode === 'normal' && 'Context Breit »'}{contextLayoutMode === 'expanded' && '« Context Aus'}</Button>
                     </div>
+                    <div className="main-content-wrapper">{mainContent}</div>
                 </Col>
+
+                {/* 3. DESKTOP CONTEXT SIDEBAR (rechte Spalte) */}
+                {contextLayoutMode !== 'collapsed' && (
+                    <Col lg={contextDisplayWidth} className="d-none d-lg-block context-panel-col">
+                        <div className="desktop-sidebar-wrapper">{contextPanel}</div>
+                    </Col>
+                )}
             </Row>
 
-            {/* 5. Die Offcanvas-Container, die die EINMAL erstellten Komponenten rendern */}
-
-            <Offcanvas show={showTreePanel} onHide={() => setShowTreePanel(false)} placement="start">
+            {/* OFF-CANVAS CONTAINER (mit neuen CSS-Klassen für gezieltes Styling) */}
+            <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start" className="offcanvas-tree">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Navigation</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body>{treeComponent}</Offcanvas.Body>
             </Offcanvas>
 
-            <Offcanvas show={showContextPanel} onHide={() => setShowContextPanel(false)} placement="end">
+            <Offcanvas show={showMobileContext} onHide={() => setShowMobileContext(false)} placement="end" className="offcanvas-context">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Context & Chat</Offcanvas.Title></Offcanvas.Header>
-                <Offcanvas.Body>{contextPanelComponent}</Offcanvas.Body>
+                <Offcanvas.Body>{contextPanel}</Offcanvas.Body>
             </Offcanvas>
 
-            <Offcanvas show={showVersionsPanel} onHide={() => setShowVersionsPanel(false)} placement="bottom" style={{ height: '75vh' }}>
+            <Offcanvas show={showMobileVersions} onHide={() => setShowMobileVersions(false)} placement="bottom" style={{ height: '75vh' }} className="offcanvas-versions-mobile">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Version History</Offcanvas.Title></Offcanvas.Header>
-                <Offcanvas.Body>{versionHistoryComponent}</Offcanvas.Body>
+                <Offcanvas.Body>{versionHistory}</Offcanvas.Body>
+            </Offcanvas>
+
+            <Offcanvas show={showDesktopVersions} onHide={() => setShowDesktopVersions(false)} placement="end" className="offcanvas-versions-desktop">
+                <Offcanvas.Header closeButton><Offcanvas.Title>Version History</Offcanvas.Title></Offcanvas.Header>
+                <Offcanvas.Body>{versionHistory}</Offcanvas.Body>
             </Offcanvas>
         </Container>
     );

@@ -10,7 +10,8 @@ const BASE_URL = import.meta.env.PROD ? '/' : import.meta.env.VITE_API_URL;
 console.log(`Build mode is: ${import.meta.env.MODE}. Using API Base URL: ${BASE_URL}`);
 
 const api = axios.create({
-  baseURL: BASE_URL,
+    baseURL: BASE_URL,
+    withCredentials: true // <-- HIER IST DIE FEHLENDE, ENTSCHEIDENDE EINSTELLUNG
 });
 
 // --- REQUEST INTERCEPTOR ---

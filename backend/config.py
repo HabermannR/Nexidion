@@ -1,14 +1,21 @@
 # config.py
-import os # Importiert, um mit dem Dateisystem (Pfade) zu arbeiten
+import os
 from datetime import timedelta
 
-# Findet den absoluten Pfad des Ordners, in dem diese Datei liegt.
-# Das ist wichtig, damit der Pfad zur Datenbankdatei immer korrekt ist,
-# egal von wo aus Sie das Skript starten.
+# `basedir` ist hier der absolute Pfad zum 'backend'-Ordner, da hier die config.py liegt.
+# z.B. C:\...\KnowledgeBase\backend oder /home/user/KnowledgeBase/backend
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-# Eine Klasse, die als Container für alle unsere Einstellungen dient.
+# NEU: Definiere den Projekt-Root, indem du eine Ebene von 'basedir' nach oben gehst.
+# Das ist der robusteste Weg, um zum Hauptverzeichnis deines Projekts zu gelangen.
+project_root = os.path.dirname(basedir)
+
+
 class Config:
+    ## --- IMAGE FOLDER CONFIGURATION ---
+    # Wir setzen den Pfad aus dem Projekt-Root und dem Ordnernamen zusammen.
+    SECURE_IMAGE_FOLDER = os.path.join(project_root, 'secure_images')
+
     ## --- DATABASE CONFIGURATION ---
     SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'knowledge_base.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False

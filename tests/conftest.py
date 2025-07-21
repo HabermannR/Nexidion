@@ -5,8 +5,8 @@ import json
 # Passe die Importe an deine Projektstruktur an
 from backend.app import create_app
 from backend.models import db, User
-from backend.database import create_vault_with_root_node
 from backend.config import Config
+from backend.services import vault_service
 
 # --- 1. Konfiguration für die Testumgebung ---
 class TestConfig(Config):
@@ -70,14 +70,17 @@ def test_user_2_obj(db_session):
 
 @pytest.fixture(scope='function')
 def test_vault_1_obj(test_user_1_obj):
-    """Erstellt einen Vault für Benutzer 1 und gibt das SQLAlchemy-Vault-Objekt zurück."""
-    vault = create_vault_with_root_node(name='Vault For User 1', owner_id=test_user_1_obj.id)
+    """
+    Erstellt einen Vault für Benutzer 1 direkt über den Service.
+    Dies ist die sauberste Methode, da sie die API umgeht.
+    """
+    vault = vault_service.create_vault(name='Vault For User 1', owner_id=test_user_1_obj.id)
     return vault
 
 @pytest.fixture(scope='function')
 def test_vault_2_obj(test_user_2_obj):
-    """Erstellt einen Vault für Benutzer 2 und gibt das SQLAlchemy-Vault-Objekt zurück."""
-    vault = create_vault_with_root_node(name='Vault For User 2', owner_id=test_user_2_obj.id)
+    """Erstellt einen Vault für Benutzer 2 direkt über den Service."""
+    vault = vault_service.create_vault(name='Vault For User 2', owner_id=test_user_2_obj.id)
     return vault
 
 
@@ -85,7 +88,7 @@ def test_vault_2_obj(test_user_2_obj):
 
 @pytest.fixture(scope='function')
 def auth_headers_1(client, test_user_1_obj):
-    login_res = client.post('/api/login',
+    login_res = client.post('/api/auth/login',
                             data=json.dumps({'username': 'user1', 'password': 'password123'}),
                             content_type='application/json')
     assert login_res.status_code == 200, "Login für user1 fehlgeschlagen"
@@ -94,30 +97,12 @@ def auth_headers_1(client, test_user_1_obj):
 
 @pytest.fixture(scope='function')
 def auth_headers_2(client, test_user_2_obj):
-    login_res = client.post('/api/login',
+    login_res = client.post('/api/auth/login',
                             data=json.dumps({'username': 'user2', 'password': 'password456'}),
                             content_type='application/json')
     assert login_res.status_code == 200, "Login für user2 fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
     return {'Authorization': f'Bearer {access_token}'}
-
-@pytest.fixture(scope='function')
-def test_vault_1(client, auth_headers_1):
-    response = client.post('/api/vaults',
-                           headers=auth_headers_1,
-                           data=json.dumps({'name': 'API Test Vault 1'}),
-                           content_type='application/json')
-    assert response.status_code == 201
-    yield response.get_json()
-
-@pytest.fixture(scope='function')
-def test_vault_2(client, auth_headers_2):
-    response = client.post('/api/vaults',
-                           headers=auth_headers_2,
-                           data=json.dumps({'name': 'API Test Vault 2'}),
-                           content_type='application/json')
-    assert response.status_code == 201
-    yield response.get_json()
 
 
 # --- Optional: Aliase für Rückwärtskompatibilität ---
@@ -161,11 +146,8 @@ def auth_headers_persistent(client, db_session_persistent):
     """
     Logs in the persistent integration user ONCE per module and provides auth headers.
     """
-    login_res = client.post('/api/login',
-                            data=json.dumps({'username': 'integration_user', 'password': 'integration_pass'}),
-                            content_type='application/json')
+    login_res = client.post('/api/auth/login', # <-- AUCH HIER V2 PFAD
+                            json={'username': 'integration_user', 'password': 'integration_pass'})
     assert login_res.status_code == 200, "Login für integration_user fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
     return {'Authorization': f'Bearer {access_token}'}
-
-# +++==============================================================+++

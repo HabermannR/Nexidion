@@ -11,8 +11,7 @@ import './ProjectTree.css';
  */
 export default function ProjectTree({ 
   treeData, 
-  activeNodeId,
-  onNodeClick, 
+  onNodeClick,
   onAddNode, 
   onDeleteNode, 
   onMoveNode 
@@ -51,15 +50,9 @@ export default function ProjectTree({
         {treeData && treeData.length > 0 ? (
           renderTree(treeData)
         ) : (
-          <div className="p-3 text-center text-muted">
-            <p>Kein Projekt geladen.</p>
-            <button 
-              className="btn btn-primary btn-sm" 
-              onClick={() => onAddNode(null)} // onAddNode(null) für einen Wurzel-Node
-            >
-              Ersten Node erstellen
-            </button>
-          </div>
+            <div className="p-3 text-center text-muted">
+              <p>Lade Baum...</p>
+            </div>
         )}
       </div>
     </div>

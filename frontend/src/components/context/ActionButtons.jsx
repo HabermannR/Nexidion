@@ -8,7 +8,6 @@ import Form from 'react-bootstrap/Form';
 import { useAppContext } from '../../context/AppContext';
 import api from '../../api/axios';
 import './ActionButtons.css'; 
-import qs from 'qs';
 
 // Service-Imports
 import { copyContextContent, copyTreeStructure } from '../../services/clipboardService';
@@ -23,7 +22,8 @@ const UpdatePreviewModal = lazy(() => import('./UpdatePreviewModal'));
 const ActionButtons = React.memo(function ActionButtons({ onNodeUpdate }) {
   const { 
     selectedNodeIds, 
-    getContextContent, 
+    getContextContent,
+    chatSessionId,
     treeData, 
     enterPrintPreview, 
     activeVault,
@@ -116,26 +116,29 @@ const ActionButtons = React.memo(function ActionButtons({ onNodeUpdate }) {
     }
     if (!activeVaultId) return;
 
-    setIsLoading(prev => ({ ...prev, print: true }));
-    try {
-        const response = await api.get('/api/nodes/details', {
-            params: {
-                vault_id: activeVaultId,
-                node_ids: Array.from(selectedNodeIds)
-            },
-            paramsSerializer: params => qs.stringify(params, { arrayFormat: 'repeat' })
-        });
-        const nodesWithContent = response.data;
-        const orderedIds = getIdsInOrder(treeData, selectedNodeIds);
-        const sortedNodes = nodesWithContent.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
-        const toc = generateTocForSelectedNodes(treeData, selectedNodeIds);
-        enterPrintPreview({ nodes: sortedNodes, toc: toc });
-    } catch (error) {
-        showFeedback('Druckvorschau konnte nicht erstellt werden.', 'error');
-    } finally {
-        setTimeout(() => setIsLoading(prev => ({ ...prev, print: false })), 200);
-    }
-  }, [treeData, selectedNodeIds, activeVaultId, enterPrintPreview, showFeedback]); // KORREKTUR: Abhängigkeit auf activeVaultId geändert.
+      setIsLoading(prev => ({ ...prev, print: true }));
+      try {
+          // Eine einzige POST-Anfrage an den neuen Endpunkt
+          const response = await api.post(`/api/vaults/${activeVaultId}/nodes/bulk-get`, {
+              node_ids: Array.from(selectedNodeIds)
+          });
+
+          const nodesWithContent = response.data;
+
+          // Die restliche Logik bleibt wieder gleich
+          const orderedIds = getIdsInOrder(treeData, selectedNodeIds);
+          const sortedNodes = nodesWithContent.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
+          const toc = generateTocForSelectedNodes(treeData, selectedNodeIds);
+
+          enterPrintPreview({ nodes: sortedNodes, toc: toc });
+
+      } catch (error) {
+          console.error("Fehler beim Erstellen der Druckvorschau:", error);
+          showFeedback('Druckvorschau konnte nicht erstellt werden.', 'error');
+      } finally {
+          setTimeout(() => setIsLoading(prev => ({ ...prev, print: false })), 200);
+      }
+  }, [treeData, selectedNodeIds, activeVaultId, enterPrintPreview, showFeedback]);
   
   const flattenedNodes = useMemo(() => {
       const allNodes = [];
@@ -160,37 +163,58 @@ const ActionButtons = React.memo(function ActionButtons({ onNodeUpdate }) {
     }
   }, [contextNodesForDropdown, updateTargetNodeId]);
 
-  const handleProposeUpdate = useCallback(async () => {
-    if (!updateTargetNodeId || !activeVaultId || !selectedModel) {
-        showFeedback("Ziel, Vault oder Modell nicht ausgewählt.", "error");
-        return;
-    }
-    
-    setIsLoadingProposal(true);
-    try {
-      const savedHistory = JSON.parse(sessionStorage.getItem('chatHistory') || '[]');
-      const chatHistoryText = savedHistory.map(m => `${m.role}: ${m.content}`).join('\n\n');
-      
-      const payload = {
-        chat_history: chatHistoryText,
-        context_node_ids: Array.from(selectedNodeIds),
-        vault_id: activeVaultId,
-        model: selectedModel // Modell aus dem Context verwenden
-      };
+    const handleProposeUpdate = useCallback(async () => {
+        // --- ANPASSUNG 1: Session-ID wird nun benötigt ---
+        // Stellen Sie sicher, dass `activeSessionId` aus Ihrem State oder den Props kommt.
+        if (!updateTargetNodeId || !activeVaultId || !selectedModel || !chatSessionId) {
+            showFeedback("Ziel, Vault, Modell oder aktive Session nicht ausgewählt.", "error");
+            return;
+        }
 
-      const response = await api.post(`/api/nodes/${updateTargetNodeId}/propose-update`, payload);
-      
-      setUpdateData({
-        original: response.data.original_content,
-        proposed: response.data.proposed_content
-      });
-      setIsUpdateModalOpen(true);
-    } catch (error) {
-      showFeedback("Fehler beim Abrufen des AI-Vorschlags.", "error");
-    } finally {
-      setIsLoadingProposal(false);
-    }
-  }, [updateTargetNodeId, activeVaultId, selectedNodeIds, selectedModel, showFeedback]); // KORREKTUR: Korrekte, stabile Abhängigkeiten
+        setIsLoadingProposal(true);
+        try {
+            // --- ANPASSUNG 2: Chat-Verlauf wird nicht mehr aus dem sessionStorage geladen ---
+            // const savedHistory = JSON.parse(sessionStorage.getItem('chatHistory') || '[]');
+            // const chatHistoryText = savedHistory.map(m => `${m.role}: ${m.content}`).join('\n\n');
+
+            // --- ANPASSUNG 3: Der Payload wurde an die neue API angepasst ---
+            // Er sendet jetzt `session_id` anstelle von `chat_history` und `vault_id`.
+            const payload = {
+                session_id: chatSessionId, // Neue Anforderung
+                context_node_ids: Array.from(selectedNodeIds),
+                model: selectedModel
+            };
+
+            // --- ANPASSUNG 4: Die API-URL wurde gemäß dem Testfall aktualisiert. ---
+            // Die `vault_id` ist jetzt Teil des URL-Pfads.
+            const response = await api.post(
+                `/api/vaults/${activeVaultId}/nodes/${updateTargetNodeId}/propose-update`,
+                payload
+            );
+
+            setUpdateData({
+                original: response.data.original_content,
+                proposed: response.data.proposed_content
+            });
+            setIsUpdateModalOpen(true);
+        } catch (error) {
+            // 1. Loggen Sie den gesamten Fehler in der Entwicklerkonsole.
+            //    Das ist Gold wert für die Fehlersuche!
+            console.error("Fehler beim Abrufen des AI-Vorschlags:", error);
+
+            // 2. Zeigen Sie dem Benutzer eine spezifischere Nachricht, falls verfügbar.
+            //    Wir versuchen, die Fehlermeldung vom Server zu extrahieren.
+            const serverMessage = error.response?.data?.error; // Sicherer Zugriff mit Optional Chaining (?.)
+            const feedbackMessage = serverMessage
+                ? `Fehler: ${serverMessage}`
+                : "Fehler beim Abrufen des AI-Vorschlags.";
+
+            showFeedback(feedbackMessage, "error");
+        } finally {
+            setIsLoadingProposal(false);
+        }
+        // --- ANPASSUNG 5: Die `activeSessionId` zu den Abhängigkeiten hinzufügen ---
+    }, [updateTargetNodeId, activeVaultId, selectedNodeIds, selectedModel, showFeedback, chatSessionId]);
 
   const handleAcceptUpdate = useCallback(async () => {
     if (!updateTargetNodeId) return;

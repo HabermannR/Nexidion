@@ -18,18 +18,16 @@ const VersionHistory = lazy(() => import('../components/nodes/VersionHistory'));
 const ContextPanel = lazy(() => import('../components/context/ContextPanel'));
 
 export default function NodesView() {
-    const { nodeId } = useParams();
+    const { nodeId, vaultId } = useParams();
     const navigate = useNavigate();
-    
-    // --- Globaler State ---
-    const { 
+
+    // --- Globaler State (unverändert) ---
+    const {
         treeData,
-        setTreeDataForContext, 
-        isPrintPreviewActive, 
-        activeVault, 
-        isLoadingVaults 
+        setTreeDataForContext,
+        isPrintPreviewActive,
+        isLoadingVaults
     } = useAppContext();
-    const activeVaultId = activeVault?.id; // Stabile ID für Abhängigkeiten
 
     // --- Lokaler State ---
     const [currentNode, setCurrentNode] = useState(null);
@@ -41,60 +39,52 @@ export default function NodesView() {
     const [editableContent, setEditableContent] = useState('');
     const [diffSelection, setDiffSelection] = useState({ base: null, compare: null });
 
+    // NEU: States für das Lazy-Loading der Versionen
+    const [versions, setVersions] = useState(null); // null: nicht geladen, []: geladen & leer, [...]: geladen
+    const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+
+
     // ========================================================================
     // DATEN-LADE-EFFEKTE
     // ========================================================================
 
-    // Effekt 1: Lädt den Projekt-Baum, wenn sich der Vault ändert.
+    // GEÄNDERT: Dieser Effekt lädt jetzt nur noch den "leichten" Node ohne Versionen
     useEffect(() => {
-        if (!activeVaultId) {
-            if (treeData.length > 0) setTreeDataForContext([]);
-            return;
-        }
-        const controller = new AbortController();
-        api.get('/api/nodes/tree', {
-            params: { vault_id: activeVaultId },
-            signal: controller.signal,
-        })
-        .then(res => setTreeDataForContext(res.data))
-        .catch(err => {
-            if (!controller.signal.aborted) setError("Could not load project tree.");
-        });
-        return () => controller.abort();
-    }, [activeVaultId, setTreeDataForContext]);
+        if (nodeId && vaultId) {
+            // Reset-Logik beim Wechsel des Nodes
+            setDiffSelection({ base: null, compare: null });
+            setIsEditing(false);
+            setVersions(null); // NEU: Versions-Cache für den alten Node zurücksetzen
+            setIsLoadingVersions(false);
 
-    // NEU: Effekt 2: Lädt den Inhalt des aktuellen Nodes, wenn sich die ID in der URL oder der Vault ändert.
-    useEffect(() => {
-        if (nodeId && activeVaultId) {
             setIsLoadingNode(true);
             setError(null);
             const controller = new AbortController();
-            api.get(`/api/nodes/${nodeId}`, {
-                params: { vault_id: activeVaultId },
-                signal: controller.signal
-            })
-            .then(response => {
-                setCurrentNode(response.data);
-                setEditableContent(response.data.content || '');
-            })
-            .catch(err => {
-                if (!controller.signal.aborted) {
-                    setError(`Could not load node with ID ${nodeId}.`);
-                    setCurrentNode(null);
-                }
-            })
-            .finally(() => {
-                if (!controller.signal.aborted) setIsLoadingNode(false);
-            });
+
+            // API-Aufruf an den "leichten" Endpunkt
+            api.get(`/api/vaults/${vaultId}/nodes/${nodeId}`, { signal: controller.signal })
+                .then(response => {
+                    // Der 'versions'-Schlüssel existiert in der Antwort nicht mehr
+                    setCurrentNode(response.data);
+                    setEditableContent(response.data.content || '');
+                })
+                .catch(err => {
+                    if (!controller.signal.aborted) {
+                        setError(`Knoten konnte nicht geladen werden.`);
+                        setCurrentNode(null);
+                    }
+                })
+                .finally(() => {
+                    if (!controller.signal.aborted) setIsLoadingNode(false);
+                });
+
             return () => controller.abort();
         } else {
-            // Wenn keine nodeId da ist, alles zurücksetzen
             setCurrentNode(null);
             setIsLoadingNode(false);
         }
-    }, [nodeId, activeVaultId]); // Abhängig von der URL-ID und der Vault-ID
+    }, [nodeId, vaultId]);
 
-    // Effekt für Erfolgsmeldungen
     useEffect(() => {
         if (successMessage) {
             const timer = setTimeout(() => setSuccessMessage(''), 3000);
@@ -103,110 +93,149 @@ export default function NodesView() {
     }, [successMessage]);
 
     // ========================================================================
-    // STABILISIERTE HANDLER-FUNKTIONEN (ALLE mit useCallback)
+    // STABILISIERTE HANDLER-FUNKTIONEN
     // ========================================================================
 
+    // Anmerkung: Der `refreshTree`-Aufruf nutzt dank ETag Caching und ist effizient.
     const refreshTree = useCallback(() => {
-        if (!activeVaultId) return;
-        api.get('/api/nodes/tree', { params: { vault_id: activeVaultId } })
+        if (!vaultId) return;
+        api.get(`/api/vaults/${vaultId}/nodes?format=tree`)
             .then(res => setTreeDataForContext(res.data))
-            .catch(() => setError("Could not update tree."));
-    }, [activeVaultId, setTreeDataForContext]);
+            .catch(() => setError("Baum konnte nicht aktualisiert werden."));
+    }, [vaultId, setTreeDataForContext]);
 
+    // GEÄNDERT: `updateNodeContent` lädt den Node neu, um Cache-Busting zu erzwingen
     const updateNodeContent = useCallback(async (nodeIdToUpdate, updates) => {
-        if (!activeVaultId) return false;
+        if (!vaultId) return false;
         try {
-            await api.put(`/api/nodes/${nodeIdToUpdate}`, { ...updates, vault_id: activeVaultId });
-            setSuccessMessage("Node updated successfully!");
+            await api.put(`/api/vaults/${vaultId}/nodes/${nodeIdToUpdate}`, updates);
+            setSuccessMessage("Node erfolgreich aktualisiert!");
+
             if (nodeIdToUpdate.toString() === nodeId) {
-                 const nodeResponse = await api.get(`/api/nodes/${nodeIdToUpdate}`, { params: { vault_id: activeVaultId } });
-                 setCurrentNode(nodeResponse.data);
-                 setEditableContent(nodeResponse.data.content || '');
-                 setIsEditing(false);
+                // Den Node neu laden, um die aktualisierten Daten (inkl. neuem ETag) zu erhalten
+                const nodeResponse = await api.get(`/api/vaults/${vaultId}/nodes/${nodeIdToUpdate}`);
+                setCurrentNode(nodeResponse.data);
+                setEditableContent(nodeResponse.data.content || '');
+                setIsEditing(false);
+                // NEU: Setze die geladenen Versionen zurück, da sie veraltet sein könnten
+                setVersions(null);
             }
+            // Baum auch neu laden, falls sich z.B. der Titel geändert hat
             refreshTree();
             return true;
         } catch (err) {
-            setError(err.response?.data?.error || "Could not save the node.");
+            setError(err.response?.data?.error || "Node konnte nicht gespeichert werden.");
             return false;
         }
-    }, [activeVaultId, nodeId, refreshTree]);
+    }, [vaultId, nodeId, refreshTree]);
 
-    const handleNodeClick = useCallback((node) => navigate(`/nodes/${node.id}`), [navigate]);
-	
-	const handleLinkClick = useCallback(async (linkText) => {
-        if (!activeVaultId) return;
+    const handleNodeClick = useCallback((node) => {
+        // KORREKTUR: Neue Navigations-URL
+        navigate(`/vaults/${vaultId}/nodes/${node.id}`);
+    }, [navigate, vaultId]); // KORREKTUR: Abhängigkeit von vaultId
+
+    const handleLinkClick = useCallback(async (linkText) => {
+        if (!vaultId) return;
         try {
-            const response = await api.get(`/api/nodes/${encodeURIComponent(linkText.trim())}`, { 
-                params: { vault_id: activeVaultId } 
-            });
-            if (response.data?.id) {
-                navigate(`/nodes/${response.data.id}`);
+            // KORREKTUR: Neue API-Route für die Titelsuche
+            const response = await api.get(`/api/vaults/${vaultId}/nodes?title=${encodeURIComponent(linkText.trim())}`);
+            // Die API gibt eine Liste zurück, auch bei einem Treffer
+            if (response.data && response.data.length > 0) {
+                // KORREKTUR: Neue Navigations-URL
+                navigate(`/vaults/${vaultId}/nodes/${response.data[0].id}`);
                 setError(null);
+            } else {
+                setError(`Linkziel "${linkText}" nicht gefunden.`);
             }
         } catch (error) {
-            setError(error.response?.status === 404 ? `Link target "${linkText}" not found.` : "Server error following link.");
+            setError(error.response?.status === 404 ? `Linkziel "${linkText}" nicht gefunden.` : "Serverfehler beim Folgen des Links.");
         }
-    }, [activeVaultId, navigate]);
+    }, [vaultId, navigate]); // KORREKTUR: Abhängigkeit von vaultId
 
     const handleAddNode = useCallback(async (parentNodeId) => {
-        if (!activeVaultId) return;
-        const title = prompt("Enter the title for the new node:");
+        if (!vaultId) return;
+        const title = prompt("Titel für den neuen Node eingeben:");
         if (!title || !title.trim()) return;
         try {
-            const payload = { title, parent_id: parentNodeId, vault_id: activeVaultId };
-            const response = await api.post('/api/nodes', payload);
+            const payload = { title, parent_id: parentNodeId }; // KORREKTUR: vault_id wird nicht mehr benötigt
+            // KORREKTUR: Neue API-Route
+            const response = await api.post(`/api/vaults/${vaultId}/nodes/`, payload);
             await refreshTree();
-            navigate(`/nodes/${response.data.id}`);
-            setSuccessMessage("Node created successfully!");
+            // KORREKTUR: Neue Navigations-URL
+            navigate(`/vaults/${vaultId}/nodes/${response.data.id}`);
+            setSuccessMessage("Node erfolgreich erstellt!");
         } catch (err) {
-            setError("Could not create node.");
+            setError("Node konnte nicht erstellt werden.");
         }
-    }, [activeVaultId, refreshTree, navigate]);
+    }, [vaultId, refreshTree, navigate]); // KORREKTUR: Abhängigkeit von vaultId
+
 
     const handleDeleteNode = useCallback((node) => setNodeToDelete(node), []);
 
+    const cancelDelete = useCallback(() => setNodeToDelete(null), []);
+
     const executeDelete = useCallback(async () => {
-        if (!nodeToDelete || !activeVaultId) return;
+        if (!nodeToDelete || !vaultId) return;
         try {
-            await api.delete(`/api/nodes/${nodeToDelete.id}`, { params: { vault_id: activeVaultId } });
+            // KORREKTUR: Neue API-Route
+            await api.delete(`/api/vaults/${vaultId}/nodes/${nodeToDelete.id}`);
             if (nodeId === String(nodeToDelete.id)) {
-                navigate(nodeToDelete.parentId ? `/nodes/${nodeToDelete.parentId}` : '/nodes');
+                // KORREKTUR: Neue Navigations-Logik
+                const targetPath = nodeToDelete.parent_id
+                    ? `/vaults/${vaultId}/nodes/${nodeToDelete.parent_id}`
+                    : `/vaults/${vaultId}`; // Leitet zur Vault-Basis weiter
+                navigate(targetPath);
             }
             await refreshTree();
-            setSuccessMessage(`Node "${nodeToDelete.title}" was successfully deleted.`);
+            setSuccessMessage(`Node "${nodeToDelete.title}" wurde erfolgreich gelöscht.`);
         } catch (err) {
-            setError("Could not delete node. It might have children.");
+            setError("Node konnte nicht gelöscht werden. Möglicherweise hat er noch Kinder.");
         } finally {
             setNodeToDelete(null);
         }
-    }, [nodeToDelete, activeVaultId, nodeId, navigate, refreshTree]);
-
-    const cancelDelete = useCallback(() => setNodeToDelete(null), []);
+    }, [nodeToDelete, vaultId, nodeId, navigate, refreshTree]); // KORREKTUR: Abhängigkeit von vaultId
 
     const moveNode = useCallback(async (sourceNode, targetNode) => {
-		if (!activeVaultId) return;
-		try {
-			await api.post('/api/nodes/move', { 
-				node_id: sourceNode.id,
-				new_parent_id: targetNode.id,
-				vault_id: activeVaultId
-			});
-			await refreshTree();
-		} catch (err) {
-			setError(err.response?.data?.error || "Could not move the node.");
-			await refreshTree();
-		}
-	}, [activeVaultId, refreshTree]);
-    
-	const handleSave = useCallback(async () => {
-		if (!currentNode) return;
-		await updateNodeContent(currentNode.id, { content: editableContent });
-	}, [currentNode, editableContent, updateNodeContent]);
+        if (!vaultId) return;
+        try {
+            // KORREKTUR: Annahme einer neuen API-Route für das Verschieben
+            await api.post(`/api/vaults/${vaultId}/nodes/move/`, {
+                node_id: sourceNode.id,
+                new_parent_id: targetNode.id,
+            }); // vault_id wird nicht mehr im Body benötigt
+            await refreshTree();
+        } catch (err) {
+            setError(err.response?.data?.error || "Node konnte nicht verschoben werden.");
+            await refreshTree();
+        }
+    }, [vaultId, refreshTree]); // KORREKTUR: Abhängigkeit von vaultId
+
+    const handleSave = useCallback(async () => {
+        if (!currentNode) return;
+        await updateNodeContent(currentNode.id, { content: editableContent });
+    }, [currentNode, editableContent, updateNodeContent]);
 
     const handleRename = useCallback(async (nodeId, newTitle) => {
-		await updateNodeContent(nodeId, { title: newTitle });
-	}, [updateNodeContent]);
+        await updateNodeContent(nodeId, { title: newTitle });
+    }, [updateNodeContent]);
+
+    // --- ZENTRALE HANDLER FÜR DIE VERSIONSKONTROLLE ---
+    const handleLoadVersions = useCallback(() => {
+        if (versions || isLoadingVersions || !nodeId || !vaultId) return;
+
+        setIsLoadingVersions(true);
+        setError(null);
+
+        api.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`)
+            .then(response => {
+                setVersions(response.data || []);
+            })
+            .catch(err => {
+                setError("Versionsverlauf konnte nicht geladen werden.");
+                setVersions(null); // Bei Fehler zurücksetzen
+            })
+            .finally(() => setIsLoadingVersions(false));
+    }, [versions, isLoadingVersions, nodeId, vaultId]);
 
     const handleSelectVersion = useCallback((version) => {
         setIsEditing(false);
@@ -221,8 +250,7 @@ export default function NodesView() {
     const handleShowCurrentVersion = useCallback(() => {
         setIsEditing(false);
         setDiffSelection({ base: null, compare: null });
-        setEditableContent(currentNode?.content || '');
-    }, [currentNode]);
+    }, []);
 
     const handleCancelEdit = useCallback(() => {
         setIsEditing(false);
@@ -249,23 +277,60 @@ export default function NodesView() {
             contentToDisplay={diffSelection.base ? diffSelection.base.content : (currentNode?.content || '')}
             versionForDiffBase={diffSelection.base}
             versionForDiffCompare={diffSelection.compare}
+            onShowCurrent={handleShowCurrentVersion}
         />
     ), [
         currentNode, handleSave, handleRename, handleLinkClick, successMessage,
-        isEditing, editableContent, handleCancelEdit, diffSelection
+        isEditing, editableContent, handleCancelEdit, diffSelection, handleShowCurrentVersion
     ]);
 
-    const versionHistoryComponent = useMemo(() => (
-        <Suspense fallback={<div className="p-2 text-center small">Lade...</div>}>
-            <VersionHistory
-                versions={currentNode?.versions || []}
-                diffSelection={diffSelection}
-                onSelectVersion={handleSelectVersion}
-                onCompareVersion={handleCompareVersion}
-                onShowCurrent={handleShowCurrentVersion}
-            />
-        </Suspense>
-    ), [currentNode?.versions, diffSelection, handleSelectVersion, handleCompareVersion, handleShowCurrentVersion]);
+    const versionHistoryComponent = useMemo(() => {
+        // Diese Komponente wird jetzt in einem Offcanvas (Seitenleiste) angezeigt,
+        // das vom MainLayout gesteuert wird. Ihre einzige Aufgabe ist es, den
+        // aktuellen Zustand des Ladevorgangs darzustellen.
+
+        return (
+            <Suspense fallback={<div className="p-2 text-center small">Lade Komponenten...</div>}>
+
+                {/* Fall 1: Der Ladevorgang für die Versionen läuft gerade. */}
+                {isLoadingVersions && (
+                    <div className="p-3 text-center small">
+                        <div className="spinner-border spinner-border-sm me-2" role="status">
+                            <span className="visually-hidden">Loading...</span>
+                        </div>
+                        Lade Verlauf...
+                    </div>
+                )}
+
+                {/* Fall 2: Die Versionen sind erfolgreich geladen (versions ist ein Array). */}
+                {/* Wichtig: `versions` ist `null`, bis die Daten geladen sind. */}
+                {versions && (
+                    <VersionHistory
+                        versions={versions}
+                        diffSelection={diffSelection}
+                        onSelectVersion={handleSelectVersion}
+                        onCompareVersion={handleCompareVersion}
+                        onShowCurrent={handleShowCurrentVersion}
+                    />
+                )}
+
+                {/* Fall 3 (implizit): Wenn weder geladen wird noch Daten da sind, wird nichts
+                angezeigt. Das ist korrekt, da das Offcanvas in diesem Zustand
+                entweder geschlossen ist oder der Ladevorgang sofort startet,
+                sobald es geöffnet wird. */}
+
+            </Suspense>
+        );
+    }, [
+        // Die Abhängigkeitsliste ist jetzt viel sauberer.
+        // Sie hängt nur noch vom Ladezustand und den geladenen Daten ab.
+        isLoadingVersions,
+        versions,
+        diffSelection,
+        handleSelectVersion,
+        handleCompareVersion,
+        handleShowCurrentVersion
+    ]);
     
     const contextPanelComponent = useMemo(() => (
         <Suspense fallback={<div className="p-2 text-center small">Lade...</div>}>
@@ -278,13 +343,12 @@ export default function NodesView() {
     // ========================================================================
     
     if (isLoadingVaults) return <div className="p-5 text-center">Lade App-Konfiguration...</div>;
-    if (!activeVaultId) return <div className="p-5 text-center">Bitte einen Vault auswählen, um zu starten.</div>;
+    if (!vaultId) return <div className="p-5 text-center">Bitte einen Vault auswählen, um zu starten.</div>;
 
     if (isPrintPreviewActive) {
 		return <Suspense fallback={<div>Lade Druckvorschau...</div>}><PrintPreview onLinkClick={handleLinkClick} /></Suspense>;
 	}
 
-    // Haupt-Ladeanzeige oder Fehler für den Node-Bereich
     const renderMainContent = () => {
         if (isLoadingNode) return <div className="p-5 text-center">Lade Node...</div>;
         if (error) return <div className="p-5 text-center text-danger">{error}</div>;
@@ -301,14 +365,11 @@ export default function NodesView() {
                 onDeleteNode={handleDeleteNode}
                 onMoveNode={moveNode}
                 onNodeUpdate={updateNodeContent}
-                diffSelection={diffSelection}
                 mainContent={renderMainContent()}
                 versionHistory={versionHistoryComponent}
                 contextPanel={contextPanelComponent}
-                // Mobile Callbacks
-                onSelectVersionForMobile={handleSelectVersion}
-                onCompareVersionForMobile={handleCompareVersion}
-                onShowCurrentForMobile={handleShowCurrentVersion}
+                onLoadVersions={handleLoadVersions}
+                areVersionsLoaded={versions !== null}
             />
             {nodeToDelete && (
                 <Suspense fallback={null}>

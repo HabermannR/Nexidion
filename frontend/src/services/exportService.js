@@ -3,7 +3,6 @@
 import { marked } from 'marked';
 import { getIdsInOrder, generateTocForSelectedNodes } from './treeService'; // Importieren die Helfer
 import api from '../api/axios';
-import qs from 'qs';
 
 // Die komplette, riesige generateEpub Funktion hier einfügen
 // Korrigierte generateEpub Funktion mit XML-Entitäten und vollständiger Bildunterstützung
@@ -386,41 +385,66 @@ const getFullNodesByIds = async (ids, vaultId) => {
     if (!vaultId) {
         throw new Error("vaultId is required to fetch node details.");
     }
-    
+
     try {
-        const response = await api.get('/api/nodes/details', {
-            params: {
-                vault_id: vaultId,
-                node_ids: ids
-            },
-            // Genau derselbe Serializer wie bei der Druckfunktion
-            paramsSerializer: params => {
-                return qs.stringify(params, { arrayFormat: 'repeat' });
-            }
-        });
-        
-        const nodesWithContent = response.data;
-        if (!nodesWithContent || nodesWithContent.length === 0) {
-            console.error("API for export returned no nodes. Check vault_id and node_ids sent:", {
-                vault_id: vaultId,
-                node_ids: ids,
-            });
-             throw new Error("Could not fetch node details for export from server.");
+        const url = `/api/vaults/${vaultId}/nodes/bulk-get`;
+        // Wir stellen weiterhin sicher, dass die IDs Strings sind, da UUIDs Strings sind.
+        const stringIds = ids.map(String);
+        const payload = {
+            node_ids: stringIds
+        };
+
+
+        const response = await api.post(url, payload);
+        // `versionsWithContent` wäre ein passenderer Name, aber wir behalten `nodesWithContent` für Konsistenz.
+        const versionsWithContent = response.data;
+
+        if (!versionsWithContent) {
+            // ... (Fehlerbehandlung bleibt gleich)
+            throw new Error("Could not fetch node details from server.");
         }
 
-        // Sortiere die erhaltenen Nodes in der Reihenfolge des Baumes, da die API-Antwort
-        // nicht unbedingt sortiert ist.
-        const nodesById = new Map(nodesWithContent.map(n => [n.id, n]));
-        const sortedNodes = ids.map(id => nodesById.get(id)).filter(Boolean);
-        
+        // ======================= DER ENTSCHEIDENDE FIX =======================
+        // Erstelle die Map, indem du die `node_id`-Eigenschaft aus dem Version-Objekt als Schlüssel nimmst.
+        // Und um sicherzustellen, dass wir nicht versehentlich ein Version-Objekt in den Rest des Codes
+        // weitergeben, erstellen wir ein neues Objekt, das wie ein "Node"-Objekt aussieht.
+        const nodesById = new Map();
+        for (const version of versionsWithContent) {
+            // Der Schlüssel ist die ID des Nodes.
+            const key = String(version.node_id);
+
+            nodesById.set(key, version);
+        }
+        // ====================================================================
+
+        const sortedNodes = stringIds.map(id => {
+            const versionData = nodesById.get(id);
+            if (!versionData) return null;
+
+            // Transformiere das Version-Objekt in ein Node-ähnliches Objekt, das der EPUB-Generator erwartet.
+            // Wir müssen den Titel aus den Version-Daten nehmen.
+            // WENN der Titel NICHT im versionData-Objekt ist, wird `undefined` verwendet, was zu Fehlern führt.
+            // Dies ist der kritischste Punkt, der im Backend sichergestellt werden muss.
+            return {
+                id: versionData.node_id,
+                title: versionData.title || "Titel nicht gefunden", // Fallback, falls das Backend den Titel nicht liefert
+                content: versionData.content,
+                // ... füge weitere Eigenschaften hinzu, die `generateEpub` benötigen könnte
+            };
+        }).filter(Boolean);
+
+        if (sortedNodes.length !== stringIds.length) {
+            console.warn(`[Export Service] Mismatch in fetched nodes. Requested ${stringIds.length}, but received and matched ${sortedNodes.length}.`);
+        }
+
         return sortedNodes;
 
     } catch (error) {
-        console.error("Failed to fetch full nodes for export:", error);
-        throw error; 
+        // ... (Fehlerbehandlung bleibt gleich)
+        console.error(`[Export Service] Failed to fetch full nodes:`, error);
+        throw error;
     }
 };
-
 /**
  * Orchestriert den EPUB-Export für die ausgewählten Nodes.
  * Benötigt jetzt die `activeVault`-ID.
