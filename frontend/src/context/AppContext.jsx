@@ -172,23 +172,27 @@ export const AppProvider = ({ children }) => {
     }
   }, [activeVault, isChatLoading]);
 
-  const appendMessage = useCallback((message) => {
-    // Fügt eine komplette, neue Nachricht zur Historie hinzu.
-    setChatHistory(prev => [...prev, message]);
+    const appendMessage = useCallback((message) => {
+    // Fügt eine neue Nachricht hinzu UND sortiert das gesamte Array danach.
+    setChatHistory(prev => {
+      const newHistory = [...prev, message];
+      // Temporäre Nachrichten ohne sort_order werden ans Ende sortiert.
+      return newHistory.sort((a, b) => (a.sort_order || Infinity) - (b.sort_order || Infinity));
+    });
   }, []);
 
   const updateMessage = useCallback((messageId, updates) => {
-    // Ersetzt Eigenschaften einer bestehenden Nachricht (z.B. ID von temp zu real, oder ganzer Inhalt).
-    setChatHistory(prev =>
-        prev.map(msg =>
-            msg.id === messageId ? { ...msg, ...updates } : msg
-        )
-    );
+    // Aktualisiert eine Nachricht UND sortiert das gesamte Array danach.
+    // Das ist entscheidend, wenn die finale `sort_order` vom Server kommt.
+    setChatHistory(prev => {
+      const newHistory = prev.map(msg =>
+          msg.id === messageId ? { ...msg, ...updates, id: updates.id || msg.id } : msg
+      );
+      return newHistory.sort((a, b) => (a.sort_order || Infinity) - (b.sort_order || Infinity));
+    });
   }, []);
 
   const appendChunkToMessage = useCallback((messageId, chunk) => {
-    // Hängt einen Text-Chunk an den `content` einer bestehenden Nachricht an.
-    // Ideal für Streaming.
     setChatHistory(prev =>
         prev.map(msg =>
             msg.id === messageId

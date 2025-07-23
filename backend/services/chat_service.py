@@ -3,6 +3,7 @@
 import logging
 import json
 from flask import current_app
+from sqlalchemy import func
 
 from backend.models import db, ChatSession, ChatMessage
 from backend.services import llm_service, node_service
@@ -28,17 +29,11 @@ def _verify_session_access(session_id: str, user_id: int) -> ChatSession:
 
 # --- Privater Helper zum Vorbereiten des LLM-Kontexts ---
 def _prepare_llm_context(session: ChatSession, node_ids: list, user_id: int) -> tuple[str, list]:
-    """Sammelt und formatiert den Kontext und die Historie für den LLM-Aufruf."""
-
-    # ===== KORREKTUR HIER =====
-    # Behandeln Sie den Fall, dass keine Node-IDs übergeben werden, um einen Fehler zu vermeiden.
     context_content = ""
     if node_ids:
-        # Holen des Kontexts nur, wenn IDs vorhanden sind.
         context_data = node_service.get_content_for_nodes(node_ids, session.vault_id, user_id)
         context_content = context_data.get('content', '')
 
-    # 2. Erstellen des System-Prompts
     system_prompt = (
         "You are a helpful assistant for a knowledge base. "
         "Use the following context to answer the user's question. "
@@ -46,9 +41,8 @@ def _prepare_llm_context(session: ChatSession, node_ids: list, user_id: int) -> 
         f"<context>\n{context_content}\n</context>"
     )
 
-    # 3. Holen der "aktiven" Chathistorie
-    active_messages = session.messages.filter_by(status='active').order_by(ChatMessage.timestamp.asc()).all()
-    # Wir brauchen die Historie für den LLM, nicht die vollständigen DTOs
+    # *** GEÄNDERT: Sortierung nach sort_order ***
+    active_messages = session.messages.filter_by(status='active').order_by(ChatMessage.sort_order.asc()).all()
     chat_history = [{"role": msg.role, "content": msg.content} for msg in active_messages]
 
     return system_prompt, chat_history
@@ -56,28 +50,28 @@ def _prepare_llm_context(session: ChatSession, node_ids: list, user_id: int) -> 
 
 # --- Kernfunktionen (Streaming-First-Ansatz) ---
 
-def stream_new_message(session_id: str, user_id: int, user_input: str, model: str, node_ids: list):
+def stream_new_message(session_id: str, user_id: int, user_input: str, model: str, node_ids: list,
+                       client_message_id: str = None):
     """
-    Fügt eine User-Nachricht hinzu, streamt die Antwort des Assistenten und speichert alles.
-    Dies ist die zentrale Funktion, die fast alles abdeckt.
+    Fügt eine User-Nachricht und die gestreamte Antwort des Assistenten hinzu.
+    Verwendet `sort_order` für eine explizite Reihenfolge.
     """
     session = _verify_session_access(session_id, user_id)
 
-    # --- Schritt 1: User-Nachricht speichern ---
+    # Wir verwenden einen äußeren try/except/finally-Block, um die DB-Session bei Fehlern sicher zurückzurollen.
     try:
-        context_versions = []
-        if node_ids:  # Nur wenn IDs vorhanden sind
-            # 1. Rufe die neue, performantere Funktion auf, die Node-Objekte zurückgibt.
-            context_nodes = node_service.get_nodes_by_ids_for_user(node_ids, session.vault_id, user_id)
+        # --- Schritt 1: User-Nachricht erstellen und speichern ---
 
-            # 2. Extrahiere die Version-Objekte aus den Nodes.
-            #    Dies stellt sicher, dass der Rest des Codes, der `context_versions` erwartet,
-            #    weiterhin funktioniert.
-            context_versions = [
-                node.current_version_object
-                for node in context_nodes
-                if node.current_version_object is not None
-            ]
+        # Ermittle die nächste verfügbare sort_order für die User-Nachricht.
+        # func.max gibt None zurück, wenn die Tabelle leer ist, daher der 'or 0'-Fallback.
+        max_sort_order = db.session.query(func.max(ChatMessage.sort_order)).filter_by(
+            session_id=session.id).scalar() or 0
+        user_message_sort_order = max_sort_order + 1
+
+        context_versions = []
+        if node_ids:
+            context_nodes = node_service.get_nodes_by_ids_for_user(node_ids, session.vault_id, user_id)
+            context_versions = [node.current_version_object for node in context_nodes if node.current_version_object]
 
         user_message = ChatMessage(
             session_id=session.id,
@@ -85,138 +79,189 @@ def stream_new_message(session_id: str, user_id: int, user_input: str, model: st
             content=user_input,
             author_id=user_id,
             status='active',
-            context_versions=context_versions
+            context_versions=context_versions,
+            sort_order=user_message_sort_order
         )
         db.session.add(user_message)
         db.session.commit()
-        # Sende die gespeicherte Nachricht sofort an den Client
-        yield f"event: user_message\ndata: {json.dumps(user_message.to_dict())}\n\n"
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"STREAM: Fehler beim Speichern der User-Nachricht für User {user_id}: {e}")
-        yield f"event: error\ndata: {json.dumps({'error': 'Could not save your message.'})}\n\n"
-        return
 
-    # --- Schritt 2: LLM-Antwort vorbereiten und streamen ---
-    chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'claude-3-haiku-20240307')
-    full_response = ""
-    assistant_message = None
+        # Sende sofort die Bestätigung an das Frontend.
+        if client_message_id:
+            confirmation_data = {"client_id": client_message_id, "server_message": user_message.to_dict()}
+            yield f"event: user_message_confirmed\ndata: {json.dumps(confirmation_data)}\n\n"
+        else:
+            yield f"event: user_message\ndata: {json.dumps(user_message.to_dict())}\n\n"
 
-    try:
-        # Erstelle eine leere Assistenten-Nachricht, um eine ID zu bekommen
+        # --- Schritt 2: Assistenten-Nachricht vorbereiten und streamen ---
+
+        assistant_sort_order = user_message_sort_order + 1
+        chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'claude-3-haiku-20240307')
+        full_response = ""
+        assistant_message = None
+
+        # Erstelle eine leere Assistenten-Nachricht in der DB, um eine ID zu bekommen.
         assistant_user = llm_service.get_llm_user(chosen_model)
         assistant_message = ChatMessage(
-            session_id=session.id, role='assistant', content="", author_id=assistant_user.id,
-            status='active', llm_model_source=chosen_model
+            session_id=session.id,
+            role='assistant',
+            content="",
+            author_id=assistant_user.id,
+            status='active',
+            llm_model_source=chosen_model,
+            sort_order=assistant_sort_order
         )
         db.session.add(assistant_message)
         db.session.commit()
         yield f"event: assistant_message_start\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
 
-        # Bereite Kontext vor und rufe den LLM-Service auf
-        # WICHTIG: Die Historie für den LLM sollte nur die relevanten Felder enthalten.
-        # Die `to_dict()`-Methode könnte zu viele Infos enthalten.
+        # Bereite den Kontext für den LLM-Aufruf vor.
+        # _prepare_llm_context holt jetzt den Verlauf sortiert nach `sort_order`.
         system_prompt, all_messages_for_llm = _prepare_llm_context(session, node_ids, user_id)
 
-        # Der LLM benötigt nur die Nachrichten vor der aktuellen Antwort.
-        # Da die User-Nachricht bereits in der DB ist, wird sie von _prepare_llm_context mitgelesen.
         llm_stream = llm_service.generate_response_stream(
             messages=all_messages_for_llm, system_prompt=system_prompt, model=chosen_model
         )
 
-        # KORREKTUR: Die Schleife ist jetzt viel einfacher, weil sie nur Text erwartet.
         for chunk in llm_stream:
-            # chunk ist jetzt ein einfacher Text-String (z.B. "Hello ")
             if chunk:
                 full_response += chunk
-                payload = {
-                    "id": str(assistant_message.id),
-                    "token": chunk
-                }
+                payload = {"id": str(assistant_message.id), "token": chunk}
                 yield f"data: {json.dumps(payload)}\n\n"
 
+        # --- Schritt 3: Finale Assistenten-Nachricht und Titel aktualisieren ---
+
+        # Wir müssen die Nachricht aus der Session neu laden (`refresh`),
+        # bevor wir sie ändern, um Konflikte zu vermeiden.
+        db.session.refresh(assistant_message)
+        assistant_message.content = full_response.strip()
+
+        title_was_updated = False
+        # Prüfen, ob dies die erste *vollständige* Assistenten-Antwort ist.
+        # Wir zählen alle Assistant-Nachrichten mit `sort_order > 0`.
+        is_first_assistant_message = db.session.query(ChatMessage).filter_by(
+            session_id=session.id, role='assistant').count() == 1
+
+        if is_first_assistant_message and session.title == "New Chat":
+            history_for_title = f"User: {user_input}\nAssistant: {full_response.strip()}"
+            new_title = llm_service.generate_chat_title(history_for_title, model=chosen_model)
+            session.title = new_title
+            title_was_updated = True
+            logger.info(f"Generated new title for session {session.id}: {new_title}")
+
+        db.session.commit()
+
+        yield f"event: assistant_message_end\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
+
+        if title_was_updated:
+            session_update_payload = {"id": session.id, "title": session.title}
+            yield f"event: session_updated\ndata: {json.dumps(session_update_payload)}\n\n"
 
     except Exception as e:
+        db.session.rollback()
+        logger.error(f"STREAM (New Message): Fehler beim Verarbeiten: {e}", exc_info=True)
+        error_payload = {'error': 'A server error occurred while processing your message.'}
+        if client_message_id:
+            error_payload['client_id'] = client_message_id
+        yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
+        return
 
-        # KORREKTUR: Wandle die Exception explizit in einen String um, bevor du sie loggst.
 
-        # Das verhindert den 'ellipsis' JSON-Fehler.
-
-        error_str = str(e)
-
-        logger.error(f"STREAM: LLM-Stream für Session {session_id} fehlgeschlagen: {error_str}")
-
-        yield f"event: error\ndata: {json.dumps({'error': 'The AI stream was interrupted.'})}\n\n"
-    finally:
-        # --- Schritt 3: Finale Assistenten-Nachricht & Titel aktualisieren ---
-        if assistant_message and full_response:
-            try:
-                db.session.refresh(session)
-                db.session.refresh(assistant_message)
-
-                is_first_assistant_message = session.messages.filter_by(role='assistant').count() == 1
-
-                assistant_message.content = full_response.strip()
-                db.session.flush()
-
-                title_was_updated = False  # Flag, um zu wissen, ob wir das Event senden müssen
-                if is_first_assistant_message and session.title == "New Chat":
-                    history_for_title = f"User: {user_input}\nAssistant: {full_response.strip()}"
-                    new_title = llm_service.generate_chat_title(history_for_title, model=chosen_model)
-                    session.title = new_title
-                    title_was_updated = True  # Setze das Flag
-                    logger.info(f"Generated new title for session {session.id}: {new_title}")
-
-                db.session.commit()
-
-                # ===== KORREKTUR HIER =====
-                # Sende das Event für die fertige Nachricht (verwendet das normale to_dict)
-                yield f"event: assistant_message_end\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
-
-                # Sende das Session-Update-Event NUR, wenn der Titel auch geändert wurde
-                if title_was_updated:
-                    session_update_payload = {"id": session.id, "title": session.title}
-                    yield f"event: session_updated\ndata: {json.dumps(session_update_payload)}\n\n"
-
-            except Exception as e:
-                db.session.rollback()
-                # Wichtig: Loggen Sie die Exception mit Traceback für besseres Debugging
-                logger.error(f"STREAM: Error on final save of assistant answer {assistant_message.id}: {e}",
-                             exc_info=True)
-
+# in backend/services/chat_service.py
 
 def stream_retry_message(session_id: str, message_id: str, user_id: int, model: str):
     """
-    Setzt alte Antworten zurück und generiert eine neue Antwort für eine bestehende User-Nachricht.
+    Generiert eine neue Antwort für eine User-Nachricht.
+    - Ersetzt eine existierende, aktive Antwort.
+    - Fügt eine neue Antwort ein, wenn keine existiert.
+    - Lässt den Rest der Konversation unberührt.
     """
     session = _verify_session_access(session_id, user_id)
-    user_message_to_retry = session.messages.filter_by(id=message_id, role='user').one_or_none()
 
-    if not user_message_to_retry:
-        raise ValueError("Message to retry not found or is not a user message.")
+    try:
+        user_message_to_retry = db.session.get(ChatMessage, message_id)
+        if not user_message_to_retry or user_message_to_retry.role != 'user':
+            raise ValueError("Message to resubmit not found or is not a user message.")
 
-    # --- Schritt 1: Alle nachfolgenden, aktiven Nachrichten auf 'retried' setzen ---
-    subsequent_messages = session.messages.filter(
-        ChatMessage.timestamp > user_message_to_retry.timestamp,
-        ChatMessage.status == 'active'
-    ).all()
-    for msg in subsequent_messages:
-        msg.status = 'retried'
-    db.session.commit()
+        # --- Schritt 1: Prüfen, ob eine aktive Antwort ersetzt werden soll ---
 
-    # --- Schritt 2: Den Stream mit dem aktualisierten Verlauf neu starten ---
-    # Wir rufen einfach die Hauptfunktion wieder auf, da sie den korrekten Verlauf liest.
-    # Wir geben die ursprüngliche Eingabe und die Kontext-Nodes der "retry"-Nachricht weiter.
-    original_input = user_message_to_retry.content
-    original_node_ids = [v.node_id for v in user_message_to_retry.context_versions]
+        # Finde die erste Nachricht nach der User-Frage
+        next_message = db.session.query(ChatMessage).filter(
+            ChatMessage.session_id == session_id,
+            ChatMessage.sort_order == user_message_to_retry.sort_order + 1
+        ).first()
 
-    yield from stream_new_message(
-        session_id=session_id,
-        user_id=user_id,
-        user_input=original_input,
-        model=model,  # Nutze das neue Modell, falls eines übergeben wurde
-        node_ids=original_node_ids
-    )
+        new_assistant_sort_order = 0
+
+        # Prüfe, ob diese nächste Nachricht eine aktive Antwort ist, die wir ersetzen können
+        if next_message and next_message.role == 'assistant' and next_message.status == 'active':
+            # Fall A: Antwort ersetzen
+            logger.info(f"Resubmit: Replacing active response {next_message.id}")
+            next_message.status = 'retried'
+            new_assistant_sort_order = next_message.sort_order
+
+            update_data = {"id": next_message.id, "status": "retried"}
+            yield f"event: message_status_updated\ndata: {json.dumps(update_data)}\n\n"
+        else:
+            # Fall B: Neue Antwort einfügen
+            new_assistant_sort_order = user_message_to_retry.sort_order + 1
+            logger.info(f"Resubmit: Inserting new response at sort_order {new_assistant_sort_order}")
+
+            # Platz schaffen: Alle nachfolgenden Nachrichten um 1 nach hinten schieben.
+            db.session.query(ChatMessage).filter(
+                ChatMessage.session_id == session_id,
+                ChatMessage.sort_order >= new_assistant_sort_order
+            ).update(
+                {'sort_order': ChatMessage.sort_order + 1},
+                synchronize_session=False
+            )
+
+        db.session.commit()
+
+        # --- Schritt 2: Kontext vorbereiten und neue Antwort streamen ---
+
+        messages_for_context = db.session.query(ChatMessage).filter(
+            ChatMessage.session_id == session_id,
+            ChatMessage.sort_order <= user_message_to_retry.sort_order,
+            ChatMessage.status == 'active'
+        ).order_by(ChatMessage.sort_order.asc()).all()
+
+        # Der Rest der Streaming-Logik ist jetzt für beide Fälle identisch
+        chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'claude-3-haiku-20240307')
+        full_response = ""
+        assistant_message = None
+
+        assistant_user = llm_service.get_llm_user(chosen_model)
+        assistant_message = ChatMessage(
+            session_id=session.id, role='assistant', content="", author_id=assistant_user.id,
+            status='active', llm_model_source=chosen_model,
+            sort_order=new_assistant_sort_order
+        )
+        db.session.add(assistant_message)
+        db.session.commit()
+        yield f"event: assistant_message_start\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
+
+        original_node_ids = [v.node_id for v in user_message_to_retry.context_versions]
+        chat_history_for_llm = [{"role": msg.role, "content": msg.content} for msg in messages_for_context]
+        system_prompt, _ = _prepare_llm_context(session, original_node_ids, user_id)
+        llm_stream = llm_service.generate_response_stream(messages=chat_history_for_llm, system_prompt=system_prompt,
+                                                          model=chosen_model)
+
+        for chunk in llm_stream:
+            if chunk:
+                full_response += chunk
+                payload = {"id": str(assistant_message.id), "token": chunk}
+                yield f"event: data\ndata: {json.dumps(payload)}\n\n"
+
+        db.session.refresh(assistant_message)
+        assistant_message.content = full_response.strip()
+        db.session.commit()
+        yield f"event: assistant_message_end\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"STREAM (Retry): Fehler beim Verarbeiten: {e}", exc_info=True)
+        yield f"event: error\ndata: {json.dumps({'error': 'A server error occurred during resubmit.'})}\n\n"
+        return
 
 
 # --- Einfache CRUD-Operationen ---
@@ -259,17 +304,15 @@ def delete_session(session_id: str, user_id: int) -> None:
 
 
 def get_session_history(session_id: str, user_id: int) -> dict:
-    """
-    Holt die komplette Session mit Titel und aktiven Nachrichten.
-    Gibt ein Dictionary zurück, das vom Frontend direkt verarbeitet werden kann.
-    """
     session = _verify_session_access(session_id, user_id)
 
-    # Hole die Nachrichten und konvertiere sie in Dictionaries
-    messages = session.messages.filter_by(status='active').order_by(ChatMessage.timestamp.asc()).all()
+    # *** GEÄNDERT: Sortierung nach sort_order ***
+    messages = session.messages.order_by(ChatMessage.sort_order.asc()).all()
+
+    # Der Filter für 'active' etc. sollte jetzt im Frontend stattfinden,
+    # damit das Frontend alle Status-Updates korrekt verarbeiten kann.
     message_dicts = [m.to_dict() for m in messages]
 
-    # Baue das finale Objekt zusammen, das das Frontend erwartet
     return {
         "id": session.id,
         "title": session.title,
@@ -280,12 +323,40 @@ def get_session_history(session_id: str, user_id: int) -> dict:
 
 
 def soft_delete_message(session_id: str, message_id: str, user_id: int):
+    """
+    Setzt eine Nachricht auf den Status 'deleted'.
+    Die `sort_order` anderer Nachrichten wird NICHT geändert.
+    """
     session = _verify_session_access(session_id, user_id)
-    message = session.messages.filter_by(id=message_id, status='active').one_or_none()
-    if not message:
-        raise ValueError(f"Active message with ID {message_id} not found in this session.")
-    message.status = 'deleted'
-    db.session.commit()
+
+    try:
+        # Finde die Nachricht, die gelöscht werden soll.
+        message_to_delete = db.session.query(ChatMessage).filter_by(
+            id=message_id,
+            session_id=session_id
+        ).one_or_none()
+
+        if not message_to_delete:
+            # Sende keinen Fehler, wenn die Nachricht bereits weg ist.
+            # Das macht das Frontend robuster.
+            logger.warning(f"Attempted to delete message {message_id}, but it was not found.")
+            return
+
+        # Optional: Berechtigungsprüfung, ob der User diese Nachricht löschen darf.
+        if message_to_delete.author_id != user_id and session.owner_id != user_id:
+            raise PermissionError("You are not authorized to delete this message.")
+
+        # Ändere nur den Status. Das ist alles.
+        message_to_delete.status = 'deleted'
+
+        db.session.commit()
+        logger.info(f"User {user_id} soft-deleted message {message_id}.")
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error during soft-delete of message {message_id}: {e}", exc_info=True)
+        # Wirf den Fehler weiter, damit die API-Schicht einen 500er zurückgeben kann.
+        raise
 
 
 # ==============================================================================

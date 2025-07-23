@@ -75,31 +75,41 @@ def add_message(vault_id, session_id):
     user_id = int(get_jwt_identity())
     data = request.json
     user_input = data.get('user_input')
+
     if not user_input:
         return jsonify({"error": "user_input is required"}), 400
+
+    # --- NEU: Client-Message-ID aus dem Request holen ---
+    # Wir holen die ID aus dem Request. Wenn sie nicht da ist (z.B. bei alten Clients),
+    # ist das auch in Ordnung, da der Parameter in der Service-Funktion optional sein wird.
+    client_message_id = data.get('client_message_id')
+
     model = data.get('model')
+    node_ids = data.get('node_ids', [])
 
     try:
+        # Die Berechtigungsprüfung bleibt gleich.
         _verify_session_access(session_id=session_id, user_id=user_id)
 
+        # Der Generator wird jetzt mit der zusätzlichen client_message_id aufgerufen.
         response_generator = chat_service.stream_new_message(
             session_id=session_id,
             user_id=user_id,
             user_input=user_input,
             model=model,
-            node_ids=data.get('node_ids', [])
+            node_ids=node_ids,
+            client_message_id=client_message_id  # <-- HIER WIRD DIE ID ÜBERGEBEN
         )
-
 
         return Response(stream_with_context(response_generator), mimetype='text/event-stream')
 
     except (PermissionError, ValueError) as e:
+        # Die Fehlerbehandlung bleibt ebenfalls gleich.
         return Response(
             f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n",
             mimetype='text/event-stream',
             status=403 if isinstance(e, PermissionError) else 404
         )
-
 
 @chats_bp.route('/<string:session_id>/messages/<string:message_id>', methods=['DELETE'], strict_slashes=False)
 @jwt_required()

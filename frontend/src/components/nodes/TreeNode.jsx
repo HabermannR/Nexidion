@@ -22,7 +22,7 @@ function TreeNode({ node, onNodeClick, onAddNode, onDeleteNode, onMoveNode, chil
     canDrag: () => true,
   });
   
-  const [{ isOver, isOverShallow, canDrop }, drop] = useDrop({
+  const [{isOverShallow, canDrop }, drop] = useDrop({
     accept: 'NODE',
     drop: (item, monitor) => {
       if (!monitor.isOver({ shallow: true })) {
@@ -59,79 +59,79 @@ function TreeNode({ node, onNodeClick, onAddNode, onDeleteNode, onMoveNode, chil
     isOverShallow && canDrop ? 'drag-over-valid' : '',
     isOverShallow && !canDrop ? 'drag-over-invalid' : ''
   ].join(' ');
-  
+
   return (
-    <div 
-      ref={ref} 
-      className="tree-node-wrapper" 
-      style={{ 
-        opacity: isDragging ? 0.4 : 1,
-        cursor: isDragging ? 'grabbing' : 'grab',
-        backgroundColor: isOverShallow && canDrop ? '#e8f5e8' : 
-                         isOverShallow && !canDrop ? '#ffe8e8' : 'transparent',
-        border: isOverShallow && canDrop ? '2px dashed #4caf50' : 
+      <div
+          ref={ref}
+          className="tree-node-wrapper"
+          style={{
+            opacity: isDragging ? 0.4 : 1,
+            cursor: isDragging ? 'grabbing' : 'grab',
+            backgroundColor: isOverShallow && canDrop ? '#e8f5e8' :
+                isOverShallow && !canDrop ? '#ffe8e8' : 'transparent',
+            border: isOverShallow && canDrop ? '2px dashed #4caf50' :
                 isOverShallow && !canDrop ? '2px dashed #f44336' : '2px solid transparent',
-        transition: 'all 0.2s ease'
-      }}
-    >
-      <div className={nodeClasses}>
-        <div className="tree-node-content" onClick={() => onNodeClick(node)}>
-          <span 
-            className="collapse-icon" 
-            onClick={(e) => {
-              e.stopPropagation();
-              if (node.children && node.children.length > 0) {
-                toggleNodeCollapse(node.id);
-              }
-            }}
+            transition: 'all 0.2s ease'
+          }}
+      >
+        <div className={nodeClasses}>
+          <div className="tree-node-content" onClick={() => onNodeClick(node)}>
+          <span
+              className="collapse-icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (node.children && node.children.length > 0) {
+                  toggleNodeCollapse(node.id);
+                }
+              }}
           >
             {node.children && node.children.length > 0 && (isCollapsed ? '▶' : '▼')}
           </span>
-          
-          <input
-            type="checkbox"
-            className="node-checkbox"
-            checked={selectedNodeIds.has(node.id)}
-            onChange={(e) => { 
-              e.stopPropagation(); 
-              toggleNodeSelection(node.id); 
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
-          
-          <span className="node-title">{node.title}</span>
+
+            <input
+                type="checkbox"
+                className="node-checkbox"
+                checked={selectedNodeIds.has(node.id)}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  toggleNodeSelection(node.id);
+                }}
+                onClick={(e) => e.stopPropagation()}
+            />
+
+            <span className="node-title">{node.title}</span>
+          </div>
+
+          <div className="node-controls">
+            <button
+                className="control-btn control-btn-add"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddNode(node.id);
+                }}
+                aria-label={`Add child to ${node.title}`}
+            >
+              +
+            </button>
+            <button
+                className="control-btn control-btn-delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteNode(node);
+                }}
+                aria-label={`Delete ${node.title}`}
+            >
+              -
+            </button>
+          </div>
         </div>
-        
-        <div className="node-controls">
-          <button 
-            className="control-btn control-btn-add" 
-            onClick={(e) => { 
-              e.stopPropagation(); 
-              onAddNode(node.id); 
-            }}
-            aria-label={`Add child to ${node.title}`}
-          >
-            +
-          </button>
-          <button 
-            className="control-btn control-btn-delete" 
-            onClick={(e) => { 
-              e.stopPropagation(); 
-              onDeleteNode(node); 
-            }}
-            aria-label={`Delete ${node.title}`}
-          >
-            -
-          </button>
-        </div>
+
+        {!isCollapsed && children && (
+            <div className="tree-node-children">
+              {children}
+            </div>
+        )}
       </div>
-      
-      {!isCollapsed && children && (
-        <div className="tree-node-children">
-          {children}
-        </div>
-      )}
-    </div>
   );
 }
 

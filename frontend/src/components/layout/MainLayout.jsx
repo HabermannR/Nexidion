@@ -64,11 +64,6 @@ const MainLayout = React.memo(function MainLayout({
         </Suspense>
     );
 
-    const versionHistoryComponentForOffcanvas = React.cloneElement(versionHistory, {
-        onCompareVersion: (v) => { if (versionHistory.props.onCompareVersion) versionHistory.props.onCompareVersion(v); setShowMobileVersions(false); setShowDesktopVersions(false); },
-        onShowCurrent: () => { if (versionHistory.props.onShowCurrent) versionHistory.props.onShowCurrent(); setShowMobileVersions(false); setShowDesktopVersions(false); }
-    });
-
     return (
         <Container fluid className="main-layout-container g-0">
             {/* MOBILE ACTION BAR: Wird nur auf Mobile angezeigt und ist jetzt korrekt im Layoutfluss */}

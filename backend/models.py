@@ -9,6 +9,7 @@ providing a secure and object-oriented way to interact with the data.
 import uuid
 from datetime import datetime, timezone
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import Index
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Create the SQLAlchemy database instance.
@@ -242,12 +243,18 @@ class ChatMessage(db.Model):
     llm_model_source = db.Column(db.String(100),
                                  nullable=True)  # z.B. 'claude-3-5-sonnet-20240620', nur für role='assistant'
     status = db.Column(db.String(20), nullable=False, default='active', index=True)  # 'active', 'retried', 'deleted'
+    sort_order = db.Column(db.Integer, nullable=False, index=True,
+                           comment="Explicit sort order for messages within a session.")
 
     session = db.relationship('ChatSession', back_populates='messages')
     # Many-to-Many-Beziehung zu den Kontext-Versionen
     # Gilt nur für 'user'-Nachrichten, aber die Verknüpfung ist hier definiert.
     context_versions = db.relationship('Version', secondary=chat_message_context, lazy='subquery',
                                        backref=db.backref('context_for_messages', lazy=True))
+    # --- NEUER, KOMBINIERTER INDEX ---
+    __table_args__ = (
+        Index('idx_session_id_sort_order', 'session_id', 'sort_order'),
+    )
 
     def to_dict(self):
         return {
@@ -257,5 +264,6 @@ class ChatMessage(db.Model):
             "timestamp": self.timestamp.isoformat(),
             "author_id": self.author_id,
             "llm_model_source": self.llm_model_source,
-            "status": self.status
+            "status": self.status,
+            "sort_order": self.sort_order
         }
