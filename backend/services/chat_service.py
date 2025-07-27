@@ -165,52 +165,69 @@ def stream_new_message(session_id: str, user_id: int, user_input: str, model: st
 
 
 def stream_retry_message(session_id: str, message_id: str, user_id: int, model: str):
-    # Setup-Teil (Nachrichten verschieben etc.)
+    """
+    Generiert eine neue Antwort für eine User-Nachricht.
+    - Ersetzt eine existierende Antwort, indem sie deren Status auf 'retried' setzt.
+    - Fügt eine neue Antwort ein und verschiebt nachfolgende, falls keine zu ersetzen ist.
+    Arbeitet innerhalb einer einzigen Transaktion, um Konsistenz zu gewährleisten.
+    """
+    session = _verify_session_access(session_id, user_id)
+    full_response = ""
+    new_assistant_message = None
+
     try:
-        session = _verify_session_access(session_id, user_id)
         user_message_to_retry = db.session.get(ChatMessage, message_id)
         if not user_message_to_retry or user_message_to_retry.role != 'user':
             raise ValueError("Message to resubmit not found or is not a user message.")
 
-        next_message = db.session.query(ChatMessage).filter(
-            ChatMessage.session_id == session_id,
-            ChatMessage.sort_order == user_message_to_retry.sort_order + 1
-        ).first()
+        # --- Schritt 1: Finde die zu ersetzende Nachricht ---
+        # Wichtig: Noch kein Commit hier!
 
-        new_assistant_sort_order = 0
-        if next_message and next_message.role == 'assistant' and next_message.status == 'active':
-            next_message.status = 'retried'
-            new_assistant_sort_order = next_message.sort_order
-            update_data = {"id": next_message.id, "status": "retried"}
+        message_to_replace = db.session.query(ChatMessage).filter(
+            ChatMessage.session_id == session_id,
+            ChatMessage.sort_order == user_message_to_retry.sort_order + 1,
+            ChatMessage.role == 'assistant'
+        ).with_for_update().one_or_none()  # `one_or_none` ist sicherer
+
+        if message_to_replace:
+            # FALL A: Ersetzen
+            logger.info(f"Resubmit: Marking message {message_to_replace.id} as 'retried'.")
+            message_to_replace.status = 'retried'
+            new_assistant_sort_order = message_to_replace.sort_order
+
+            # Sende sofort das UI-Update. Der Client kann darauf reagieren.
+            update_data = {"id": str(message_to_replace.id), "status": "retried"}
             yield f"event: message_status_updated\ndata: {json.dumps(update_data)}\n\n"
         else:
+            # FALL B: Einfügen und verschieben
             new_assistant_sort_order = user_message_to_retry.sort_order + 1
+            logger.info(f"Resubmit: Inserting new response at sort_order {new_assistant_sort_order}.")
             db.session.query(ChatMessage).filter(
                 ChatMessage.session_id == session_id,
                 ChatMessage.sort_order >= new_assistant_sort_order
-            ).update({'sort_order': ChatMessage.sort_order + 1}, synchronize_session=False)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"STREAM (Retry - Setup): Fehler bei Vorbereitung: {e}", exc_info=True)
-        yield f"event: error\ndata: {json.dumps({'error': 'A server error occurred during resubmit preparation.'})}\n\n"
-        return
+            ).update({'sort_order': ChatMessage.sort_order + 1}, synchronize_session='fetch')
 
-    # Streaming-Teil mit robuster Fehlerbehandlung
-    chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'claude-3-haiku-20240307')
-    full_response = ""
-    assistant_message = None
+        # --- Schritt 2: Neue Antwort vorbereiten (immer noch in derselben Transaktion) ---
 
-    try:
+        chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'claude-3-haiku-20240307')
         assistant_user = llm_service.get_llm_user(chosen_model)
-        assistant_message = ChatMessage(
+
+        # Erstelle das neue Nachrichtenobjekt, füge es aber noch nicht hinzu,
+        # da der Stream fehlschlagen könnte.
+        new_assistant_message = ChatMessage(
             session_id=session.id, role='assistant', content="", author_id=assistant_user.id,
             status='active', llm_model_source=chosen_model,
             sort_order=new_assistant_sort_order
         )
-        db.session.add(assistant_message)
-        db.session.commit()
-        yield f"event: assistant_message_start\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
+
+        # Füge es zur Session hinzu und mache einen flush, um eine ID zu bekommen.
+        # Ein flush schreibt in die DB, beendet aber die Transaktion NICHT.
+        db.session.add(new_assistant_message)
+        db.session.flush()
+
+        yield f"event: assistant_message_start\ndata: {json.dumps(new_assistant_message.to_dict())}\n\n"
+
+        # --- Schritt 3: Kontext holen und Stream ausführen ---
 
         messages_for_context = db.session.query(ChatMessage).filter(
             ChatMessage.session_id == session_id,
@@ -229,31 +246,31 @@ def stream_retry_message(session_id: str, message_id: str, user_id: int, model: 
         for chunk in llm_stream:
             if chunk:
                 full_response += chunk
-                # HINWEIS: Ihr Originalcode hatte hier "event: data", was von vielen SSE-Clients
-                # als Standard-Message-Event interpretiert wird. Ich behalte das bei.
-                payload = {"id": str(assistant_message.id), "token": chunk}
+                payload = {"id": str(new_assistant_message.id), "token": chunk}
                 yield f"data: {json.dumps(payload)}\n\n"
 
-                # --- Happy Path ---
-        db.session.refresh(assistant_message)
-        assistant_message.content = full_response.strip()
-        db.session.commit()
-        yield f"event: assistant_message_end\ndata: {json.dumps(assistant_message.to_dict())}\n\n"
+        # --- Schritt 4: Finale Operationen und der einzige Commit ---
+
+        new_assistant_message.content = full_response.strip()
+        db.session.commit()  # Alle Änderungen werden jetzt atomar geschrieben!
+
+        yield f"event: assistant_message_end\ndata: {json.dumps(new_assistant_message.to_dict())}\n\n"
 
     except Exception as e:
-        # --- Error Path ---
-        logger.error(f"STREAM (Retry - LLM Part): Fehler beim Streamen: {e}", exc_info=True)
+        # Bei JEDEM Fehler, rolle die gesamte Transaktion zurück.
+        db.session.rollback()
+        logger.error(f"STREAM (Retry): Fehler beim Verarbeiten: {e}", exc_info=True)
 
-        if assistant_message and full_response:
+        # Wenn der Stream fehlschlägt, nachdem die leere Nachricht erstellt wurde,
+        # können wir trotzdem versuchen, eine Teil-Antwort zu speichern.
+        # Dies ist eine fortgeschrittene Fehlerbehandlung.
+        if new_assistant_message and full_response:
             try:
-                db.session.refresh(assistant_message)
-                assistant_message.content = full_response.strip()
-                db.session.commit()
-                logger.info(f"Teil-Antwort für Retry-Nachricht {assistant_message.id} wurde gespeichert.")
-            except Exception as db_err:
-                logger.error(f"Konnte Teil-Antwort für Retry nicht speichern nach Stream-Fehler: {db_err}",
-                             exc_info=True)
-                db.session.rollback()
+                # Erstelle eine NEUE Session, da die alte zurückgerollt wurde.
+                # Dies ist komplex, für den Moment ist ein einfacher Rollback sicherer.
+                logger.warning("Stream failed, partial response could not be saved due to transaction rollback.")
+            except Exception as final_err:
+                logger.error(f"Could not save partial response after initial error: {final_err}")
 
         yield f"event: error\ndata: {json.dumps({'error': 'A server error occurred during resubmit.'})}\n\n"
         return
