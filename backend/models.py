@@ -101,6 +101,8 @@ class Node(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title = db.Column(db.String(255), nullable=False)
     current_version = db.Column(db.Integer, nullable=False, default=1)
+    # Ein optionaler String für den Icon-Namen, z.B. "bxs-file-doc".
+    icon = db.Column(db.String(50), nullable=True)
 
     # --- Relationships ---
     # Foreign key for the self-referential parent-child relationship.
@@ -129,25 +131,37 @@ class Node(db.Model):
         viewonly=True
     )
 
-    def to_dict(self, include_children=False, include_content=True):
+    def to_dict(self, include_children=False, include_content=True, v3_mode=False):  # <-- Parameter hinzufügen
         """
         Konvertiert das Node-Objekt in ein serialisierbares Dictionary.
+        Im v3_mode wird das neue 'icon'-Feld mitgesendet.
         """
         node_dict = {
             'id': self.id,
             'title': self.title,
             'parent_id': self.parent_id,
             'current_version': self.current_version,
-            'vault_id': self.vault_id  # NEU: vault_id im Dictionary
+            'vault_id': self.vault_id
         }
+
+        # <<< NEUER BLOCK HIER EINFÜGEN >>>
+        if v3_mode:
+            # Sende das Icon-Feld nur, wenn explizit angefordert.
+            # Wenn kein Icon gesetzt ist, gib einen Default-Wert zurück.
+            node_dict['icon'] = self.icon or 'bx bxs-file-doc'  # Default-Icon
 
         if include_content:
             content = self.current_version_object.content if self.current_version_object else ""
             node_dict['content'] = content
 
         if include_children:
-            node_dict['children'] = [child.to_dict(include_children=True, include_content=False)
-                                     for child in self.children]
+            # Hier geben wir den 'v3_mode' rekursiv an die Kinder weiter!
+            # Die Warnung hier kannst du ignorieren. PyCharm/MyPy weiß nicht, dass 'self.children'
+            # zur Laufzeit eine Liste ist. Es ist ein bekanntes "Problem" mit SQLAlchemy.
+            node_dict['children'] = [
+                child.to_dict(include_children=True, include_content=False, v3_mode=v3_mode)
+                for child in self.children
+            ]
 
         return node_dict
 

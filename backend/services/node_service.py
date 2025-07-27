@@ -1,8 +1,8 @@
 # backend/services/node_service.py
 
 from typing import List, Dict, Any
-from sqlalchemy.orm import joinedload, selectinload, subqueryload, contains_eager
-from sqlalchemy import case, func
+from sqlalchemy.orm import joinedload, subqueryload, contains_eager, with_parent
+from sqlalchemy import case, func, select
 from .vault_service import _verify_vault_access
 from ..models import db, Node, Version
 
@@ -56,112 +56,39 @@ def _get_nodes_with_content(node_ids: list[str], vault_id: int, user_id: int) ->
     # Schritt 4: Wenn alle Prüfungen bestanden wurden, die Liste der Nodes zurückgeben
     return nodes
 
-def get_nodes_as_tree(vault_id: int, user_id: int) -> list[dict]:
+def get_nodes_as_tree(vault_id: int, user_id: int, v3_mode: bool=False) -> list[dict]:
     """
     Holt die komplette Node-Hierarchie als Baumstruktur, indem die rekursive
     Logik des Node-Modells genutzt wird.
     """
-    if True:
-        _verify_vault_access(vault_id, user_id)
+    _verify_vault_access(vault_id, user_id)
 
-        # 1. Finde nur die Wurzel-Nodes (die keinen Parent haben).
-        # options(subqueryload(...)) kann helfen, N+1-Query-Probleme zu vermeiden.
-        root_nodes = (
-            Node.query
-            .options(
-                # Lade die Kind-Beziehungen über alle Ebenen aggressiv vor
-                subqueryload(Node.children).subqueryload(Node.children),
-                # Lade auch das zugehörige Version-Objekt für jeden Node vor.
-                # contains_eager ist hier oft effizienter als subqueryload für eine 1-zu-1-Beziehung.
-                contains_eager(Node.current_version_object)
-            )
-            # Wir brauchen einen expliziten JOIN, damit contains_eager weiß, was es tun soll.
-            .join(Node.current_version_object, isouter=True)
-            .filter(Node.vault_id == vault_id, Node.parent_id == None)
-            .order_by(Node.title)
-            .all()
+    # 1. Finde nur die Wurzel-Nodes (die keinen Parent haben).
+    # options(subqueryload(...)) kann helfen, N+1-Query-Probleme zu vermeiden.
+    root_nodes = (
+        Node.query
+        .options(
+            # Lade die Kind-Beziehungen über alle Ebenen aggressiv vor
+            subqueryload(Node.children).subqueryload(Node.children),
+            # Lade auch das zugehörige Version-Objekt für jeden Node vor.
+            # contains_eager ist hier oft effizienter als subqueryload für eine 1-zu-1-Beziehung.
+            contains_eager(Node.current_version_object)
         )
+        # Wir brauchen einen expliziten JOIN, damit contains_eager weiß, was es tun soll.
+        .join(Node.current_version_object, isouter=True)
+        .filter(Node.vault_id == vault_id, Node.parent_id == None)
+        .order_by(Node.title)
+        .all()
+    )
 
-        # 2. Rufe die rekursive to_dict-Methode für jeden Wurzel-Node auf.
-        # Der `include_content=False` im rekursiven Aufruf sorgt für die Performance.
-        tree = [node.to_dict(include_children=True, include_content=False) for node in root_nodes]
+    # 2. Rufe die rekursive to_dict-Methode für jeden Wurzel-Node auf.
+    # Der `include_content=False` im rekursiven Aufruf sorgt für die Performance.
+    tree = [node.to_dict(include_children=True, include_content=False, v3_mode=v3_mode) for node in root_nodes]
 
-        return tree
-    else:
-        spoofed_tree = [
-            {
-                'id': 'root-node-1',
-                'title': 'Hauptthema 1',
-                'parent_id': None,
-                'current_version': 2,
-                'vault_id': vault_id,
-                'children': [
-                    {
-                        'id': 'child-node-1-1',
-                        'title': 'Unterthema 1.1',
-                        'parent_id': 'root-node-1',
-                        'current_version': 1,
-                        'vault_id': vault_id,
-                        'children': []
-                    },
-                    {
-                        'id': 'child-node-1-2',
-                        'title': 'Unterthema 1.2 mit weiteren Details',
-                        'parent_id': 'root-node-1',
-                        'current_version': 4,
-                        'vault_id': vault_id,
-                        'children': [
-                            {
-                                'id': 'grandchild-node-1-2-1',
-                                'title': 'Detail A',
-                                'parent_id': 'child-node-1-2',
-                                'current_version': 1,
-                                'vault_id': vault_id,
-                                'children': []
-                            },
-                            {
-                                'id': 'grandchild-node-1-2-2',
-                                'title': 'Detail B',
-                                'parent_id': 'child-node-1-2',
-                                'current_version': 1,
-                                'vault_id': vault_id,
-                                'children': []
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                'id': 'root-node-2',
-                'title': 'Hauptthema 2 (ohne Kinder)',
-                'parent_id': None,
-                'current_version': 1,
-                'vault_id': vault_id,
-                'children': []
-            },
-            {
-                'id': 'root-node-3',
-                'title': 'Ein weiteres Hauptthema',
-                'parent_id': None,
-                'current_version': 5,
-                'vault_id': vault_id,
-                'children': [
-                    {
-                        'id': 'child-node-3-1',
-                        'title': 'Nur ein Kind',
-                        'parent_id': 'root-node-3',
-                        'current_version': 1,
-                        'vault_id': vault_id,
-                        'children': []
-                    }
-                ]
-            }
-        ]
-
-        return spoofed_tree
+    return tree
 
 
-def get_nodes_as_list(vault_id: int, user_id: int) -> list[dict]:
+def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool=False) -> list[dict]:
     """Holt alle Nodes als flache Liste."""
     _verify_vault_access(vault_id, user_id)
     nodes = (
@@ -171,7 +98,7 @@ def get_nodes_as_list(vault_id: int, user_id: int) -> list[dict]:
         .order_by(Node.title)
         .all()
     )
-    return [node.to_dict(include_content=True) for node in nodes]
+    return [node.to_dict(include_content=True, v3_mode=v3_mode) for node in nodes]
 
 
 def find_node_by_title(title: str, vault_id: int, user_id: int) -> dict | None:
@@ -191,7 +118,7 @@ def find_node_by_title(title: str, vault_id: int, user_id: int) -> dict | None:
     return node.to_dict(include_content=True) if node else None
 
 
-def get_node_by_id(node_id: str, vault_id: int, user_id: int) -> dict | None:
+def get_node_by_id(node_id: str, vault_id: int, user_id: int, v3_mode: bool=False) -> dict | None:
     """
     Holt einen einzelnen Node nach ID - OHNE seinen Versionsverlauf (schnell).
     """
@@ -213,12 +140,14 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int) -> dict | None:
 
     # Die to_dict() Methode sollte jetzt auch keine Versionen mehr serialisieren.
     # Du hattest es bereits auskommentiert, was perfekt ist.
-    node_dict = node.to_dict(include_content=True)
+    node_dict = node.to_dict(include_content=True, v3_mode=v3_mode)
 
     # Optional, aber SEHR empfohlen: Füge Metadaten für das Frontend hinzu.
     # Dies erfordert eine zusätzliche, aber sehr schnelle Zählabfrage.
-    version_count = Version.query.with_parent(node).count()
-    node_dict['has_versions'] = version_count > 1  # Wahr, wenn mehr als die initiale Version existiert
+    count_stmt = select(func.count()).select_from(Version).where(with_parent(node, Node.versions))
+    version_count = db.session.execute(count_stmt).scalar_one()
+
+    node_dict['has_versions'] = version_count > 1
     node_dict['version_count'] = version_count
 
     return node_dict
@@ -240,15 +169,14 @@ def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] |
 
     # Jetzt laden wir die Versionen, die zu diesem Node gehören.
     # Wir laden auch den Autor mit, um anzuzeigen, wer die Änderung gemacht hat.
-    versions = (
-        Version.query
-        .with_parent(node)
+    stmt = (
+        select(Version)
+        .where(with_parent(node, Node.versions))
         .options(joinedload(Version.author))
-        .order_by(Version.version.desc())  # Neueste Versionen zuerst
-        .all()
+        .order_by(Version.version.desc())
     )
+    versions = db.session.execute(stmt).scalars().all()
 
-    # Serialisiere jede Version in ein Dictionary.
     versions_list = [v.to_dict(include_content=True) for v in versions]
 
     return versions_list

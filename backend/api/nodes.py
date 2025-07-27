@@ -50,6 +50,8 @@ def get_nodes(vault_id: int):
     """
     user_id = int(get_jwt_identity())
     format_type = request.args.get('format', 'tree').lower()
+    # Lese den v3-Parameter aus der URL. Standard ist False.
+    v3_mode = request.args.get('v3') == 'true'
 
     try:
         # KORREKTE PRÜFUNG: Prüfe auf die Existenz des Schlüssels, nicht auf den Wert.
@@ -64,11 +66,11 @@ def get_nodes(vault_id: int):
 
         # Fall 2: Flache Liste (unverändert)
         if format_type == 'list':
-            nodes = node_service.get_nodes_as_list(vault_id, user_id)
+            nodes = node_service.get_nodes_as_list(vault_id, user_id, v3_mode=v3_mode)
             return jsonify(nodes)
 
         # Fall 3: Baum-Struktur (Standardfall, unverändert)
-        tree_data = node_service.get_nodes_as_tree(vault_id, user_id)
+        tree_data = node_service.get_nodes_as_tree(vault_id, user_id, v3_mode=v3_mode)
         return cached_jsonify(tree_data)
 
     except ValueError as e:
@@ -119,7 +121,7 @@ def get_multiple_nodes(vault_id: int):
                     'timestamp': version.timestamp.isoformat(),
                     'author_id': version.author_id,
                     'author_name': version.author.display_name if version.author else "Unknown",
-                    'title': node.title  # <<< DER FIX: Der Titel kommt direkt vom Node-Objekt.
+                    'title': node.title
                 })
 
         return jsonify(response_data)
@@ -171,9 +173,10 @@ def get_single_node(vault_id: int, node_id: str):
     Diese Antwort wird mittels ETag gecacht.
     """
     user_id = int(get_jwt_identity())
+    v3_mode = request.args.get('v3') == 'true'
     try:
         # Nutzt die schnelle Service-Funktion, die keine Versionen lädt.
-        node = node_service.get_node_by_id(node_id, vault_id, user_id)
+        node = node_service.get_node_by_id(node_id, vault_id, user_id, v3_mode=v3_mode)
         if node is None:
             return jsonify({"error": "Node not found"}), 404
 

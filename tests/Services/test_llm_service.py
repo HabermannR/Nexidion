@@ -228,33 +228,39 @@ def test_stream_retry_message_success(
 
     # 3. ASSERT
     db_session.session.refresh(session)
-    messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
+    # WICHTIG: Sortiere nach sort_order, dann nach timestamp, um eine stabile Reihenfolge zu garantieren
+    messages = session.messages.order_by(ChatMessage.sort_order.asc(), ChatMessage.timestamp.asc()).all()
 
-    # Wir erwarten 4 Nachrichten:
-    # 1. Original User-Nachricht (status='active', da sie die Basis für den Retry ist)
-    # 2. Original Assistant-Nachricht (status='retried')
-    # 3. Neue User-Nachricht (Kopie der ersten, status='active')
-    # 4. Neue Assistant-Nachricht (status='active')
-    # HINWEIS: Deine Implementierung erstellt eine NEUE User-Nachricht. Das ist eine Design-Entscheidung.
+    # Wir erwarten 3 Nachrichten in der DB:
+    # 1. Die originale User-Nachricht.
+    # 2. Die alte Assistant-Nachricht, die nun als 'retried' markiert ist.
+    # 3. Die neue Assistant-Nachricht, die die alte ersetzt.
+    assert len(messages) == 3, f"Erwartet wurden 3 Nachrichten, aber {len(messages)} gefunden."
 
-    # Deine `stream_retry_message` setzt Nachrichten auf 'retried' und ruft dann `stream_new_message` auf.
-    # Lasst uns das Verhalten prüfen:
     original_user_msg = messages[0]
-    original_assistant_msg = messages[1]
-    new_user_msg_copy = messages[2]
-    new_assistant_msg = messages[3]
+    old_assistant_msg = messages[1]
+    new_assistant_msg = messages[2]
 
-    assert original_user_msg.status == 'active'  # Bleibt aktiv
-    assert original_assistant_msg.status == 'retried'  # Wurde als "retried" markiert
+    # Prüfe die User-Nachricht (sollte unberührt sein)
+    assert original_user_msg.role == 'user'
+    assert original_user_msg.content == "Meine Frage"
+    assert original_user_msg.status == 'active'
 
-    assert new_user_msg_copy.role == 'user'
-    assert new_user_msg_copy.content == "Meine Frage"
-    assert new_user_msg_copy.status == 'active'
+    # Prüfe die alte Assistant-Nachricht (sollte auf 'retried' gesetzt sein)
+    assert old_assistant_msg.role == 'assistant'
+    assert old_assistant_msg.content == "Alte Antwort."
+    assert old_assistant_msg.status == 'retried'
+    assert old_assistant_msg.llm_model_source == "old-model"  # Prüft, ob wir die richtige Nachricht haben
 
+    # Prüfe die neue Assistant-Nachricht (sollte 'active' sein und neuen Inhalt haben)
     assert new_assistant_msg.role == 'assistant'
     assert new_assistant_msg.content == "Dies ist die neue Antwort."
-    assert new_assistant_msg.llm_model_source == "new-model"
     assert new_assistant_msg.status == 'active'
+    assert new_assistant_msg.llm_model_source == "new-model"  # Prüft, ob das neue Modell verwendet wurde
+
+    # Prüfe, ob die sort_order korrekt wiederverwendet wurde
+    assert old_assistant_msg.sort_order == new_assistant_msg.sort_order
+    assert new_assistant_msg.sort_order == original_user_msg.sort_order + 1
 
 
 @patch('backend.services.chat_service.llm_service.generate_structured_response')
