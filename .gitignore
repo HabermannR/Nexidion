@@ -1,27 +1,70 @@
-# Python & PyCharm spezifisch
+# =============================================================================
+# 1. Python & PyCharm Artefakte
+# =============================================================================
 __pycache__/
-*.pyc
-.idea/
-.venv/
-*.env
-*.db
-git/
+*.py[cod]
+*.so
 
-# React / Node.js spezifisch
-node_modules/
-build/
-dist/
-.DS_Store
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-dist.zip
-.env.development
-frontend/src/components/special_nodes/
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & Editor Konfiguration
+.idea/
+.vscode/
+
+# Test & Coverage Reports
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.lprof
+pytest.ini
+
+
+# =============================================================================
+# 2. Frontend (React/Node.js) - Annahme: alles ist in 'frontend/'
+# =============================================================================
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.vite/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# =============================================================================
+# 3. Lokale Konfiguration & Geheimnisse (NIE in Git speichern!)
+# =============================================================================
+# Lokale Umgebungs-Dateien
+.env
+.env.*
+!.env.example
+
+# Datenbankdateien
+*.db
+*.sqlite
+*.sqlite3
+
+# Sensible Daten
+secrets.json
+credentials.txt
+
+# =============================================================================
+# 4. Projektspezifische Ignorierungen (Generierte Dateien & Backups)
+# =============================================================================
+# Exportierte Dokumente und Bilder
+/exports/
+/Knowledge Base export/
+/secure_images/
+*.epub
 
 
 # Deine spezifischen, privaten Dateien
-knowledge_base.db   # Oder wie auch immer deine SQLite-Datei heißt
 create_hash.py
 converter.py
 Rename_Summary.py
@@ -39,12 +82,16 @@ backend/scripts/sync_docs.py
 backend/scripts/benchmark.py
 backend/scripts/reorder.py
 backend/my_export.json
+backend/scripts/import_old_db.py
+backend/scripts/wsgi.py
+kerntest.py
 
-.gitignore
+
+
 *_
 *.pdf
-*.epub
 *.md
 *.jpg
 *.png
 *.svg
+*.log
