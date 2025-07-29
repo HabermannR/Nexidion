@@ -1,0 +1,14 @@
+# Lade zuerst alle Produktions-Abhängigkeiten
+-r requirements.txt
+
+# --- Test-Framework ---
+pytest
+pytest-mock
+coverage              # Zum Messen der Testabdeckung
+
+# --- Code-Analyse & Profiling ---
+line_profiler         # Zur Performance-Analyse von Codezeilen
+
+# --- Datenbank-Utilities (optional, aber nützlich) ---
+sqlite-utils
+tabulate
