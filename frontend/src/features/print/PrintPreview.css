@@ -1,0 +1,126 @@
+/* src/features/print/PrintPreview.css */
+/*
+  Dieses Stylesheet enthält alle Regeln, die ausschließlich für die
+  Druckvorschau-Funktionalität benötigt werden. Es wird nur von der
+  PrintPreview-Komponente selbst importiert und hält damit das
+  globale CSS sauber.
+*/
+
+/* =================================================================== */
+/* <<< ON-SCREEN PREVIEW STYLES >>>                                    */
+/* Diese Regeln steuern, wie die Vorschau auf dem Bildschirm aussieht. */
+/* =================================================================== */
+
+/* 1. Standardmäßig ist das Overlay (erstellt per React Portal) unsichtbar. */
+body:not(.print-preview-active) .print-preview-overlay {
+    display: none;
+}
+
+/* 2. Wenn die Vorschau aktiv ist (body hat die Klasse), wird das Overlay sichtbar
+      und die eigentliche App (#root) wird ausgeblendet. */
+body.print-preview-active > #root {
+    display: none;
+}
+
+body.print-preview-active > .print-preview-overlay {
+    display: block; /* Zeige das Overlay */
+    position: fixed;
+    inset: 0;
+    background-color: #e9ecef; /* Neutraler Hintergrund für den Vorschaubereich */
+    overflow-y: auto;          /* Scrollen des Vorschauinhalts erlauben */
+    z-index: 2000;             /* Stellt sicher, dass es über allem liegt */
+    padding: 2rem;
+}
+
+/* 3. Style den Container im Overlay, um wie eine Papierseite auszusehen. */
+.print-preview-container {
+    max-width: 8.5in;  /* Simuliert die Breite von US-Letter-Papier */
+    min-height: 11in; /* Simuliert die Höhe von US-Letter-Papier */
+    margin: 0 auto;    /* Zentriert die "Seite" horizontal */
+    padding: 1in;      /* Simuliert den Seitenrand */
+    background: #fff;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+
+/* =================================================================== */
+/* <<< ACTUAL PRINTING STYLES (@media print) >>>                       */
+/* Diese Regeln gelten nur, wenn der Benutzer den Druckdialog öffnet.  */
+/* =================================================================== */
+
+@media print {
+    /* 1. Verstecke ALLES im Body... */
+    body.print-preview-active > * {
+        display: none !important;
+    }
+
+    /* 2. ...AUSSER unserem Druck-Overlay. */
+    body.print-preview-active > .print-preview-overlay {
+        display: block !important;
+    }
+
+    /* 3. Setze das Layout für die Druckausgabe zurück. */
+    html,
+    body.print-preview-active,
+    body.print-preview-active .print-preview-overlay {
+        height: auto !important;
+        width: auto !important;
+        overflow: visible !important;
+        position: static !important;
+        background: #fff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 4. Entferne die On-Screen-Styles (Schatten, Ränder) vom Container. */
+    .print-preview-container {
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 0 !important;
+        border-radius: 0 !important;
+    }
+
+    /* 5. Verstecke die UI-Elemente der Vorschau, wie den "Drucken"-Button. */
+    .print-preview-header {
+        display: none !important;
+    }
+
+    /* 6. Steuerung von Seitenumbrüchen. */
+    .print-toc {
+        page-break-after: always; /* Inhaltsverzeichnis auf eigener Seite */
+    }
+    .print-node {
+        page-break-before: always; /* Jeder Node beginnt auf einer neuen Seite */
+    }
+    .print-node:first-of-type {
+        page-break-before: auto !important; /* Der allererste Node braucht keinen Umbruch davor */
+    }
+    h1, h2, h3, h4 {
+        page-break-after: avoid; /* Verhindere Seitenumbrüche direkt nach einer Überschrift */
+    }
+
+    /* 7. Allgemeine Stil-Resets für einen sauberen Druck. */
+    .print-preview-container .view-content {
+        font-size: 11pt;
+        line-height: 1.4;
+        border: none;
+        padding: 0;
+        background: transparent;
+    }
+    .print-preview-container a {
+        color: #000 !important;
+        text-decoration: none !important; /* Unterstreichungen im Druck oft unerwünscht */
+    }
+
+    /* 8. Universeller Reset für visuelle Effekte, die im Druck stören. */
+    * {
+        box-shadow: none !important;
+        text-shadow: none !important;
+        transition: none !important;
+    }
+}

@@ -1,0 +1,27 @@
+/* src/features/auth/LoginPage.css */
+
+/* Statt 'centered-container': Bootstrap erledigt das in der JSX. */
+/* Wir stylen nur den Container selbst. */
+.login-card {
+    width: 100%;
+    max-width: 450px; /* Etwas kleiner für ein schlankeres Gefühl */
+    border: none; /* Entfernt den Standard-Kartenrand für einen moderneren Look */
+}
+
+/* Statt 'floating-title': Eine einfache, zentrierte Überschrift. */
+.login-card .card-title {
+    font-weight: 300; /* Leichteres Schriftgewicht */
+    font-size: 1.75rem;
+}
+
+/*
+  Hier sind keine extra Klassen für Form, Input oder Button nötig,
+  da wir die Bootstrap-Klassen direkt im JSX verwenden (`form-control`, `btn-primary`).
+  Das macht das CSS schlanker.
+*/
+
+/* Statt 'errorMessage': Wir stylen die Bootstrap 'alert'-Klasse direkt. */
+.login-card .alert {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+}

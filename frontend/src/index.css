@@ -1,149 +1,34 @@
-/* index.css */
+/* src/index.css (NEUE, SAUBERE V3-VERSION) */
+
+/* 1. Globale Variablen importieren */
 @import url('variables.css');
 
-/* General styles */
+/* 2. Grundlegendes Box-Sizing für alle Elemente (Best Practice) */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+/* 3. Globale Stile für die Seite selbst */
 html, body, #root {
-  height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  font-family: var(--font-family);
-  line-height: 1.6;
-  color: var(--text-color);
-  background-color: var(--secondary-color);
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-family);
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: var(--secondary-color);
+
+    /* WICHTIG: Die Seite selbst soll nie scrollen. Nur Container innerhalb der App. */
+    overflow: hidden;
 }
 
-#root {
-  display: flex;
-  flex-direction: column;
+/* 4. Einfache typografische Resets */
+h1, h2, h3, h4, h5, h6, p, ul, ol {
+    margin-top: 0;
+    margin-bottom: 1rem; /* Ein Standard-Abstand für Blöcke */
 }
 
-/* Typography */
-h1, h2, h3 {
-  margin-top: 0;
-  margin-bottom: 0;
-}
-ul {
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
-/* Layout */
-.app-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-
-/* =================================================================== */
-/* <<< GLOBAL PRINT PREVIEW STYLES >>>                                 */
-/* =================================================================== */
-
-/* 1. By default, ensure the print preview overlay (in the portal) is hidden. */
-body:not(.print-preview-active) .print-preview-overlay {
-    display: none;
-}
-
-/* 2. When the preview is active, hide the main application and show the overlay. */
-/* These rules apply to the ON-SCREEN preview. */
-body.print-preview-active > #root {
-    display: none;
-}
-
-body.print-preview-active > .print-preview-overlay {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background-color: #e9ecef; /* A neutral background for the preview area */
-    overflow-y: auto; /* Allow scrolling of the preview content */
-    z-index: 2000; /* Ensure it's on top of everything */
-    padding: 2rem;
-}
-
-/* 3. Style the container inside the overlay to look like a page on the screen. */
-.print-preview-container {
-    max-width: 8.5in; /* Simulate a letter-sized page width */
-    min-height: 11in; /* Simulate a letter-sized page height */
-    margin: 0 auto; /* Center the page horizontally */
-    padding: 1in;
-    background: #fff;
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
-}
-
-/* 4. Styles for the actual printing process. */
-@media print {
-    /* Hide ALL direct children of the body... */
-    body.print-preview-active > * {
-        display: none !important;
-    }
-    
-    /* ...EXCEPT for our print overlay. */
-    body.print-preview-active > .print-preview-overlay {
-        display: block !important;
-    }
-
-    /* Reset layout for the entire page to ensure content flows correctly. */
-    html, 
-    body.print-preview-active,
-    body.print-preview-active .print-preview-overlay {
-        height: auto !important;
-        width: auto !important;
-        overflow: visible !important;
-        position: static !important;
-        background: #fff !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    
-    /* Remove on-screen styling from the container for the actual printout. */
-    .print-preview-container {
-        box-shadow: none !important;
-        border: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        min-height: 0 !important;
-        border-radius: 0 !important;
-    }
-
-    /* Hide the UI header with the "Print" and "Exit" buttons. */
-    .print-preview-header {
-        display: none !important;
-    }
-
-    /* Control page breaks. */
-    .print-toc {
-        page-break-after: always;
-    }
-    .print-node {
-        page-break-before: always;
-    }
-    .print-node:first-of-type {
-        page-break-before: auto !important;
-    }
-    .print-node h1 {
-        page-break-after: avoid;
-    }
-
-    /* General style resets for clean printing. */
-    .print-preview-container .view-content {
-      font-size: 11pt;
-      line-height: 1.4;
-      border: none;
-      padding: 0;
-      background: transparent;
-    }
-    .print-preview-container a {
-        color: #000 !important;
-        text-decoration: none !important;
-    }
-    * {
-        box-shadow: none !important;
-        text-shadow: none !important;
-        transition: none !important;
-    }
+a {
+    color: var(--primary-color);
 }

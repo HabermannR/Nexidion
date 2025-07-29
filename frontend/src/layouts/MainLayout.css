@@ -1,0 +1,77 @@
+/* src/layouts/MainLayout.css */
+
+/* Der Hauptcontainer, der die App umschließt. */
+.app-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f9fa;
+    overflow: hidden; /* Sicherstellen, dass der Container selbst nicht überläuft */
+}
+
+/* Die Hülle für die PanelGroup */
+.main-content-area {
+    flex-grow: 1; /* Füllt den verfügbaren Platz nach dem Header */
+    min-height: 0; /* Flexbox-Hack, damit innere scrollbare Elemente funktionieren */
+}
+
+/* Stile für die einzelnen Panels und deren Inhalt */
+.pane-template {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    background-color: #fff;
+    overflow: hidden;
+}
+
+.scroll-pane {
+    flex-grow: 1;
+    overflow-y: auto; /* NUR DIESE BEREICHE SOLLEN SCROLLBAR SEIN */
+    overflow-x: hidden;
+    min-height: 0;
+}
+
+/* Stile für die Resize-Handles zwischen den Panels */
+.resize-handle-outer {
+    flex: 0 0 11px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f8f9fa;
+    outline: none;
+    border-left: 1px solid #dee2e6;
+    border-right: 1px solid #dee2e6;
+}
+
+.resize-handle-inner {
+    width: 3px;
+    height: 40px;
+    background-color: #ced4da;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+.resize-handle-outer[data-resize-handle-active] .resize-handle-inner,
+.resize-handle-outer:hover .resize-handle-inner {
+    background-color: var(--primary-color, #0d6efd); /* Nutzt deine Variable, wenn verfügbar */
+}
+
+/* Beispiel für eine Ladeleiste */
+.app-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: blue;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s;
+}
+
+.app-container.is-loading::before,
+.app-container.is-submitting::before { /* Du müsstest die Klasse für 'submitting' noch hinzufügen */
+    transform: scaleX(1);
+}
