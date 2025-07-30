@@ -1,0 +1,76 @@
+/* Globale Stile für den Baum-Container */
+.project-tree-container {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+    user-select: none; /* Verhindert das versehentliche Markieren von Text */
+}
+
+/* Wrapper für jeden Knoten, steuert die Einrückung der Kinder */
+.tree-node-wrapper {
+    /* Keine Stile hier, dient nur der Struktur */
+}
+
+/* Der klickbare Link, der einen Knoten repräsentiert */
+.node-link-content {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 5px;
+    text-decoration: none;
+    color: #343a40;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    border-left: 3px solid transparent; /* Wichtig für den aktiven Zustand! */
+    margin-left: -3px; /* Kompensiert die Border, damit der Text bündig bleibt */
+}
+
+.node-link-content:hover {
+    background-color: #f1f3f5; /* Ein sehr helles Grau */
+}
+
+/* HIER IST DIE MAGIE: Der Stil für den aktiven Link, gesetzt von NavLink */
+.node-link-content.active {
+    background-color: #e7f5ff;
+    color: #1c7ed6;
+    font-weight: 500;
+    border-left: 3px solid #1c7ed6; /* Der blaue Streifen aus dem Mockup */
+}
+
+/* Der Pfeil zum Auf- und Zuklappen */
+.collapse-icon {
+    width: 20px;
+    text-align: center;
+    color: #868e96;
+    font-size: 1.2rem;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.collapse-icon:hover {
+    color: #343a40;
+}
+
+/* Das Icon des Nodes (Ordner, Dokument etc.) */
+.node-icon {
+    font-size: 1.3rem;
+    margin-right: 8px;
+    color: #868e96;
+    transition: color 0.15s ease;
+}
+
+.node-link-content.active .node-icon {
+    color: #1c7ed6;
+}
+
+/* Der Titel des Nodes */
+.node-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Der Container für die eingerückten Kind-Elemente */
+.children-container {
+    padding-left: 20px; /* Breite des Icons + Pfeils */
+    margin-left: 10px; /* Richtet die Linie an der Mitte des Pfeils aus */
+    border-left: 1px solid #e9ecef; /* Die vertikale Verbindungslinie */
+}

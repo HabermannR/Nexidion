@@ -41,3 +41,8 @@ export async function loginAction({ request }) {
         return { error: 'Ein unerwarteter Fehler ist aufgetreten.' };
     }
 }
+
+export async function logoutAction() {
+    localStorage.removeItem('authToken');
+    return redirect('/login');
+}

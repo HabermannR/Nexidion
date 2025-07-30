@@ -1,4 +1,4 @@
-/* MainLayout.css - FINALE, KONSISTENTE VERSION */
+/* WorkspaceLayout.css - FINALE, KONSISTENTE VERSION */
 
 /* ================================================================ */
 /* 1. GLOBALE LAYOUT-STILE (GÜLTIG FÜR ALLE GRÖSSEN)               */
@@ -7,7 +7,6 @@
 /* Stellt sicher, dass der Container die Resthöhe des Viewports einnimmt.
  * --topbar-height muss global definiert sein (z.B. in index.css). */
 .main-layout-container {
-  height: calc(100vh - var(--topbar-height, 60px));
   display: flex;
   flex-direction: column; /* Wichtig für Mobile Action Bar */
 }

@@ -1,0 +1,101 @@
+/* WorkspaceLayout.css */
+
+/*
+  Dieser Container im WorkspaceLayout nimmt den gesamten verfügbaren Platz
+  in der AppShell ein und wird selbst zu einem Flex-Container.
+*/
+.main-content-area {
+    flex-grow: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/*
+  Die PanelGroup (eine Bibliothek-Komponente) muss gezwungen werden,
+  den vollen verfügbaren Platz auszufüllen. [data-panel-group-direction]
+  ist ein stabiler Selektor für die Komponente.
+*/
+.main-content-area > [data-panel-group-direction] {
+    flex-grow: 1;
+    min-height: 0;
+}
+
+/*
+  ========================================================================
+  HIER IST DIE ENTSCHEIDENDE, NEUE REGEL
+  ========================================================================
+  Wir sagen jedem Panel, dass es sich wie ein Flex-Container verhalten soll,
+  damit sein Kind (.scroll-pane) den Platz korrekt ausfüllen kann.
+*/
+.pane-template {
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Wichtig, damit das Panel die Höhe der PanelGroup annimmt */
+    overflow: hidden; /* Verhindert, dass das Panel selbst scrollt */
+}
+
+/*
+  Diese Regel stellt sicher, dass der scrollbare Bereich den gesamten
+  verfügbaren Platz innerhalb seines Eltern-Panels einnimmt und scrollbar wird.
+*/
+.scroll-pane {
+    flex-grow: 1;
+    overflow-y: auto;
+    min-height: 0; /* Der wichtigste Flexbox-Fix für scrollbare Kinder */
+}
+
+/* --- Stile für die Resize-Handles --- */
+.main-content-area .resize-handle-outer {
+    position: relative;
+    flex: 0 0 11px;
+    background-color: #f8f9fa;
+    border-left: 1px solid #dee2e6;
+    border-right: 1px solid #dee2e6;
+    cursor: col-resize;
+}
+
+.main-content-area .resize-handle-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    background-color: #ced4da;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+.main-content-area .resize-handle-outer:hover .resize-handle-inner,
+.main-content-area .resize-handle-outer[data-resize-handle-active] .resize-handle-inner {
+    background-color: #0d6efd;
+}
+
+.breadcrumb-wrapper {
+    flex-grow: 1;      /* 1. Sagt: "Nimm allen verfügbaren Platz in der Mitte ein." */
+    min-width: 0;      /* 2. WICHTIGER FLEXBOX-FIX: Erlaubt dem Element, bei Bedarf zu schrumpfen. */
+    overflow: hidden;    /* 3. Verhindert, dass der Inhalt aus dem Container "ausbricht". */
+}
+
+/*
+  Wir stylen die Bootstrap Breadcrumb-Komponente direkt, um sicherzustellen,
+  dass sie nicht umbricht und den Text mit "..." abschneidet, wenn er zu lang ist.
+*/
+.breadcrumb-wrapper .breadcrumb {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/*
+  KORREKTUR 2: OFFCANVAS AUF MOBILGERÄTEN 100% BREIT
+  Diese Regel greift nur auf Bildschirmen, die schmaler als das 'lg'-Breakpoint
+  von Bootstrap sind.
+*/
+@media (max-width: 991.98px) {
+    .offcanvas-full-mobile {
+        width: 100vw !important;
+        max-width: 100vw !important;
+    }
+}

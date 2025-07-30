@@ -14,7 +14,7 @@ import ContentArea from '../components/nodes/ContentArea';
 // Lazy-loaded Komponenten
 const PrintPreview = lazy(() => import('../components/print/PrintPreview'));
 const DeleteNodeModal = lazy(() => import('../components/common/DeleteNodeModal'));
-const VersionHistory = lazy(() => import('../components/nodes/VersionHistory'));
+const VersionHistory = lazy(() => import('../../features/nodes/ui/VersionHistory.jsx'));
 const ContextPanel = lazy(() => import('../components/context/ContextPanel'));
 
 export default function NodesView() {
@@ -286,7 +286,7 @@ export default function NodesView() {
 
     const versionHistoryComponent = useMemo(() => {
         // Diese Komponente wird jetzt in einem Offcanvas (Seitenleiste) angezeigt,
-        // das vom MainLayout gesteuert wird. Ihre einzige Aufgabe ist es, den
+        // das vom WorkspaceLayout gesteuert wird. Ihre einzige Aufgabe ist es, den
         // aktuellen Zustand des Ladevorgangs darzustellen.
 
         return (

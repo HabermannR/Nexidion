@@ -1,0 +1,43 @@
+/* Globale Stile für die App-Hülle */
+.app-shell-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    position: relative; /* Wichtig für den ::before Ladebalken */
+}
+
+/* Der Bereich, der den Hauptinhalt aufnimmt */
+.app-shell-content {
+    flex-grow: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Globaler Ladebalken oben */
+.app-shell-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: #0d6efd; /* Bootstrap Primary */
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease-out;
+    z-index: 9999;
+}
+
+.app-shell-container.is-loading::before {
+    transform: scaleX(1);
+    transition: transform 10s cubic-bezier(0, 0.5, 0.5, 1); /* Sehr langsamer Ladebalken-Effekt */
+}
+
+/* Einfacher Lade-Effekt für den Inhalt */
+.app-shell-container.is-loading .app-shell-content {
+    opacity: 0.7;
+    transition: opacity 200ms ease-in-out 300ms;
+}

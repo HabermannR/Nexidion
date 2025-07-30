@@ -1,45 +1,91 @@
-// src/features/nodes/ProjectTree.jsx
+import React, { useState } from 'react';
+import { useLoaderData, NavLink } from 'react-router-dom';
+import './ProjectTree.css'; // Das CSS bleibt in seiner eigenen Datei
 
-import React, { Suspense } from 'react';
-import { useLoaderData, Await } from 'react-router-dom';
-import { Spinner } from 'react-bootstrap';
+// ============================================================================
+// 1. UNTERKOMPONENTE: TreeNode
+// Stellt einen einzelnen, rekursiven Knoten im Baum dar.
+// `React.memo` ist eine Performance-Optimierung.
+// ============================================================================
+const TreeNode = React.memo(({ node }) => {
+    // Lokaler State nur für diese eine Knoten-Instanz. Perfekt für UI-Zustand.
+    const [isExpanded, setIsExpanded] = useState(true);
 
-// Eine eigene Fallback-Komponente, die ihren eigenen Render loggt.
-const LoadingFallback = () => {
-    console.log("[Fallback] Suspense-Fallback wird gerendert! Zeige Spinner an.");
-    return <Spinner animation="border" size="sm" />;
-};
+    const hasChildren = node.children && node.children.length > 0;
 
-// Die Komponente, die die Daten anzeigt, loggt ebenfalls ihren Render.
-const Tree = ({ treeData }) => {
-    console.log("[Tree] Daten sind da! Rendere den Baum.");
+    // Handler, um den auf-/zugeklappten Zustand zu toggeln.
+    const handleToggleExpand = (e) => {
+        // Verhindert, dass der Klick auf den Pfeil auch den NavLink auslöst.
+        e.stopPropagation();
+        e.preventDefault();
+        if (hasChildren) {
+            setIsExpanded(!isExpanded);
+        }
+    };
+
+    // Die NavLink Komponente ist der Schlüssel. Sie weiß selbst, ob sie "aktiv" ist.
+    // Wir übergeben eine Funktion an `className`, um den Stil dynamisch zu setzen.
+    const getLinkClassName = ({ isActive }) => {
+        return `node-link-content ${isActive ? 'active' : ''}`;
+    };
+
     return (
-        <div>
-            <h6 className="text-muted mb-2">Projektbaum</h6>
-            <pre style={{ fontSize: '10px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                {JSON.stringify(treeData, null, 2)}
-            </pre>
+        <div className="tree-node-wrapper">
+            <NavLink to={`/vaults/${node.vault_id}/nodes/${node.id}`} className={getLinkClassName}>
+                {/* Expand/Collapse Pfeil */}
+                <span className="collapse-icon" onClick={handleToggleExpand}>
+                    {hasChildren && (
+                        <i className={`bx ${isExpanded ? 'bx-chevron-down' : 'bx-chevron-right'}`}></i>
+                    )}
+                </span>
+
+                {/* Das eigentliche Node-Icon aus den Backend-Daten */}
+                <i className={`node-icon ${node.icon}`}></i>
+
+                {/* Der Titel des Nodes */}
+                <span className="node-title" title={node.title}>
+                    {node.title}
+                </span>
+            </NavLink>
+
+            {/* Rekursiver Teil: Rendere die Kinder, wenn der Knoten ausgeklappt ist */}
+            {hasChildren && isExpanded && (
+                <div className="children-container">
+                    {node.children.map(childNode => (
+                        <TreeNode key={childNode.id} node={childNode} />
+                    ))}
+                </div>
+            )}
         </div>
     );
-};
+});
 
+
+// ============================================================================
+// 2. HAUPTKOMPONENTE (Export): ProjectTree
+// Der Container für die gesamte Baumansicht.
+// Holt die Baumdaten und startet die Rekursion.
+// ============================================================================
 export default function ProjectTree() {
-    const treeDataPromise = useLoaderData();
-    // Logge, dass die Hauptkomponente mit dem Promise gerendert wird.
-    console.log("[ProjectTree] Hauptkomponente wird gerendert. Promise ist bereit.");
+    // Holt die Daten, die vom `vaultTreeLoader` bereitgestellt wurden.
+    const treeData = useLoaderData();
+    console.log("Daten, die in ProjectTree ankommen:", treeData);
+
+    // Lade- oder Fehlerzustand
+    if (!treeData) {
+        return <div className="p-2 text-muted small">Lade Baum...</div>;
+    }
+
+    // Fall: Der Vault ist leer
+    if (treeData.length === 0) {
+        return <div className="p-2 text-muted small">Dieser Vault ist noch leer.</div>;
+    }
 
     return (
-        <Suspense fallback={<LoadingFallback />}>
-            <Await
-                resolve={treeDataPromise}
-                errorElement={<p className="text-danger small">Fehler beim Laden des Baums.</p>}
-            >
-                {(resolvedTreeData) => {
-                    // Logge, dass Await die Daten aufgelöst hat.
-                    console.log("[Await] Promise wurde aufgelöst. Übergebe Daten an die Tree-Komponente.");
-                    return <Tree treeData={resolvedTreeData} />;
-                }}
-            </Await>
-        </Suspense>
+        <div className="project-tree-container">
+            {treeData.map(rootNode => (
+                <TreeNode key={rootNode.id} node={rootNode} />
+            ))}
+        </div>
     );
 }
