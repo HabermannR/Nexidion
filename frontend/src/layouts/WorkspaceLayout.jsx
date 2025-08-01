@@ -1,8 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React from 'react';
+import { useState, useRef } from 'react';
 import { Outlet, Link, useLoaderData } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
 import ProjectTree from '../features/nodes/ProjectTree.jsx';
+import ContextBar from '../features/context/ContextBar.jsx';
+import { useContextStore } from '../features/context/contextStore.js';
 import './WorkspaceLayout.css';
 
 // Die Breadcrumb-Komponente lebt direkt hier im Layout.
@@ -38,21 +41,30 @@ const VersionHistoryPanel = () => (
 
 /**
  * WorkspaceLayout ist das Haupt-Layout für den "laufenden Betrieb".
+ * Es orchestriert die UI-Panels, steuert die mobilen Menüs und rendert
+ * die ContextBar basierend auf dem globalen Zustand.
  */
 export default function WorkspaceLayout() {
-    // State für die Panel- und Mobil-Steuerung
+    // Lokaler State nur für die Steuerung der Layout-Panels und mobilen Menüs
     const [rightPanelMode, setRightPanelMode] = useState('normal');
     const [showMobileTree, setShowMobileTree] = useState(false);
     const [showMobileContext, setShowMobileContext] = useState(false);
     const [showMobileVersions, setShowMobileVersions] = useState(false);
     const [breadcrumbPath, setBreadcrumbPath] = useState([]);
 
+    // Refs für die programmatische Steuerung der Panels
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
     const programmaticResizeRef = useRef(false);
+
+    // Daten aus dem React Router Loader
     const treeData = useLoaderData();
 
-    // Handler-Funktionen für die UI-Steuerung
+    // Zustand aus dem globalen zustand-Store holen, um die ContextBar zu steuern
+    const { selectedNodeIds, savedSets } = useContextStore();
+    const showContextBar = selectedNodeIds.size > 0 || Object.keys(savedSets).length > 0;
+
+    // Handler-Funktionen für die reine UI-Steuerung des Layouts
     const handleLayout = () => {
         if (programmaticResizeRef.current) {
             programmaticResizeRef.current = false;
@@ -87,12 +99,11 @@ export default function WorkspaceLayout() {
         if (mode === 'mobile') {
             setShowMobileVersions(true);
         } else {
-            // TODO: Logik für Desktop-Versionen implementieren (z.B. ein weiteres Offcanvas)
             alert('Desktop-Versionen anzeigen (noch nicht implementiert)');
         }
     };
 
-    // Komponenten-Instanzen vorbereiten
+    // Komponenten-Instanzen vorbereiten, um sie mehrfach zu verwenden
     const treeComponent = <ProjectTree />;
     const contextComponent = <ContextPanel />;
     const versionHistoryComponent = <VersionHistoryPanel />;
@@ -105,7 +116,10 @@ export default function WorkspaceLayout() {
 
                     {/* Left Panel */}
                     <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
-                        <div className="scroll-pane">{treeComponent}</div>
+                        <div className="left-panel-content-wrapper">
+                            <div className="scroll-pane">{treeComponent}</div>
+                            {showContextBar && <ContextBar />}
+                        </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
 
@@ -116,7 +130,7 @@ export default function WorkspaceLayout() {
                             <div className="vr mx-2"></div>
                             <Button variant="outline-secondary" size="sm" onClick={() => handleVersionsClick('desktop')}>🕒 Versionen</Button>
 
-                            <div className="breadcrumb-wrapper mx-2">
+                            <div className="breadcrumb-wrapper mx-2 flex-grow-1">
                                 <BreadcrumbTrail path={breadcrumbPath} />
                             </div>
 
@@ -149,9 +163,10 @@ export default function WorkspaceLayout() {
                         <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileContext(true)}>⚙️ Context</Button>
                     </div>
                 </div>
-                <div className="scroll-pane pt-2 px-3 pb-3 flex-grow-1">
+                <div className="mobile-content-scroll-area">
                     <Outlet context={{ setBreadcrumbPath }} />
                 </div>
+                {showContextBar && <ContextBar />}
             </div>
 
             {/* --- Mobile Offcanvas Menus --- */}
@@ -160,7 +175,7 @@ export default function WorkspaceLayout() {
                 <Offcanvas.Body>{treeComponent}</Offcanvas.Body>
             </Offcanvas>
 
-            <Offcanvas show={showMobileVersions} onHide={() => setShowMobileVersions(false)} placement="bottom" style={{ height: '75vh' }} className="offcanvas-full-mobile">
+            <Offcanvas show={showMobileVersions} onHide={() => setShowMobileVersions(false)} placement="bottom" style={{ height: '75vh' }}>
                 <Offcanvas.Header closeButton><Offcanvas.Title>Version History</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body>{versionHistoryComponent}</Offcanvas.Body>
             </Offcanvas>

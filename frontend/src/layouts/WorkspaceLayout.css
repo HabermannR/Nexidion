@@ -88,6 +88,14 @@
     text-overflow: ellipsis;
 }
 
+/* Stellt sicher, dass das linke Panel die ContextBar korrekt am Boden halten kann */
+.left-panel-content-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden; /* Verhindert doppelte Scrollbalken */
+}
+
 /*
   KORREKTUR 2: OFFCANVAS AUF MOBILGERÄTEN 100% BREIT
   Diese Regel greift nur auf Bildschirmen, die schmaler als das 'lg'-Breakpoint
@@ -116,4 +124,27 @@
     padding-top: 0.25rem;
     padding-bottom: 0.25rem;
     font-size: 0.875rem; /* Entspricht Bootstrap's 'sm' Größe */
+}
+
+/* Der Scroll-Bereich für den mobilen Inhalt */
+.mobile-content-scroll-area {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+    /* Wichtig: Platz für die fixe ContextBar am unteren Rand lassen! */
+    padding-bottom: 70px;
+}
+
+/* Die ContextBar selbst wird für Mobile über die "ContextBar.css" gesteuert,
+   aber wir können hier eine Regel hinzufügen, die sie fixiert. */
+@media (max-width: 991.98px) {
+    .context-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1040; /* Muss über dem Inhalt, aber unter Offcanvas liegen */
+        border-top: 1px solid #dee2e6;
+        background-color: #fff; /* Sicherstellen, dass sie nicht transparent ist */
+    }
 }
