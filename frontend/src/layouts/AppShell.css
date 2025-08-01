@@ -41,3 +41,24 @@
     opacity: 0.7;
     transition: opacity 200ms ease-in-out 300ms;
 }
+
+
+/*
+ * NEU: Benutzerdefinierte Stile für einen kleineren Navbar-Toggle-Button.
+ */
+.navbar-toggler-sm {
+    /* Reduziert den Innenabstand des Buttons */
+    padding: 0.2rem 0.5rem;
+    /* Reduziert die Schriftgröße, was auch die relative Größe des Icons beeinflusst */
+    font-size: 1rem;
+    /* Stellt sicher, dass die Ecken abgerundet bleiben */
+    border-radius: var(--bs-border-radius-sm);
+}
+
+/*
+ * NEU: Passt die Größe des "Hamburger"-Icons innerhalb des kleineren Buttons an.
+ */
+.navbar-toggler-sm .navbar-toggler-icon {
+    width: 1.2em;
+    height: 1.2em;
+}

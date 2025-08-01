@@ -99,3 +99,21 @@
         max-width: 100vw !important;
     }
 }
+
+/*
+  ========================================================================
+  NEUE REGELN FÜR DIE MOBILE ACTION BAR
+  ========================================================================
+*/
+/* Definiert, dass die Buttons in der mobilen Leiste einen Abstand haben sollen. */
+.mobile-action-bar-buttons {
+    display: flex;
+    gap: 0.5rem; /* Fügt einen Abstand von 8px zwischen den Buttons hinzu */
+}
+
+/* Macht die Buttons in der mobilen Leiste etwas kompakter */
+.mobile-action-bar-buttons .btn {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    font-size: 0.875rem; /* Entspricht Bootstrap's 'sm' Größe */
+}

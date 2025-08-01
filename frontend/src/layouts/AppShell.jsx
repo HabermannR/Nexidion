@@ -45,10 +45,12 @@ export default function AppShell() {
                 <Container fluid>
                     {/* Logo & Vault-Name leiten zur Basis-URL des Vaults */}
                     <Navbar.Brand as={Link} to={currentVault ? `/vaults/${currentVault.id}` : '/'}>
-                        <strong>{currentVault ? `Vault: ${currentVault.name}` : 'Nexidion'}</strong>
+                        <strong>{currentVault ? `${currentVault.name}` : 'Nexidion'}</strong>
                     </Navbar.Brand>
 
-                    <Navbar.Toggle aria-controls="app-navbar-collapse" />
+                    {/* HIER IST DIE ÄNDERUNG: Wir fügen die benutzerdefinierte CSS-Klasse hinzu */}
+                    <Navbar.Toggle aria-controls="app-navbar-collapse" className="navbar-toggler-sm" />
+
                     <Navbar.Collapse id="app-navbar-collapse">
                         <Nav className="ms-auto align-items-center">
 

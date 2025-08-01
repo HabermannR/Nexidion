@@ -1,11 +1,17 @@
 .content-header-container {
   display: flex;
-  flex-wrap: wrap; /* Wichtig für mobile Ansicht */
-  gap: 1rem; /* Abstand zwischen Titel und Button-Gruppe */
+  flex-wrap: wrap;
+  gap: 1rem;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid #dee2e6;
+
+  /* ======================================================= */
+  /* KORREKTUR: Wir fügen die Linie und den unteren Abstand wieder hinzu. */
+  /* ======================================================= */
+  border-bottom: 1px solid #dee2e6; /* Die Trennlinie */
+  padding-bottom: 0.75rem; /* Der "mini bisschen Abstand" unter der Linie. Passen Sie den Wert (z.B. 0.5rem oder 1rem) nach Geschmack an. */
+
+  /* WICHTIG: Das allgemeine `padding` oder `padding-top` bleibt weg, um das Problem oben zu vermeiden. */
 }
 
 .content-title {

@@ -104,8 +104,6 @@ export default function NodeContent() {
                 onEditClick={() => setIsEditing(true)}
             />
 
-            <hr />
-
             {isEditing ? (
                 <Form method="patch" onSubmit={() => setIsEditing(false)}>
                     <NodeEditor
