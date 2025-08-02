@@ -59,6 +59,36 @@ export const useContextStore = create(
                     return {savedSets: newSets};
                 });
             },
+
+            // --- NEUE AKTION: Node aus dem gesamten Kontext entfernen ---
+            removeNodeFromContext: (nodeId) => {
+                set((state) => {
+                    // 1. Aus der aktuellen Auswahl entfernen
+                    const newSelection = new Set(state.selectedNodeIds);
+                    newSelection.delete(nodeId);
+
+                    // 2. Aus den eingeklappten Nodes entfernen
+                    const newCollapsed = new Set(state.collapsedNodes);
+                    newCollapsed.delete(nodeId);
+
+                    // 3. Aus allen gespeicherten Sets entfernen
+                    const newSavedSets = {};
+                    Object.entries(state.savedSets).forEach(([setName, idArray]) => {
+                        // Filtere die gelöschte ID aus jedem Set
+                        const filteredIds = idArray.filter(id => id !== nodeId);
+                        // Behalte das Set nur, wenn es danach nicht leer ist
+                        if (filteredIds.length > 0) {
+                            newSavedSets[setName] = filteredIds;
+                        }
+                    });
+
+                    return {
+                        selectedNodeIds: newSelection,
+                        collapsedNodes: newCollapsed,
+                        savedSets: newSavedSets,
+                    };
+                });
+            },
         }),
         {
             // 2. Konfiguration für die Middleware
