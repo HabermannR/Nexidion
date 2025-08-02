@@ -1,16 +1,81 @@
-# pyproject.toml
+# ==========================================================
+#               Build System Configuration
+# ==========================================================
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+# ==========================================================
+#                 Project Core Metadata
+# This section defines your package and its core dependencies.
+# These are the packages needed for your app to RUN.
+# ==========================================================
+[project]
+name = "nexidion-backend"
+version = "0.1.0"
+requires-python = ">=3.8"
+description = "The backend service for the Nexidion project."
+dependencies = [
+    # Web Framework & Extensions
+    "Flask",
+    "flask-cors",
+    "Flask-JWT-Extended",
+    "Flask-Migrate",         # This automatically includes 'alembic'
+    "Flask-SQLAlchemy",
+
+    # AI Interfaces
+    "openai",
+    "anthropic",
+    "google-genai",
+
+    # Utilities
+    "python-dotenv",
+    "Pillow",
+]
+
+# ==========================================================
+#               Optional Dependencies
+# These are packages for development, testing, etc. They are
+# not installed by default in production.
+# ==========================================================
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",         # Includes 'coverage' and integrates it with pytest
+    "pytest-mock",
+]
+dev = [
+    "line-profiler",
+    "sqlite-utils",
+    "tabulate",
+    "black",              # Recommended: A code formatter
+    "ruff",               # Recommended: A very fast linter
+]
 
 
+# ==========================================================
+#                  Build Configuration
+# This tells setuptools what code to include in the package.
+# ==========================================================
+[tool.setuptools]
+packages = ["backend"]
+
+
+# ==========================================================
+#               Tool-Specific Configuration
+# ==========================================================
 [tool.pytest.ini_options]
-# Füge hier alle Standard-Optionen hinzu, die du immer verwenden willst
+# These options are now applied to EVERY pytest run automatically.
+# The --cov flags are handled here.
 addopts = "--cov=backend --cov-report=html --cov-report=term-missing"
+markers = [
+    "llm: marks tests as requiring an LLM connection (can be slow and costly)",
+]
 
 [tool.coverage.run]
-source = ["backend"]  # Das Verzeichnis, das gecovert werden soll
-omit = [
-    "backend/scripts/*"  # Schließt alles im scripts-Ordner aus
-]
+source = ["backend"]
+omit = ["backend/scripts/*"]
+
 [tool.coverage.report]
-# Hiermit kannst du auch den Report konfigurieren, wenn du möchtest
 show_missing = true
 skip_covered = false

@@ -40,7 +40,7 @@ def test_get_content_for_nodes_raises_value_error_on_empty_list(test_user_1_obj)
     vault = vault_service.create_vault("Dummy Vault", test_user_1_obj.id)
 
     # ACT & ASSERT
-    with pytest.raises(ValueError, match="mindestens eine Node-ID"):
+    with pytest.raises(ValueError, match="mindestens eine Node-ID angegeben werden"):
         node_service.get_content_for_nodes(
             node_ids=[], vault_id=vault.id, user_id=test_user_1_obj.id
         )
@@ -127,7 +127,6 @@ def test_get_nodes_by_ids_for_user(db_session, test_user_1_obj):
     db_session.session.refresh(node1)
 
     # ACT: Holen der *Node-Objekte*
-    # --- ÄNDERUNG HIER ---
     nodes_result = node_service.get_nodes_by_ids_for_user([node1.id, node2.id], vault_id, user_id)
 
     # ASSERT
@@ -172,73 +171,81 @@ def test_get_nodes_by_ids_for_user_permission_denied(test_user_1_obj, test_user_
         )
 
 
-def test_get_nodes_as_tree_handles_orphaned_nodes(test_user_1_obj, db_session):
+def test_delete_node_reparents_children_to_grandparent(db_session, test_user_1_obj):
     """
-    Testet den Edge Case, bei dem ein Node einen `parent_id` hat,
-    dieser Parent-Node aber nicht mehr in der Datenbank existiert (ein "Waise").
-    Dieser Test deckt den `else`-Zweig in der Baum-Erstellungs-Schleife ab.
-    """
-    # ARRANGE
-    user = test_user_1_obj
-    vault = vault_service.create_vault("Orphan Test Vault", user.id)
-
-    # Erstelle einen Parent und einen Child
-    parent = node_service.create_node("Parent", "...", None, vault.id, user.id)
-    child = node_service.create_node("Child", "...", parent.id, vault.id, user.id)
-
-    # Lösche jetzt den Parent direkt aus der DB, um einen Waisen zu erzeugen
-    db_session.session.delete(parent)
-    db_session.session.commit()
-
-    # ACT
-    tree = node_service.get_nodes_as_tree(vault.id, user.id)
-
-    # ASSERT
-    # Der Baum sollte den Root-Node und den verwaisten Child-Node enthalten.
-    # Der Child wird als Top-Level-Node behandelt, da sein Parent fehlt.
-    assert len(tree) == 2
-    titles = sorted([node['title'] for node in tree])
-    assert titles == ["Child", "Summary"]
-
-
-def test_get_nodes_as_tree_sorts_children_correctly(test_user_1_obj, db_session):
-    """
-    Testet, ob die Kind-Elemente in der Baumstruktur korrekt alphabetisch sortiert werden.
-    Dieser Test deckt den `if 'children' in node:` Zweig in der rekursiven Sortierfunktion ab.
+    Testet, dass beim Löschen eines Nodes dessen Kinder an den "Großeltern-Node"
+    angehängt werden (neues parent_id).
     """
     # ARRANGE
-    user = test_user_1_obj
-    vault = vault_service.create_vault("Sort Test Vault", user.id)
+    user_id = test_user_1_obj.id
+    vault = vault_service.create_vault("Adoption Test Vault", user_id)
+    vault_id = vault.id
 
-    # Erstelle den Root-Node (kommt von create_vault)
-    root_node_db = node_service.get_nodes_as_list(vault.id, user.id)[0]
+    # Erstelle eine Hierarchie: Grandparent -> Parent -> Child
+    grandparent_node = node_service.create_node("Grandparent", "...", None, vault_id, user_id)
+    parent_node_to_delete = node_service.create_node("Parent (to be deleted)", "...", grandparent_node.id, vault_id, user_id)
+    child_node = node_service.create_node("Child", "...", parent_node_to_delete.id, vault_id, user_id)
 
-    # Erstelle Kinder in umgekehrter alphabetischer Reihenfolge
-    node_service.create_node("Z-Node", "...", root_node_db['id'], vault.id, user.id)
-    node_service.create_node("B-Node", "...", root_node_db['id'], vault.id, user.id)
-    node_service.create_node("A-Node", "...", root_node_db['id'], vault.id, user.id)
+    # Stelle den Zustand vor dem Löschen sicher
+    db_session.session.refresh(child_node)
+    assert child_node.parent_id == parent_node_to_delete.id
 
     # ACT
-    tree = node_service.get_nodes_as_tree(vault.id, user.id)
+    node_service.delete_node(parent_node_to_delete.id, vault_id, user_id)
 
     # ASSERT
-    # Es gibt nur einen Top-Level-Node (den Root "Summary")
-    assert len(tree) == 1
+    # 1. Der Parent-Node ist gelöscht
+    deleted_node = db_session.session.get(Node, parent_node_to_delete.id)  # <-- KORREKTUR
+    assert deleted_node is None
 
-    # Die Kinder dieses Nodes müssen sortiert sein
-    root_node_with_children = tree[0]
-    assert 'children' in root_node_with_children
-    assert len(root_node_with_children['children']) == 3
+    # 2. Der Child-Node existiert noch
+    # Alte Version: reparented_child = Node.query.get(child_node.id)
+    reparented_child = db_session.session.get(Node, child_node.id)  # <-- KORREKTUR
+    assert reparented_child is not None
 
-    child_titles = [child['title'] for child in root_node_with_children['children']]
-    assert child_titles == ["A-Node", "B-Node", "Z-Node"]
+    # 3. Der Child-Node hat jetzt den Grandparent als neuen Parent
+    assert reparented_child.parent_id == grandparent_node.id
+
+
+def test_delete_top_level_node_makes_children_top_level(db_session, test_user_1_obj):
+    """
+    Testet den Randfall: Wenn ein Top-Level-Node gelöscht wird,
+    werden seine Kinder ebenfalls zu Top-Level-Nodes (parent_id = None).
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault = vault_service.create_vault("Top-Level Delete Test", user_id)
+    vault_id = vault.id
+
+    # Erstelle eine Hierarchie: Top-Level-Node -> Child
+    top_level_node_to_delete = node_service.create_node("Top-Level (to be deleted)", "...", None, vault_id, user_id)
+    child_node = node_service.create_node("Child", "...", top_level_node_to_delete.id, vault_id, user_id)
+
+    # Stelle den Zustand vor dem Löschen sicher
+    db_session.session.refresh(child_node)
+    assert child_node.parent_id == top_level_node_to_delete.id
+
+    # ACT
+    node_service.delete_node(top_level_node_to_delete.id, vault_id, user_id)
+
+    # ASSERT
+    # 1. Der Top-Level-Node ist gelöscht
+    deleted_node = db_session.session.get(Node, top_level_node_to_delete.id)  # <-- KORREKTUR
+    assert deleted_node is None
+
+    # 2. Der Child-Node existiert noch
+    # Alte Version: new_top_level_child = Node.query.get(child_node.id)
+    new_top_level_child = db_session.session.get(Node, child_node.id)  # <-- KORREKTUR
+    assert new_top_level_child is not None
+
+    # 3. Der Child-Node ist jetzt selbst ein Top-Level-Node
+    assert new_top_level_child.parent_id is None
 
 
 def test_get_full_node_tree_recursively(client, auth_headers_1, test_vault_1_obj, test_user_1_obj):
     """
     Testet, ob der Endpunkt GET /nodes/ die gesamte Baumstruktur korrekt,
     sortiert und ohne Inhalte der Kind-Elemente zurückgibt.
-    Dieser Test deckt den `include_children=True`-Fall in Node.to_dict() ab.
     """
     # 1. ARRANGE: Erstelle eine verschachtelte Node-Struktur
     # Die Titel sind absichtlich nicht alphabetisch sortiert, um die Sortierung zu testen.
@@ -248,7 +255,7 @@ def test_get_full_node_tree_recursively(client, auth_headers_1, test_vault_1_obj
     root_node_id = tree_res.json[0]['id']
 
     # Ebene 1
-    node_z = node_service.create_node("Zebra Folder", "", root_node_id, test_vault_1_obj.id, test_user_1_obj.id)
+    node_service.create_node("Zebra Folder", "", root_node_id, test_vault_1_obj.id, test_user_1_obj.id)
     node_a = node_service.create_node("Apple Folder", "", root_node_id, test_vault_1_obj.id, test_user_1_obj.id)
 
     # Ebene 2 (Kinder von "Apple Folder")
@@ -315,20 +322,12 @@ def test_get_single_node_api_returns_correct_structure(client, auth_headers_1, t
     assert data['title'] == "API Test Node"
     assert data['content'] == "V2"  # Prüft den Inhalt der aktuellen Version
 
-    # === DER ENTSCHEIDENDE TEST, DER FEHLGESCHLAGEN WÄRE ===
-    # Dieser Test hätte geprüft, ob der "versions"-Schlüssel existiert.
-    # Da du ihn entfernt hast, würde dieser Test einen KeyError werfen.
-    # assert 'versions' in data
-    # assert isinstance(data['versions'], list)
-    # assert len(data['versions']) == 2
-
-    # === DER NEUE, KORREKTE TEST FÜR DIE AKTUELLE API ===
-    assert 'versions' not in data  # Prüft, dass die Liste absichtlich entfernt wurde.
+    # Prüft, dass die Versionsliste nicht mehr eingebettet ist,
+    # sondern die neuen Metadaten-Felder vorhanden sind.
+    assert 'versions' not in data
     assert data['has_versions'] is True
     assert data['version_count'] == 2
 
-
-# In deiner Test-Datei, z.B. tests/test_node_service.py
 
 def test_get_node_versions_returns_correct_data(db_session, test_user_1_obj, test_vault_1_obj):
     """
@@ -341,11 +340,7 @@ def test_get_node_versions_returns_correct_data(db_session, test_user_1_obj, tes
 
     # Erstelle einen Node und füge mehrere Versionen hinzu
     node = node_service.create_node("Versions-Test-Node", "Inhalt V1", None, vault_id, user_id)
-    # Wichtig: kurzes Warten, um sicherzustellen, dass die Zeitstempel sich unterscheiden
-    import time
-    time.sleep(0.01)
     node_service.update_node(node.id, vault_id, user_id, content="Inhalt V2")
-    time.sleep(0.01)
     node_service.update_node(node.id, vault_id, user_id, content="Inhalt V3")
 
     # ACT

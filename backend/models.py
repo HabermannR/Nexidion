@@ -143,7 +143,7 @@ class Node(db.Model):
             'current_version': self.current_version,
             'vault_id': self.vault_id,
             # Das Icon wird immer mitgesendet. Wenn keines gesetzt ist, wird ein Standardwert verwendet.
-            'icon': self.icon or 'bx bxs-file-doc'  # Default-Icon
+            'icon': self.icon
         }
 
         if include_content:

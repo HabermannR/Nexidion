@@ -1,6 +1,6 @@
 # backend/services/node_service.py
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from sqlalchemy.orm import joinedload, subqueryload, contains_eager, with_parent
 from sqlalchemy import case, func, select
 
@@ -8,6 +8,27 @@ from sqlalchemy import case, func, select
 from .vault_service import _verify_vault_access
 from ..models import db, Node, Version
 
+# Konstante mit allen erlaubten Icon-Strings
+ALLOWED_ICONS: Set[str] = {
+    # Ordner/Container
+    "bxs-folder",
+    "bx-folder-open",
+    "bxs-archive",
+    # Dokumente/Notizen
+    "bxs-file-doc",
+    "bxs-note",
+    "bx-code-block",
+    # Konzepte/Ideen
+    "bxs-bulb",
+    "bxs-brain",
+    "bx-sitemap",
+    # Personen/Teams
+    "bxs-user-detail",
+    "bxs-group",
+    # Listen/Aufgaben
+    "bx-list-ul",
+    "bx-check-square",
+}
 
 # ========================================================================
 # PRIVATE HELPER FUNCTIONS
@@ -268,32 +289,48 @@ def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: i
 
 
 def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[str]) -> Node:
-    """Aktualisiert das Icon eines Nodes (keine neue Version)."""
+    """Aktualisiert das Icon eines Nodes. Das Icon muss ein gültiger, vordefinierter String oder None sein."""
     _verify_vault_access(vault_id, user_id)
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         raise ValueError("Node not found in the specified vault.")
 
-    # Setzt das Icon. Wenn der neue Wert `None` oder ein leerer String ist, wird es in der DB als NULL gespeichert.
-    node.icon = icon if icon else None
+    processed_icon = icon
+    if isinstance(icon, str) and icon.lower() in ["none", "null"]:
+        processed_icon = None
+
+    # --- VALIDIERUNG mit dem bereinigten Wert ---
+    if processed_icon is not None and processed_icon not in ALLOWED_ICONS:
+        raise ValueError(f"Invalid icon value: '{icon}'. Please use a valid icon string.")
+
+    node.icon = processed_icon
 
     db.session.commit()
+    db.session.refresh(node)
+
     return node
 
 
 def delete_node(node_id: str, vault_id: int, user_id: int):
-    """Löscht einen Node. Kind-Nodes werden dabei zu Waisen (Top-Level)."""
+    """
+    Löscht einen Node. Kind-Nodes werden dabei an den Parent des gelöschten
+    Nodes weitergereicht ("adoptiert"). Wenn der gelöschte Node ein Top-Level-Node
+    war, werden seine Kinder ebenfalls zu Top-Level-Nodes.
+    """
     _verify_vault_access(vault_id, user_id)
     node_to_delete = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node_to_delete:
         raise ValueError("Node not found in the specified vault")
 
-    # Optional: Verhindere das Löschen von Top-Level-Nodes, um die Baumstruktur zu erhalten.
-    # if node_to_delete.parent_id is None:
-    #     raise ValueError("Cannot delete a top-level node.")
+    # Bestimme den neuen Parent für die Kinder: Es ist der Parent des zu löschenden Nodes.
+    # Wenn der gelöschte Node selbst ein Top-Level-Node war, wird dieser Wert `None` sein.
+    new_parent_for_children = node_to_delete.parent_id
 
-    # Kind-Nodes zu Top-Level Nodes machen (parent_id auf NULL setzen)
-    Node.query.filter_by(parent_id=node_id, vault_id=vault_id).update({"parent_id": None})
+    # Aktualisiere die Kinder, sodass sie auf den neuen Parent zeigen.
+    # Ihre parent_id wird zur parent_id des gelöschten Nodes.
+    Node.query.filter_by(parent_id=node_id, vault_id=vault_id).update(
+        {"parent_id": new_parent_for_children}, synchronize_session='fetch'
+    )
 
     # Den Node selbst löschen. Versionen werden durch 'cascade' automatisch mitgelöscht.
     db.session.delete(node_to_delete)

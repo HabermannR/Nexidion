@@ -4,7 +4,7 @@
 # --- Test-Framework ---
 pytest
 pytest-mock
-coverage              # Zum Messen der Testabdeckung
+pytest-cov
 
 # --- Code-Analyse & Profiling ---
 line_profiler         # Zur Performance-Analyse von Codezeilen

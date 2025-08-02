@@ -236,7 +236,6 @@ def set_node_icon_route(vault_id: int, node_id: str):
 
     if 'icon' not in data:
         return jsonify({"error": "Request body must contain 'icon' (can be a string or null)."}), 400
-
     try:
         updated_node = node_service.update_node_icon(node_id, vault_id, user_id, data['icon'])
         return jsonify(updated_node.to_dict())
