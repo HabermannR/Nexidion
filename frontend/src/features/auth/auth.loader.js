@@ -1,5 +1,5 @@
-import { redirect } from 'react-router-dom';
-import { checkAuth, logoutUser } from './auth.helpers.js';
+import {redirect} from 'react-router-dom';
+import {checkAuth, logoutUser} from './auth.helpers.js';
 import apiClient from '../../api/apiClient.js';
 
 /**
@@ -8,7 +8,7 @@ import apiClient from '../../api/apiClient.js';
  * 2. Leitet den User von der Wurzel-URL "/" zur passenden Seite weiter.
  * 3. Lädt die globalen Daten (User, Vaults) für alle geschützten Routen.
  */
-export async function protectedLoader({ request }) { // Wir brauchen den 'request' Parameter
+export async function protectedLoader({request}) {
     // --- 1. WÄCHTER-FUNKTION ---
     if (!checkAuth()) {
         return redirect('/login');
@@ -35,14 +35,14 @@ export async function protectedLoader({ request }) { // Wir brauchen den 'reques
                 const firstVaultId = vaults[0].id;
                 return redirect(`/vaults/${firstVaultId}`);
             } else {
-                // Kein Vault vorhanden, leite zur Erstellungs-Seite um.
-                return redirect('/welcome/create-vault');
+                // Kein Vault vorhanden, leite zur NEUEN Verwaltungs-Seite um.
+                return redirect('/settings/vaults'); // <-- VON '/welcome/create-vault' GEÄNDERT
             }
         }
 
         // --- 3. DATEN BEREITSTELLEN ---
         // Für alle anderen URLs (z.B. /vaults/123) einfach die Daten zurückgeben.
-        return { user, vaults };
+        return {user, vaults};
 
     } catch (error) {
         console.error("[Auth Loader] Token-Validierung fehlgeschlagen.", error.response?.data);

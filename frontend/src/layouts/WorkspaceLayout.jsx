@@ -1,25 +1,24 @@
 import React from 'react';
-import { useState, useRef } from 'react';
-import { Outlet, Link, useLoaderData } from 'react-router-dom';
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
+import {useState, useRef} from 'react';
+import {Outlet, Link, useLoaderData} from 'react-router-dom';
+import {Panel, PanelGroup, PanelResizeHandle} from 'react-resizable-panels';
+import {Button, ButtonGroup, Offcanvas, Breadcrumb} from 'react-bootstrap';
 import ProjectTree from '../features/nodes/ProjectTree.jsx';
 import ContextBar from '../features/context/ContextBar.jsx';
-import { useContextStore } from '../features/context/contextStore.js';
 import './WorkspaceLayout.css';
 
 // Die Breadcrumb-Komponente lebt direkt hier im Layout.
-const BreadcrumbTrail = ({ path }) => {
+const BreadcrumbTrail = ({path}) => {
     if (!path || path.length === 0) {
         return null;
     }
     return (
-        <Breadcrumb listProps={{ className: "mb-0 bg-transparent p-0 small" }}>
+        <Breadcrumb listProps={{className: "mb-0 bg-transparent p-0 small"}}>
             {path.map((crumb, index) => (
                 <Breadcrumb.Item
                     key={crumb.id}
                     linkAs={Link}
-                    linkProps={{ to: crumb.to }}
+                    linkProps={{to: crumb.to}}
                     active={index === path.length - 1}
                 >
                     {crumb.title}
@@ -60,9 +59,6 @@ export default function WorkspaceLayout() {
     // Daten aus dem React Router Loader
     const treeData = useLoaderData();
 
-    // Zustand aus dem globalen zustand-Store holen, um die ContextBar zu steuern
-    const { selectedNodeIds, savedSets } = useContextStore();
-    const showContextBar = selectedNodeIds.size > 0 || Object.keys(savedSets).length > 0;
 
     // Handler-Funktionen für die reine UI-Steuerung des Layouts
     const handleLayout = () => {
@@ -104,9 +100,9 @@ export default function WorkspaceLayout() {
     };
 
     // Komponenten-Instanzen vorbereiten, um sie mehrfach zu verwenden
-    const treeComponent = <ProjectTree />;
-    const contextComponent = <ContextPanel />;
-    const versionHistoryComponent = <VersionHistoryPanel />;
+    const treeComponent = <ProjectTree/>;
+    const contextComponent = <ContextPanel/>;
+    const versionHistoryComponent = <VersionHistoryPanel/>;
 
     return (
         <>
@@ -115,39 +111,54 @@ export default function WorkspaceLayout() {
                 <PanelGroup direction="horizontal" onLayout={handleLayout}>
 
                     {/* Left Panel */}
-                    <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
+                    <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1}
+                           className="pane-template" collapsible>
                         <div className="left-panel-content-wrapper">
                             <div className="scroll-pane">{treeComponent}</div>
-                            {showContextBar && <ContextBar />}
+                            {<ContextBar/>}
                         </div>
                     </Panel>
-                    <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
+                    <PanelResizeHandle className="resize-handle-outer">
+                        <div className="resize-handle-inner"/>
+                    </PanelResizeHandle>
 
                     {/* Center Panel */}
                     <Panel id="center-panel" minSize={30} order={2} className="pane-template">
                         <div className="desktop-action-bar p-2 d-flex align-items-center border-bottom bg-light">
-                            <Button variant="outline-secondary" size="sm" onClick={toggleLeftPanel} title="Navigation umschalten">☰ Nav</Button>
+                            <Button variant="outline-secondary" size="sm" onClick={toggleLeftPanel}
+                                    title="Navigation umschalten">☰ Nav</Button>
                             <div className="vr mx-2"></div>
-                            <Button variant="outline-secondary" size="sm" onClick={() => handleVersionsClick('desktop')}>🕒 Versionen</Button>
+                            <Button variant="outline-secondary" size="sm"
+                                    onClick={() => handleVersionsClick('desktop')}>🕒 Versionen</Button>
 
                             <div className="breadcrumb-wrapper mx-2 flex-grow-1">
-                                <BreadcrumbTrail path={breadcrumbPath} />
+                                <BreadcrumbTrail path={breadcrumbPath}/>
                             </div>
 
                             <ButtonGroup size="sm">
-                                <Button variant={rightPanelMode === 'expanded' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('expanded')} title="Context Breit">Breit</Button>
-                                <Button variant={rightPanelMode === 'normal' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('normal')} title="Context Normal">Normal</Button>
-                                <Button variant={rightPanelMode === 'collapsed' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('collapsed')} title="Context Aus">Aus</Button>
+                                <Button variant={rightPanelMode === 'expanded' ? 'primary' : 'outline-secondary'}
+                                        onClick={() => setRightPanelState('expanded')}
+                                        title="Context Breit">{'<'}</Button>
+                                <Button variant={rightPanelMode === 'normal' ? 'primary' : 'outline-secondary'}
+                                        onClick={() => setRightPanelState('normal')}
+                                        title="Context Normal">{'|'}</Button>
+                                <Button variant={rightPanelMode === 'collapsed' ? 'primary' : 'outline-secondary'}
+                                        onClick={() => setRightPanelState('collapsed')}
+                                        title="Context Aus">{'>'}</Button>
                             </ButtonGroup>
+
                         </div>
-                        <div className="scroll-pane pt-2 px-4 pb-4">
-                            <Outlet context={{ setBreadcrumbPath, treeData  }} />
+                        <div className="scroll-pane px-4 pb-4">
+                            <Outlet context={{setBreadcrumbPath, treeData}}/>
                         </div>
                     </Panel>
 
                     {/* Right Panel */}
-                    <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
-                    <Panel ref={rightPanelRef} id="right-panel" defaultSize={25} minSize={15} order={3} className="pane-template" collapsible>
+                    <PanelResizeHandle className="resize-handle-outer">
+                        <div className="resize-handle-inner"/>
+                    </PanelResizeHandle>
+                    <Panel ref={rightPanelRef} id="right-panel" defaultSize={25} minSize={15} order={3}
+                           className="pane-template" collapsible>
                         <div className="scroll-pane">{contextComponent}</div>
                     </Panel>
 
@@ -158,29 +169,35 @@ export default function WorkspaceLayout() {
             <div className="d-lg-none d-flex flex-column h-100">
                 <div className="mobile-action-bar p-2 border-bottom bg-light">
                     <div className="mobile-action-bar-buttons w-100">
-                        <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileTree(true)}>☰ Nav</Button>
-                        <Button variant="outline-secondary" className="flex-fill" onClick={() => handleVersionsClick('mobile')}>🕒 Ver</Button>
-                        <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileContext(true)}>⚙️ Context</Button>
+                        <Button variant="outline-secondary" className="flex-fill"
+                                onClick={() => setShowMobileTree(true)}>☰ Nav</Button>
+                        <Button variant="outline-secondary" className="flex-fill"
+                                onClick={() => handleVersionsClick('mobile')}>🕒 Ver</Button>
+                        <Button variant="outline-secondary" className="flex-fill"
+                                onClick={() => setShowMobileContext(true)}>⚙️ Context</Button>
                     </div>
                 </div>
                 <div className="mobile-content-scroll-area">
-                    <Outlet context={{ setBreadcrumbPath }} />
+                    <Outlet context={{setBreadcrumbPath}}/>
                 </div>
-                {showContextBar && <ContextBar />}
+                {<ContextBar/>}
             </div>
 
             {/* --- Mobile Offcanvas Menus --- */}
-            <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start" className="offcanvas-full-mobile">
+            <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start"
+                       className="offcanvas-full-mobile">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Navigation</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body>{treeComponent}</Offcanvas.Body>
             </Offcanvas>
 
-            <Offcanvas show={showMobileVersions} onHide={() => setShowMobileVersions(false)} placement="bottom" style={{ height: '75vh' }}>
+            <Offcanvas show={showMobileVersions} onHide={() => setShowMobileVersions(false)} placement="bottom"
+                       style={{height: '75vh'}}>
                 <Offcanvas.Header closeButton><Offcanvas.Title>Version History</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body>{versionHistoryComponent}</Offcanvas.Body>
             </Offcanvas>
 
-            <Offcanvas show={showMobileContext} onHide={() => setShowMobileContext(false)} placement="end" className="offcanvas-full-mobile">
+            <Offcanvas show={showMobileContext} onHide={() => setShowMobileContext(false)} placement="end"
+                       className="offcanvas-full-mobile">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Context</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body>{contextComponent}</Offcanvas.Body>
             </Offcanvas>

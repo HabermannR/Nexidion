@@ -73,9 +73,9 @@
 }
 
 .breadcrumb-wrapper {
-    flex-grow: 1;      /* 1. Sagt: "Nimm allen verfügbaren Platz in der Mitte ein." */
-    min-width: 0;      /* 2. WICHTIGER FLEXBOX-FIX: Erlaubt dem Element, bei Bedarf zu schrumpfen. */
-    overflow: hidden;    /* 3. Verhindert, dass der Inhalt aus dem Container "ausbricht". */
+    flex-grow: 1; /* 1. Sagt: "Nimm allen verfügbaren Platz in der Mitte ein." */
+    min-width: 0; /* 2. WICHTIGER FLEXBOX-FIX: Erlaubt dem Element, bei Bedarf zu schrumpfen. */
+    overflow: hidden; /* 3. Verhindert, dass der Inhalt aus dem Container "ausbricht". */
 }
 
 /*
@@ -130,7 +130,7 @@
 .mobile-content-scroll-area {
     flex-grow: 1;
     overflow-y: auto;
-    padding: 1rem 1.5rem;
+    padding: 0 1.5rem;
     /* Wichtig: Platz für die fixe ContextBar am unteren Rand lassen! */
     padding-bottom: 70px;
 }
