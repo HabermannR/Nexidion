@@ -1,6 +1,7 @@
 # tests/conftest.py
 import pytest
 import json
+import os
 
 # Passe die Importe an deine Projektstruktur an
 from backend.app import create_app
@@ -19,7 +20,9 @@ class TestConfig(Config):
 # --- 2. Basis-Fixtures für App und Client (Scope: module) ---
 @pytest.fixture(scope='module')
 def app():
+    # Now create the app. It will be built with the correct configuration.
     app = create_app(TestConfig)
+
     with app.app_context():
         db.create_all()
         yield app
@@ -110,9 +113,11 @@ def auth_headers_2(client, test_user_2_obj):
 def auth_headers(auth_headers_1):
     return auth_headers_1
 
+# NOTE: This alias was pointing to a non-existent fixture 'test_vault_1'.
+# Correcting it to point to 'test_vault_1_obj'.
 @pytest.fixture(scope='function')
-def test_vault(test_vault_1):
-    return test_vault_1
+def test_vault(test_vault_1_obj):
+    return test_vault_1_obj
 
 
 # +++==============================================================+++
@@ -146,8 +151,113 @@ def auth_headers_persistent(client, db_session_persistent):
     """
     Logs in the persistent integration user ONCE per module and provides auth headers.
     """
-    login_res = client.post('/api/auth/login', # <-- AUCH HIER V2 PFAD
+    login_res = client.post('/api/auth/login',
                             json={'username': 'integration_user', 'password': 'integration_pass'})
     assert login_res.status_code == 200, "Login für integration_user fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
     return {'Authorization': f'Bearer {access_token}'}
+
+
+# =========================================================================
+# |            MODULAR LLM TEST GENERATION (UPDATED AND EXPANDED)         |
+# =========================================================================
+
+# --- 1. Centralized Model Definitions ---
+# This makes it easy to add new models or update model names in one place.
+AVAILABLE_MODELS = {
+    'local': 'local',
+    'gemini': 'gemini-2.5-flash',
+    'openai': 'gpt-4o-mini',
+    'claude': 'claude-3-5-haiku-20241022',
+}
+
+# --- 2. Helper Dictionaries for Cloud Models ---
+# This maps the internal model key to its required environment variable for the API key.
+# It's highly scalable: to add a new cloud provider, just add an entry here.
+API_KEY_ENV_VARS = {
+    'gemini': 'GEMINI_API_KEY',
+    'openai': 'OPENAI_API_KEY',
+    'claude': 'ANTHROPIC_API_KEY', # Anthropic's official env var name
+}
+# A set for quick lookups to see if a model is a cloud-based one.
+CLOUD_MODELS = set(API_KEY_ENV_VARS.keys())
+
+
+def pytest_addoption(parser):
+    """Adds the --llm command-line option to pytest with expanded choices."""
+    parser.addoption(
+        "--llm",
+        action="store",
+        default="none",
+        choices=[
+            'none',           # Skips all LLM tests
+            'local',          # Runs only local model tests
+            'gemini',         # Runs only Gemini tests
+            'openai',         # Runs only OpenAI tests
+            'claude',         # Runs only Claude tests
+            'local-gemini',   # Runs local and Gemini tests
+            'local-openai',   # Runs local and OpenAI tests
+            'local-claude',   # Runs local and Claude tests
+            'all'             # Runs local and all cloud models
+        ],
+        help=(
+            "Specify which LLM(s) to run E2E tests against. "
+            "Cloud models (gemini, openai, claude) require their respective API keys "
+            "to be set as environment variables (e.g., GEMINI_API_KEY). "
+            "Examples: --llm=local, --llm=local-openai, --llm=all"
+        )
+    )
+
+
+def pytest_generate_tests(metafunc):
+    """
+    This hook dynamically creates test cases based on the --llm flag.
+    It looks for tests that request the 'llm_model_name' fixture.
+    """
+    if 'llm_model_name' not in metafunc.fixturenames:
+        return # This test doesn't need LLM parametrization, so we do nothing.
+
+    llm_option = metafunc.config.getoption("--llm")
+
+    # Determine which models were requested based on the command-line option.
+    # This logic is clean and scalable. E.g., 'local-openai' becomes ['local', 'openai'].
+    requested_keys = []
+    if llm_option == 'none':
+        pass # The list remains empty
+    elif llm_option == 'all':
+        requested_keys = list(AVAILABLE_MODELS.keys())
+    else:
+        requested_keys = llm_option.split('-')
+
+    # Build the list of pytest parameters, adding skip logic for cloud models.
+    models_to_run = []
+    for key in requested_keys:
+        if key not in AVAILABLE_MODELS:
+            continue # Should not happen due to 'choices' in addoption, but safe to have.
+
+        model_name = AVAILABLE_MODELS[key]
+
+        if key in CLOUD_MODELS:
+            # For cloud models, create a 'pytest.param' that carries its own skip logic.
+            # This logic runs *after* the .env file is loaded, solving the timing problem.
+            env_var = API_KEY_ENV_VARS[key]
+            param = pytest.param(
+                model_name,
+                marks=pytest.mark.skipif(
+                    not os.environ.get(env_var),
+                    reason=f"{env_var} not set in environment variables"
+                )
+            )
+            models_to_run.append(param)
+        else:
+            # For the 'local' model, no special logic is needed.
+            models_to_run.append(model_name)
+
+
+    # If the final list is empty (e.g., --llm=none), we explicitly skip the test.
+    if not models_to_run:
+        pytest.skip("Skipping LLM tests. Use --llm=[local|gemini|openai|claude|all|...] to run.")
+
+    # This is the magic: Pytest will now create variants of the test function,
+    # feeding each entry from 'models_to_run' into the 'llm_model_name' fixture.
+    metafunc.parametrize("llm_model_name", models_to_run)

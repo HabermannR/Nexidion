@@ -316,7 +316,7 @@ def test_propose_node_update_from_chat_happy_path(
     assert "Original Content" in kwargs['user_prompt']
     assert "User: Meine Frage" in kwargs['user_prompt']
     assert "Zusatzkontext" in kwargs['user_prompt']
-    assert "MUST be in the same language" in kwargs['system_prompt']
+    assert "Language Consistency" in kwargs['system_prompt']
 
 
 @pytest.fixture(autouse=True)

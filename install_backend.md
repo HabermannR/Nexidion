@@ -10,9 +10,9 @@ This repository contains the backend service for the Nexidion project. It is bui
 - [Running the Application](#running-the-application)
 - [Testing and Coverage Analysis](#testing-and-coverage-analysis)
   - [Running the Tests](#running-the-tests)
-    - [Standard Tests (Fast, Free, No API Calls)](#1-standard-tests-fast-free-no-api-calls)
-    - [All Tests (Including Paid LLM API Calls)](#2-all-tests-including-paid-llm-api-calls)
-  - [Understanding the Test Types](#understanding-the-test-types)
+    - [1. Standard Tests (Default - No API Calls)](#1-standard-tests-default---no-api-calls)
+    - [2. Running LLM-Specific Tests (Local or Cloud)](#2-running-llm-specific-tests-local-or-cloud)
+  - [How LLM Tests are Identified](#how-llm-tests-are-identified)
   - [Understanding the Coverage Report](#understanding-the-coverage-report)
 - [Advanced: Analyzing Missing Coverage](#advanced-analyzing-missing-coverage-with-annotate_coveragepy)
 
@@ -117,51 +117,78 @@ flask run
 
 ## Testing and Coverage Analysis
 
-This document explains how to run the project's test suite, understand the test coverage reports, and use our custom script to help write new tests.
+This project features a powerful, flexible testing framework that allows you to control which tests are run, especially those interacting with external LLM APIs. The necessary `--cov` flags for coverage reporting are automatically applied from your `pyproject.toml` configuration.
 
 ### Running the Tests
 
-Our project configuration in `pyproject.toml` automatically handles test coverage reporting. You only need to decide whether to run tests that interact with external, paid LLM APIs.
+#### 1. Standard Tests (Default - No API Calls)
 
-#### 1. Standard Tests (Fast, Free, No API Calls)
-
-This is the **recommended command for most development work**. It runs all unit and integration tests that do not require external API calls. The necessary `--cov` flags are automatically applied from your `pyproject.toml` configuration.
-
-```bash
-pytest -m "not llm"
-```
-
-- `-m "not llm"`: This tells `pytest` to run all tests **except** those marked with the `llm` label.
-
-#### 2. All Tests (Including Paid LLM API Calls)
-
-This command runs the **entire test suite**, including tests that make real API calls to services like Google Gemini or Anthropic Claude.
-
-> **⚠️ CAUTION: Running these tests will make real API calls and will incur costs on your account.**
-
-**Prerequisite**: You must set the required API keys in your `.env` file (e.g., `GEMINI_API_KEY`).
-
-Once the key is set, run the full test suite with this simple command:
+This is the **recommended command for most development work**. It runs all unit and integration tests that do **not** depend on an LLM. It's fast, free, and runs entirely offline.
 
 ```bash
 pytest
 ```
 
-If you run this command without setting the required API keys, the `llm` tests will be automatically skipped by the test suite logic.
+By default, any test that requires an LLM will be skipped automatically, so this simple command is the safest and quickest way to check your code.
 
-### Understanding the Test Types
+#### 2. Running LLM-Specific Tests (Local or Cloud)
 
-In our codebase, we use a custom `pytest` marker, `@pytest.mark.llm`, to identify specific tests that are slow, expensive, and dependent on external services. This allows us to easily exclude them for fast, local development runs.
+To run the end-to-end tests that interact with LLMs, use the `--llm` command-line flag. This gives you fine-grained control over which models to test against.
+
+> **⚠️ CAUTION: Running tests against cloud models (Gemini, OpenAI, Claude) will make real API calls and may incur costs on your account.**
+
+**Prerequisite**: For any cloud model, you must have its API key set in your `.env` file (e.g., `GEMINI_API_KEY`). If the key is missing, tests for that specific model will be automatically and safely skipped.
+
+**Common Commands:**
+
+-   **Run against the local LLM only:**
+    ```bash
+    pytest --llm=local
+    ```
+
+-   **Run against OpenAI only:**
+    ```bash
+    pytest --llm=openai
+    ```
+
+-   **Run against the local model and Claude:**
+    ```bash
+    pytest --llm=local-claude
+    ```
+
+-   **Run against all configured LLMs (local and cloud):**
+    ```bash
+    pytest --llm=all
+    ```
+
+### How LLM Tests are Identified
+
+Instead of using markers, our test suite uses `pytest`'s dynamic parametrization. Tests that need to run against an LLM simply request the `llm_model_name` fixture in their function signature.
+
+The test runner then automatically creates a version of that test for each model specified by the `--llm` flag.
 
 ```python
-@pytest.mark.llm
-def test_stream_new_message_service_with_real_claude_llm(...):
-    # ... test logic that calls a real LLM API ...
+# This test will be automatically duplicated for each model you choose to run.
+def test_generate_text_with_llm(client, auth_headers_persistent, llm_model_name):
+    """
+    This test will be run against 'local', 'gemini', etc.,
+    depending on the --llm flag.
+    """
+    response = client.post(
+        '/api/v1/generate',
+        headers=auth_headers_persistent,
+        json={
+            'prompt': 'Tell me a joke.',
+            'model': llm_model_name  # The fixture provides the model name here
+        }
+    )
+    assert response.status_code == 200
+    # ... more assertions
 ```
 
 ### Understanding the Coverage Report
 
-The coverage flags in `pyproject.toml` generate two reports showing how much of your code is exercised by the tests.
+Running `pytest` generates two reports showing how much of your code is exercised by the tests.
 
 #### Terminal Report (`term-missing`)
 
@@ -193,9 +220,9 @@ The script takes a single line of output from the `term-missing` report and crea
 ### Workflow: How to Use It with an LLM
 
 1.  **Get the Coverage Report**
-    Run the standard tests and find a line in the terminal report you want to improve.
+    Run the tests and find a line in the terminal report you want to improve.
     ```bash
-    pytest -m "not llm"
+    pytest
     ```
     ```
     # Example output line:
@@ -221,4 +248,3 @@ The script takes a single line of output from the `term-missing` report and crea
     > # ... paste the content of the .annotated.txt file here ...
     > ```
 
-This workflow dramatically speeds up the process of achieving high test coverage.

@@ -93,16 +93,16 @@ def stream_new_message(session_id: str, user_id: int, user_input: str, model: st
 
     # Schritt 2 und 3: Assistenten-Nachricht mit robuster Fehlerbehandlung
     assistant_sort_order = user_message_sort_order + 1
-    chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'claude-3-haiku-20240307')
+
     full_response = ""
     assistant_message = None
 
     try:
         # Assistenten-Nachricht erstellen und committen, um eine ID zu haben
-        assistant_user = llm_service.get_llm_user(chosen_model)
+        assistant_user = llm_service.get_llm_user(model)
         assistant_message = ChatMessage(
             session_id=session.id, role='assistant', content="", author_id=assistant_user.id,
-            status='active', llm_model_source=chosen_model, sort_order=assistant_sort_order
+            status='active', llm_model_source=model, sort_order=assistant_sort_order
         )
         db.session.add(assistant_message)
         db.session.commit()
@@ -113,7 +113,7 @@ def stream_new_message(session_id: str, user_id: int, user_input: str, model: st
 
         # Der fehleranfällige Stream-Aufruf
         llm_stream = llm_service.generate_response_stream(
-            messages=all_messages_for_llm, system_prompt=system_prompt, model=chosen_model
+            messages=all_messages_for_llm, system_prompt=system_prompt, model=model, max_tokens=8192
         )
 
         for chunk in llm_stream:
@@ -132,7 +132,7 @@ def stream_new_message(session_id: str, user_id: int, user_input: str, model: st
 
         if is_first_assistant_message and session.title == "New Chat":
             history_for_title = f"User: {user_input}\nAssistant: {full_response.strip()}"
-            new_title = llm_service.generate_chat_title(history_for_title, model=chosen_model)
+            new_title = llm_service.generate_chat_title(history_for_title, model=model)
             session.title = new_title
             title_was_updated = True
 
@@ -240,7 +240,7 @@ def stream_retry_message(session_id: str, message_id: str, user_id: int, model: 
         system_prompt, _ = _prepare_llm_context(session, original_node_ids, user_id)
 
         llm_stream = llm_service.generate_response_stream(
-            messages=chat_history_for_llm, system_prompt=system_prompt, model=chosen_model
+            messages=chat_history_for_llm, system_prompt=system_prompt, model=chosen_model, max_tokens=8192
         )
 
         for chunk in llm_stream:
@@ -437,19 +437,22 @@ def propose_node_update_from_chat(
 
     # --- Schritt 2: Prompt Engineering ---
     # Der Prompt bleibt robust und detailliert, da er die Kernanweisung für das LLM ist.
-    system_prompt = """
-You are an expert content editor for a knowledge base. Your task is to update the content of a specific knowledge node based on a chat conversation and additional context.
-Carefully analyze the 'Original Content of the Node to Update', the 'Full Chat History', and the 'Additional Context'.
-Your goal is to synthesize the information to create a new, improved, and complete version of the node's content. Use also knowledge you have additionally.
-***IMPORTANT LANGUAGE RULE: The 'new_content' you generate MUST be in the same language as the 'Original Content of the Node to Update'. Do not translate it. If the original is in German, the new content must be in German.***
-The final output MUST be a single, complete text that will entirely replace the original content.
-You MUST provide your response ONLY in the following JSON format:
-{
-  "tool_input": {
-    "new_content": "The full, rewritten content for the node goes here, in the original language, using proper Markdown formatting."
-  }
-}
-    """
+    # In deiner chat_service.py -> propose_node_update_from_chat
+
+    # --- Schritt 2: Prompt Engineering (NEUE, VERBESSERTE VERSION) ---
+    system_prompt = f"""
+You are an expert content editor for a knowledge base. Your primary task is to update a knowledge node.
+
+**Core Rules:**
+1.  **Language Consistency:** The updated content in 'new_content' MUST be in the exact same language as the 'Original Content of the Node to Update'. Do NOT translate.
+2.  **Completeness:** The new content should be a complete replacement for the original, incorporating relevant information from the chat and context.
+3.  **Include Justification:** Briefly state the key reasons for the update, as discussed in the chat. This helps team members understand the changes. For example, if a person was added due to a deadline, mention it.
+4.  **Format Adherence:** You MUST provide your response using the required tool, which expects a JSON object with a 'new_content' key.
+
+**Analyze all provided information and then perform the update on the node titled '{target_title}'.**
+"""
+
+    # Der user_prompt bleibt gleich, er enthält die Daten.
     user_prompt = f"""
 Here is the data for your task:
 ---
@@ -465,7 +468,7 @@ Here is the data for your task:
 ---
 {context_content}
 ---
-Now, please analyze all the information, follow all rules (especially the language rule), and provide the updated content for the node '{target_title}' in the required JSON format. Use your own knowledge."""
+Now, please analyze all the information, follow all rules, and provide the updated content for the node '{target_title}'. """
 
     # --- Schritt 3: LLM-Service aufrufen ---
     # Die ganze Komplexität der LLM-Kommunikation ist jetzt im llm_service gekapselt.
