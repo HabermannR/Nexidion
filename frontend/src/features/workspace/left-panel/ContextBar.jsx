@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, ButtonGroup, Dropdown } from 'react-bootstrap';
-import { useContextStore  } from './contextStore'; // Der Store lebt im selben Feature-Ordner
+import { useWorkspaceStore } from '../workspaceStore.js';
 import './ContextBar.css'; // Zugehörige Stile für die Komponente
 
 /**
@@ -18,7 +18,7 @@ export default function ContextBar() {
         setSelection,
         saveCurrentSet,
         deleteSet
-    } = useContextStore ();
+    } = useWorkspaceStore ();
 
     const handleSave = () => {
         const name = prompt("Name für diese Auswahl eingeben:");

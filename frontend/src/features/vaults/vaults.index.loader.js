@@ -1,24 +1,39 @@
-import { redirect } from 'react-router-dom';
+// src/features/vaults/vaults.index.loader.js
+
 import apiClient from '../../api/apiClient';
+// WICHTIG: Importiere die `redirect`-Funktion von React Router.
+import { redirect } from 'react-router-dom';
 
+/**
+ * Dieser Loader prüft, ob es einen Knoten gibt, zu dem umgeleitet werden kann.
+ * Er löst bei Erfolg SOFORT einen redirect aus. Das ist effizient und verhindert Lade-Kaskaden.
+ */
 export async function vaultIndexLoader({ params }) {
-    console.log("[VAULT INDEX LOADER] Prüfe auf Umleitung...");
+    console.log("[VAULT INDEX LOADER] Prüfe auf Umleitungsziel...");
     try {
-        // Wir brauchen die Baumdaten nur, um das Ziel zu finden.
-        const treeData = await apiClient.get(`/api/vaults/${params.vaultId}/nodes?format=tree&v3=true`);
+        // Effizienter API-Aufruf: Wir brauchen nur den ersten Knoten, um zu wissen, ob der Vault leer ist.
+        const response = await apiClient.get(`/api/vaults/${params.vaultId}/nodes?format=tree&limit=1`);
+        const tree = response.data;
 
-        if (treeData.data && treeData.data.length > 0) {
-            const rootNode = treeData.data[0];
-            console.log(`[VAULT INDEX LOADER] Leite um zu Wurzelknoten: ${rootNode.id}`);
-            return redirect(`nodes/${rootNode.id}`); // Relative Umleitung ist sauberer
+        // Fall 1: Der Vault hat mindestens einen Knoten.
+        if (tree && tree.length > 0) {
+            const firstNodeId = tree[0].id;
+            console.log(`[VAULT INDEX LOADER] Ziel gefunden: ${firstNodeId}. Leite um...`);
+            // Gib eine Redirect-Response zurück. React Router stoppt den aktuellen
+            // Ladevorgang und startet sofort einen neuen zur Ziel-URL.
+            return redirect(`nodes/${firstNodeId}`);
         }
 
-        // Wenn der Vault leer ist, passiert nichts. Die VaultIndex-Komponente wird gerendert.
-        console.log("[VAULT INDEX LOADER] Vault ist leer. Keine Umleitung.");
+        // Fall 2: Der Vault ist leer.
+        console.log("[VAULT INDEX LOADER] Kein Knoten zum Umleiten gefunden. Zeige 'VaultIndexRedirector' an.");
+        // Wir geben `null` zurück. Dadurch wird die an die Route gebundene Komponente
+        // (`<VaultIndexRedirector>`) gerendert, die eine "Bitte wähle"-Nachricht anzeigt.
         return null;
 
     } catch (error) {
         console.error("Fehler im vaultIndexLoader:", error);
+        // Im Fehlerfall auch einfach `null` zurückgeben. Die UI zeigt dann die
+        // "Bitte wähle"-Nachricht an, was ein sicherer Fallback ist.
         return null;
     }
 }

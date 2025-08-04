@@ -5,9 +5,9 @@ import os
 
 # Passe die Importe an deine Projektstruktur an
 from backend.app import create_app
-from backend.models import db, User
+from backend.models import db, User, ChatSession, ChatMessage, Node
 from backend.config import Config
-from backend.services import vault_service
+from backend.services import vault_service, node_service
 
 # --- 1. Konfiguration für die Testumgebung ---
 class TestConfig(Config):
@@ -156,6 +156,57 @@ def auth_headers_persistent(client, db_session_persistent):
     assert login_res.status_code == 200, "Login für integration_user fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
     return {'Authorization': f'Bearer {access_token}'}
+
+
+@pytest.fixture
+def proposal_setup(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Stellt die Datenbankobjekte für die Proposal-Tests bereit:
+    - Einen Kontext-Node
+    - Einen Ziel-Node
+    - Eine Chat-Session mit Verlauf
+    Gibt ein Dictionary mit den relevanten IDs zurück.
+
+    ### KORREKTUR ###
+    Die Argumente 'node_service', 'ChatSession', 'ChatMessage' und 'Node' wurden aus der
+    Signatur entfernt, da sie keine Fixtures sind. Sie werden stattdessen direkt importiert.
+    """
+    # Hol den Root-Node, der beim Erstellen des Vaults angelegt wurde.
+    root_node = db_session.session.query(Node).filter_by(
+        vault_id=test_vault_1_obj.id,
+        parent_id=None
+    ).one()
+
+    # Erstelle die nötigen Nodes. Wir verwenden das importierte `node_service`-Modul.
+    context_node_dict = node_service.create_node(
+        title="Project Requirements",
+        content="The project must be completed by Q4.",
+        parent_id=root_node.id, vault_id=test_vault_1_obj.id, author_id=test_user_1_obj.id
+    )
+
+    target_node_dict = node_service.create_node(
+        title="Team Allocation",
+        content="Current team: Alice (Lead).",
+        parent_id=root_node.id, vault_id=test_vault_1_obj.id, author_id=test_user_1_obj.id
+    )
+
+    # Erstelle die Chat-Historie. Wir verwenden die importierten Modell-Klassen.
+    session = ChatSession(vault_id=test_vault_1_obj.id, owner_id=test_user_1_obj.id)
+    msg1 = ChatMessage(session=session, role='user', content="Who else should be on the team?",
+                       author_id=test_user_1_obj.id, sort_order=1)
+    msg2 = ChatMessage(session=session, role='assistant', content="We should add Bob and Carol.",
+                       author_id=test_user_1_obj.id, sort_order=2)
+
+    db_session.session.add_all([session, msg1, msg2])
+    db_session.session.commit()
+
+    # Gib alle nötigen Informationen als Dictionary zurück
+    return {
+        "user_id": test_user_1_obj.id,
+        "session_id": session.id,
+        "target_node_id": target_node_dict['id'],
+        "context_node_ids": [context_node_dict['id']]
+    }
 
 
 # =========================================================================

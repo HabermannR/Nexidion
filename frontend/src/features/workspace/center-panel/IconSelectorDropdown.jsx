@@ -46,68 +46,49 @@ const iconGroups = [
     },
 ];
 
-export default function IconSelectorDropdown({currentNode, vaultId}) {
+// Wichtig: nodeId wird jetzt explizit übergeben.
+export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId }) {
     const fetcher = useFetcher();
-    const revalidator = useRevalidator();
-
-    // 1. Ein Ref erstellen, um den vorherigen Zustand des Fetchers zu speichern
-    const prevFetcherState = useRef(fetcher.state);
 
     useEffect(() => {
-        // 2. Die Bedingung anpassen: Wir handeln nur, wenn der Zustand sich geändert hat!
-        // Wir wollen den Moment abfangen, in dem der Fetcher von "submitting" zu "idle" wechselt.
-        if (
-            prevFetcherState.current === 'submitting' &&
-            fetcher.state === 'idle' &&
-            fetcher.data?.ok
-        ) {
-            console.log('Icon-Änderung abgeschlossen, revalidiere Baum...');
-            revalidator.revalidate();
-        }
+        console.log(`[ICON FETCHER] Zustand: ${fetcher.state}, Daten:`, fetcher.data);
+    }, [fetcher.state, fetcher.data]);
 
-        // 3. Den aktuellen Zustand für den nächsten Durchlauf im Ref speichern.
-        // Dies muss NACH der Prüfung geschehen.
-        prevFetcherState.current = fetcher.state;
-
-    }, [fetcher.state, fetcher.data, revalidator]);
-
-
-    if (!currentNode) {
-        return null;
-    }
+    if (!currentVersion) return null;
 
     const handleIconSelect = (iconId) => {
+        console.log(`[ICON SELECTOR] Klick registriert. iconId: '${iconId}', vaultId: '${vaultId}', nodeId: '${nodeId}'`);
+        if (iconId === currentVersion.icon) return;
+
         fetcher.submit(
-            {intent: 'changeIcon', icon: iconId},
+            { intent: 'changeIcon', icon: iconId },
             {
-                method: 'POST',
-                action: `/vaults/${vaultId}/nodes/${currentNode.id}`,
+                method: 'post',
+                // Explizit die Action-URL angeben ist am robustesten.
+                action: `/vaults/${vaultId}/nodes/${nodeId}`,
             }
         );
     };
 
+    // Optimistic Update: Zeige das Icon an, das gerade gesendet wird, oder das aktuelle.
+    const displayIcon = fetcher.formData?.get('icon') || currentVersion.icon;
+
     return (
         <Dropdown>
-            <Dropdown.Toggle
-                variant="light"
-                size="sm"
-                id="icon-selector-dropdown"
-                title="Icon ändern"
-                className="d-flex align-items-center"
-            >
-                <i className={`bx ${fetcher.formData?.get('icon') || currentNode.icon} fs-5`}></i>
+            <Dropdown.Toggle variant="light" size="sm" id="icon-selector-dropdown" title="Icon ändern" className="d-flex align-items-center">
+                <i className={`bx ${displayIcon} fs-5`}></i>
             </Dropdown.Toggle>
 
-            <Dropdown.Menu align="end" style={{maxHeight: '300px', overflowY: 'auto'}}>
+            <Dropdown.Menu align="end" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                 {iconGroups.map((group, groupIndex) => (
                     <React.Fragment key={group.title}>
-                        {groupIndex > 0 && <Dropdown.Divider/>}
+                        {groupIndex > 0 && <Dropdown.Divider />}
                         <Dropdown.Header>{group.title}</Dropdown.Header>
                         {group.icons.map((icon) => (
                             <Dropdown.Item
                                 key={icon.id}
                                 onClick={() => handleIconSelect(icon.id)}
-                                active={currentNode.icon === icon.id}
+                                active={currentVersion.icon === icon.id}
                             >
                                 <i className={`bx ${icon.id} me-2`}></i>
                                 {icon.name}

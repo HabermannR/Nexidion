@@ -8,7 +8,10 @@ providing a secure and object-oriented way to interact with the data.
 
 import uuid
 from datetime import datetime, timezone
+from sqlalchemy.ext.associationproxy import association_proxy
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import joinedload, with_parent
+from sqlalchemy import select
 from sqlalchemy import Index
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -99,7 +102,6 @@ class Node(db.Model):
     # --- Columns ---
     # The primary key is a UUID string, generated automatically for new nodes.
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = db.Column(db.String(255), nullable=False)
     current_version = db.Column(db.Integer, nullable=False, default=1)
     # Ein optionaler String für den Icon-Namen, z.B. "bxs-file-doc".
     icon = db.Column(db.String(50), nullable=True)
@@ -116,7 +118,6 @@ class Node(db.Model):
     children = db.relationship(
         'Node',
         backref=db.backref('parent', remote_side=[id]),
-        order_by="Node.title"
     )
 
     # Defines the 'node.versions' attribute.
@@ -131,18 +132,22 @@ class Node(db.Model):
         viewonly=True
     )
 
+    title = association_proxy('current_version_object', 'title')
+
     def to_dict(self, include_children=False, include_content=True):
         """
         Konvertiert das Node-Objekt in ein serialisierbares Dictionary.
-        Das 'icon'-Feld wird immer mitgesendet.
+        Der Titel wird von der aktuellen Version geholt.
         """
         node_dict = {
             'id': self.id,
-            'title': self.title,
+            # +++ GEÄNDERT +++
+            # Wir holen den Titel von der verknüpften Version. Fallback für den seltenen Fall,
+            # dass ein Node keine Versionen hat.
+            'title': self.current_version_object.title if self.current_version_object else "Unbenannter Node",
             'parent_id': self.parent_id,
             'current_version': self.current_version,
             'vault_id': self.vault_id,
-            # Das Icon wird immer mitgesendet. Wenn keines gesetzt ist, wird ein Standardwert verwendet.
             'icon': self.icon
         }
 
@@ -151,8 +156,6 @@ class Node(db.Model):
             node_dict['content'] = content
 
         if include_children:
-            # Die Warnung hier kannst du ignorieren. PyCharm/MyPy weiß nicht, dass 'self.children'
-            # zur Laufzeit eine Liste ist. Es ist ein bekanntes "Problem" mit SQLAlchemy.
             node_dict['children'] = [
                 child.to_dict(include_children=True, include_content=False)
                 for child in self.children
@@ -170,6 +173,7 @@ class Version(db.Model):
 
     # --- Columns ---
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String(255), nullable=False)
     version = db.Column(db.Integer, nullable=False)
     content = db.Column(db.Text, nullable=True)  # Matches schema where content can be NULL
     timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -179,28 +183,29 @@ class Version(db.Model):
     node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False, index=True)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
 
-    def to_dict(self, include_content=True):  # WICHTIG: Füge das Argument hier hinzu
+    def to_dict(self, include_content=True):
         """
         Gibt eine Dictionary-Repräsentation der Version zurück.
-        `include_content` steuert, ob der (potenziell große) Inhalt mitgesendet wird.
+        Enthält jetzt alle für die UI notwendigen Daten, um den "Single API Call"-Ansatz zu unterstützen.
         """
         data = {
             'id': self.id,
             'node_id': self.node_id,
+            # +++ HINZUGEFÜGT: Node-Metadaten für die UI ---
+            'vault_id': self.node.vault_id,  # Wird für Aktionen (save, delete) benötigt
+            'icon': self.node.icon,  # Kosmetisch, aber nützlich für die Anzeige
+
+            # --- Versions-spezifische Daten ---
+            'title': self.title,  # Das neue, versionierte Titelfeld
             'version': self.version,
-            'timestamp': self.timestamp.isoformat() + 'Z',  # 'Z' für UTC hinzufügen ist gute Praxis
+            'timestamp': self.timestamp.isoformat() + 'Z',
             'author_id': self.author_id,
             'author_name': self.author.display_name if self.author else "Unknown",
-            'content_length': len(self.content) if self.content else 0  # Nützliches Metadatum für die UI
         }
 
-        # Den Inhalt nur hinzufügen, wenn explizit angefordert.
-        # Dein Service ruft es mit True auf, also wird der Inhalt mitgesendet.
-        if include_content and self.content is not None:
+        if include_content:
             data['content'] = self.content
         else:
-            # Selbst wenn include_content=True ist, aber der Inhalt None ist,
-            # soll er im JSON auch null sein.
             data['content'] = None
 
         return data

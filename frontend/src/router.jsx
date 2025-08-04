@@ -1,41 +1,40 @@
-import {createBrowserRouter} from 'react-router-dom';
+// router.jsx
+
+import { createBrowserRouter } from 'react-router-dom';
 
 // --- Grundlegende Layouts & Seiten ---
 import AppShell from './layouts/AppShell.jsx';
-import WorkspaceLayout from './layouts/WorkspaceLayout.jsx';
-import ErrorPage from './features/app/ErrorPage.jsx';
+import WorkspaceLayout from './features/workspace/WorkspaceLayout.jsx';
+import ErrorPage from './components/ErrorPage.jsx';
 
 // --- Feature: Authentifizierung ---
 import LoginPage from './features/auth/LoginPage.jsx';
-import {loginAction} from './features/auth/auth.action.js';
-import {logoutAction} from './features/auth/auth.action.js';
-import {protectedLoader} from './features/auth/auth.loader.js';
+import { loginAction } from './features/auth/auth.action.js';
+import { logoutAction } from './features/auth/auth.action.js';
+import { protectedLoader } from './features/auth/auth.loader.js';
 
 // --- Feature: Node-Verwaltung ---
-import NodeContent from './features/nodes/NodeContent.jsx';
-import {vaultTreeLoader, nodeContentLoader, nodeVersionsLoader} from './features/nodes/nodes.loader.js';
-import {vaultIndexLoader} from './features/vaults/vaults.index.loader.js';
-import {nodeAction} from './features/nodes/nodes.action.js';
+import NodeContent from './features/workspace/center-panel/NodeContent.jsx';
+// --- AKTUALISIERT: Wir importieren nur noch die benötigten Loader ---
+import { vaultTreeLoader, nodeDetailLoader } from './features/workspace/nodes.loader.js';
+import { nodeAction } from './features/workspace/nodes.action.js';
 
-// --- Feature: Vault-Verwaltung (NEU & AKTUALISIERT) ---
-import VaultManager from './features/vaults/VaultManager.jsx'; // NEU: Importiert die volle Verwaltungsseite
-import {vaultManagerLoader} from './features/vaults/vaults.manager.loader.js'; // NEU: Loader für die Vault-Liste
-import {vaultManagerAction} from './features/vaults/vaults.manager.action.js'; // NEU: Action für Create, Rename, Delete, Activate
-
-const VaultIndex = () => <div className="p-4 text-muted">Wählen Sie einen Knoten aus oder erstellen Sie einen
-    neuen.</div>;
-
-// --- Feature: Admin ---
+// --- Unveränderte Imports für andere App-Teile ---
+import { vaultIndexLoader } from './features/vaults/vaults.index.loader.js';
+import VaultIndexRedirector from './features/vaults/VaultIndexRedirector.jsx';
+import VaultManager from './features/vaults/VaultManager.jsx';
+import { vaultManagerLoader } from './features/vaults/vaults.manager.loader.js';
+import { vaultManagerAction } from './features/vaults/vaults.manager.action.js';
 import AdminDashboard from './features/admin/AdminDashboard.jsx';
 
 // ===============================================================
-// ROUTER-KONFIGURATION
+// ROUTER-KONFIGURATION (NEU & VEREINFACHT)
 // ===============================================================
 const router = createBrowserRouter([
-    // --- GRUPPE 1: Öffentliche Routen ---
+    // --- GRUPPE 1: Öffentliche Routen (unverändert) ---
     {
         path: "/login",
-        element: <LoginPage/>,
+        element: <LoginPage />,
         action: loginAction,
     },
     {
@@ -47,57 +46,85 @@ const router = createBrowserRouter([
     {
         id: 'root',
         path: "/",
-        element: <AppShell/>,
+        element: <AppShell />,
         loader: protectedLoader,
-        errorElement: <ErrorPage/>,
+        errorElement: <ErrorPage />,
+        // +++ DIES IST DIE EINZIGE ÄNDERUNG +++
+        // Ersetze die alte shouldRevalidate-Funktion durch diese.
+        // Sie ist einfacher, robuster und löst dein Problem.
+        shouldRevalidate: ({ currentUrl, nextUrl }) => {
+            // Revalidiere immer, wenn sich der Pfad ändert.
+            // Ignoriere Änderungen, die nur Search-Parameter betreffen (z.B. ?version=...).
+            return currentUrl.pathname !== nextUrl.pathname;
+        },
         children: [
-            // --- A) Die Haupt-Arbeitsansicht ---
             {
                 path: "vaults/:vaultId",
-                element: <WorkspaceLayout/>,
+                id: 'workspace-layout',
+                element: <WorkspaceLayout />,
                 loader: vaultTreeLoader,
-                // action: createVaultAction, // ENTFERNT: Die Action gehört zur Verwaltungsseite, nicht zum Layout.
+                // +++ KORRIGIERTE LOGIK +++
+                shouldRevalidate: ({ currentParams, nextParams, formMethod }) => {
+                    // Revalidiere, wenn die Vault-ID sich ändert (Navigation)
+                    if (currentParams.vaultId !== nextParams.vaultId) {
+                        return true;
+                    }
+                    // ODER wenn eine schreibende Aktion (POST, PUT, DELETE, etc.) stattgefunden hat
+                    if (formMethod && formMethod.toLowerCase() !== 'get') {
+                        return true;
+                    }
+                    // In allen anderen Fällen nicht revalidieren
+                    return false;
+                },
                 children: [
                     {
                         index: true,
-                        element: <VaultIndex/>,
                         loader: vaultIndexLoader,
+                        element: <VaultIndexRedirector />,
                     },
                     {
                         path: "nodes/:nodeId",
-                        element: <NodeContent/>,
-                        loader: nodeContentLoader,
+                        id: 'node-detail',
+                        element: <NodeContent />,
+                        loader: nodeDetailLoader,
                         action: nodeAction,
-                        children: [
-                            {
-                                path: "versions",
-                                loader: nodeVersionsLoader,
+                        // +++ KORRIGIERTE LOGIK +++
+                        shouldRevalidate: ({ currentParams, nextParams, formMethod }) => {
+                            // Revalidiere, wenn sich die Parameter ändern (Navigation)
+                            if (currentParams.nodeId !== nextParams.nodeId ||
+                                currentParams.vaultId !== nextParams.vaultId) {
+                                return true;
                             }
-                        ]
+                            // ODER wenn eine schreibende Aktion stattgefunden hat
+                            if (formMethod && formMethod.toLowerCase() !== 'get') {
+                                return true;
+                            }
+                            // In allen anderen Fällen nicht revalidieren
+                            return false;
+                        },
                     },
                 ]
             },
 
-            // --- B) Die Vault-Verwaltungsseite (ersetzt die alte "welcome" Seite) ---
-            // Diese Route ist der neue, zentrale Ort für alle Vault-Operationen.
+            // --- B) Die Vault-Verwaltungsseite (unverändert) ---
             {
-                path: "settings/vaults", // NEU: Eine logische URL für Einstellungen
-                element: <VaultManager/>,
-                loader: vaultManagerLoader, // Lädt die Liste aller Vaults
-                action: vaultManagerAction,  // Verarbeitet alle Formulare auf der Seite
+                path: "settings/vaults",
+                element: <VaultManager />,
+                loader: vaultManagerLoader,
+                action: vaultManagerAction,
             },
 
-            // --- C) Die Admin-Dashboard-Seite ---
+            // --- C) Die Admin-Dashboard-Seite (unverändert) ---
             {
                 path: "admin",
-                element: <AdminDashboard/>,
-                // loader: adminDataLoader,
+                element: <AdminDashboard />,
             },
 
-            // --- D) Eine "leere" Index-Route ---
-            // Wird vom `protectedLoader` behandelt, der zum ersten Vault oder zur Erstellungsseite umleitet.
+            // --- D) Eine "leere" Index-Route für die App-Wurzel (unverändert) ---
             {
                 index: true,
+                // Hier könnte man z.B. eine Willkommens-Seite oder eine Umleitung
+                // zum zuletzt besuchten Vault einbauen.
             }
         ],
     },

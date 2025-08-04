@@ -525,13 +525,15 @@ def proposal_test_setup(db_session, test_user_1_obj, test_vault_1_obj):
     }
 
 
-def test_propose_node_update_happy_path(proposal_test_setup, mocker):
+def test_propose_node_update_happy_path(proposal_setup, mocker):
     """
     Testet den "Happy Path" von `propose_node_update_from_chat`.
     Stellt sicher, dass der LLM-Service mit dem korrekt zusammengebauten Prompt aufgerufen wird.
     """
     # 1. ARRANGE
-    # Mocke den LLM-Service, der eine strukturierte Antwort zurückgeben soll
+    # ----------
+    # Das komplette Datenbank-Setup kommt jetzt aus der 'proposal_setup'-Fixture.
+    # Wir müssen nur noch den LLM-Service mocken.
     mock_llm_response = "This is the new proposed content from the mocked LLM."
     mock_generate_structured = mocker.patch(
         'backend.services.llm_service.generate_structured_response',
@@ -539,15 +541,18 @@ def test_propose_node_update_happy_path(proposal_test_setup, mocker):
     )
 
     # 2. ACT
+    # ------
+    # Wir rufen den Service mit den Daten aus der Fixture auf.
     result = chat_service.propose_node_update_from_chat(
-        target_node_id=proposal_test_setup["target_node_id"],
-        session_id=proposal_test_setup["session_id"],
-        context_node_ids=proposal_test_setup["context_node_ids"],
+        target_node_id=proposal_setup["target_node_id"],
+        session_id=proposal_setup["session_id"],
+        context_node_ids=proposal_setup["context_node_ids"],
         model="mock_model",
-        user_id=proposal_test_setup["user_id"]
+        user_id=proposal_setup["user_id"]
     )
 
     # 3. ASSERT
+    # ---------
     # Überprüfe das Ergebnis der Funktion
     assert result["original_content"] == "Current team: Alice (Lead)."
     assert result["proposed_content"] == mock_llm_response
@@ -556,8 +561,6 @@ def test_propose_node_update_happy_path(proposal_test_setup, mocker):
     mock_generate_structured.assert_called_once()
 
     # Detaillierte Prüfung des Prompts, der an das LLM gesendet wurde
-    # `ANY` wird für den `system_prompt` verwendet, da dieser sehr lang sein kann.
-    # Wir konzentrieren uns auf den `user_prompt`.
     call_args, call_kwargs = mock_generate_structured.call_args
     user_prompt = call_kwargs.get("user_prompt", "")
 
@@ -572,37 +575,37 @@ def test_propose_node_update_happy_path(proposal_test_setup, mocker):
     assert "Now, please analyze all the information" in user_prompt
 
 
-def test_propose_node_update_raises_error_if_node_not_found(proposal_test_setup):
+def test_propose_node_update_raises_error_if_node_not_found(proposal_setup):
     """
     Testet, dass ein `ValueError` ausgelöst wird, wenn der Ziel-Node nicht existiert.
     """
-    # 1. ARRANGE (Setup ist im Fixture)
+    # 1. ARRANGE (Setup wird durch die 'proposal_setup' Fixture bereitgestellt)
 
     # 2. ACT & 3. ASSERT
     with pytest.raises(ValueError, match="Target node non-existent-id not found or access denied."):
         chat_service.propose_node_update_from_chat(
-            target_node_id="non-existent-id",
-            session_id=proposal_test_setup["session_id"],
-            context_node_ids=proposal_test_setup["context_node_ids"],
+            target_node_id="non-existent-id",  # Eine ID, die garantiert nicht existiert
+            session_id=proposal_setup["session_id"],
+            context_node_ids=proposal_setup["context_node_ids"],
             model="mock_model",
-            user_id=proposal_test_setup["user_id"]
+            user_id=proposal_setup["user_id"]
         )
 
 
-def test_propose_node_update_raises_error_for_wrong_user(proposal_test_setup, test_user_2_obj):
+def test_propose_node_update_raises_error_for_wrong_user(proposal_setup, test_user_2_obj):
     """
     Testet, dass ein `PermissionError` ausgelöst wird, wenn ein nicht berechtigter
     Benutzer versucht, einen Vorschlag zu generieren.
     """
-    # 1. ARRANGE (Setup ist im Fixture, alles gehört User 1)
+    # 1. ARRANGE (Setup wird durch 'proposal_setup' bereitgestellt; alles gehört User 1)
 
     # 2. ACT & 3. ASSERT
-    # User 2 versucht, den Vorschlag zu generieren
+    # User 2 versucht, den Vorschlag für die Daten von User 1 zu generieren
     with pytest.raises(PermissionError):
         chat_service.propose_node_update_from_chat(
-            target_node_id=proposal_test_setup["target_node_id"],
-            session_id=proposal_test_setup["session_id"],
-            context_node_ids=proposal_test_setup["context_node_ids"],
+            target_node_id=proposal_setup["target_node_id"],
+            session_id=proposal_setup["session_id"],
+            context_node_ids=proposal_setup["context_node_ids"],
             model="mock_model",
-            user_id=test_user_2_obj.id  # <-- Falscher User
+            user_id=test_user_2_obj.id  # <-- Hier wird der falsche User verwendet
         )

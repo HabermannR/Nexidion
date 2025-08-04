@@ -158,17 +158,20 @@ def create_node(vault_id: int):
         return jsonify({"error": "title is required and cannot be empty"}), 400
 
     try:
-        new_node = node_service.create_node(
+        # +++ GEÄNDERT +++
+        # Ruft die neue Service-Funktion auf, die jetzt ein Dictionary zurückgibt.
+        new_node_dict = node_service.create_node(
             title=title.strip(),
             content=data.get('content', ''),
             parent_id=data.get('parent_id'),
             vault_id=vault_id,
             author_id=user_id
         )
-        node_dict = node_service.get_node_by_id(new_node.id, vault_id, user_id)
-        return jsonify(node_dict), 201
+        # Wir geben das zurückgegebene Dictionary direkt weiter.
+        return jsonify(new_node_dict), 201
+
     except (PermissionError, ValueError) as e:
-        return jsonify({"error": str(e)}), 403
+        return jsonify({"error": str(e)}), 403 if isinstance(e, PermissionError) else 400
     except Exception as e:
         logging.error(f"Error creating node in vault {vault_id}: {e}", exc_info=True)
         return jsonify({"error": "An internal server error occurred"}), 500
@@ -178,8 +181,7 @@ def create_node(vault_id: int):
 @jwt_required()
 def update_node(vault_id: int, node_id: str):
     """
-    Aktualisiert einen Node (Titel und/oder Inhalt) und erstellt IMMER eine neue Version,
-    sofern sich etwas geändert hat. Dies ist der dedizierte Endpunkt für versionierte Updates.
+    Aktualisiert einen Node (Titel und/oder Inhalt) und erstellt IMMER eine neue Version.
     """
     user_id = int(get_jwt_identity())
     data = request.json
@@ -188,14 +190,18 @@ def update_node(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'title' or 'content' for an update."}), 400
 
     try:
-        updated_node = node_service.update_node(
+        # +++ GEÄNDERT +++
+        # Ruft die neue Service-Funktion auf, die ein Dictionary zurückgibt.
+        updated_node_dict = node_service.update_node(
             node_id=node_id,
             vault_id=vault_id,
             user_id=user_id,
             title=data.get('title'),
             content=data.get('content')
         )
-        return jsonify(updated_node.to_dict(include_content=True))
+        # Wir geben das zurückgegebene Dictionary direkt weiter.
+        return jsonify(updated_node_dict)
+
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except PermissionError as e:
@@ -205,10 +211,7 @@ def update_node(vault_id: int, node_id: str):
 @nodes_bp.route('/<string:node_id>/move', methods=['PATCH'], strict_slashes=False)
 @jwt_required()
 def move_node_route(vault_id: int, node_id: str):
-    """
-    Verschiebt einen Node zu einem neuen Parent.
-    Diese Aktion erstellt KEINE neue Version und ist idempotent.
-    """
+    """Verschiebt einen Node zu einem neuen Parent."""
     user_id = int(get_jwt_identity())
     data = request.json
 
@@ -216,8 +219,11 @@ def move_node_route(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'parent_id' (can be null)."}), 400
 
     try:
+        # +++ GEÄNDERT +++
+        # Die Service-Funktion gibt jetzt ein Node-Objekt zurück. Wir müssen es konvertieren.
         updated_node = node_service.move_node(node_id, data['parent_id'], vault_id, user_id)
         return jsonify(updated_node.to_dict())
+
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except PermissionError as e:
@@ -227,18 +233,18 @@ def move_node_route(vault_id: int, node_id: str):
 @nodes_bp.route('/<string:node_id>/icon', methods=['PATCH'], strict_slashes=False)
 @jwt_required()
 def set_node_icon_route(vault_id: int, node_id: str):
-    """
-    Ändert das Icon eines Nodes.
-    Diese Aktion erstellt KEINE neue Version und ist idempotent.
-    """
+    """Ändert das Icon eines Nodes."""
     user_id = int(get_jwt_identity())
     data = request.json
 
     if 'icon' not in data:
         return jsonify({"error": "Request body must contain 'icon' (can be a string or null)."}), 400
     try:
+        # +++ GEÄNDERT +++
+        # Die Service-Funktion gibt jetzt ein Node-Objekt zurück. Wir müssen es konvertieren.
         updated_node = node_service.update_node_icon(node_id, vault_id, user_id, data['icon'])
         return jsonify(updated_node.to_dict())
+
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except PermissionError as e:

@@ -14,7 +14,7 @@ import ContentArea from '../components/nodes/ContentArea';
 // Lazy-loaded Komponenten
 const PrintPreview = lazy(() => import('../components/print/PrintPreview'));
 const DeleteNodeModal = lazy(() => import('../components/common/DeleteNodeModal'));
-const VersionHistory = lazy(() => import('../../features/nodes/ui/VersionHistory.jsx'));
+const VersionHistory = lazy(() => import('../../features/workspace/right-panel/VersionHistory.jsx'));
 const ContextPanel = lazy(() => import('../components/context/ContextPanel'));
 
 export default function NodesView() {

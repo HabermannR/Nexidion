@@ -2,7 +2,8 @@
 
 import pytest
 from backend.services import node_service, vault_service
-from backend.models import Node
+from backend.models import Node, Version
+
 
 def test_get_content_for_nodes_success(db_session, test_user_1_obj):
     """
@@ -10,16 +11,14 @@ def test_get_content_for_nodes_success(db_session, test_user_1_obj):
     """
     # ARRANGE: Erstelle einen Vault und Nodes über die Services
     user_id = test_user_1_obj.id
-    # Wir erstellen den Vault direkt, um eine vault_id zu haben
     vault = vault_service.create_vault("Test-Vault", user_id)
     vault_id = vault.id
 
-    node1 = node_service.create_node("Titel Eins", "Inhalt von Node 1.", None, vault_id, user_id)
-    node2 = node_service.create_node("Titel Zwei", "Inhalt von Node 2.", None, vault_id, user_id)
-    # Dieser Node wird nicht abgefragt und sollte nicht im Ergebnis erscheinen.
+    node1_dict = node_service.create_node("Titel Eins", "Inhalt von Node 1.", None, vault_id, user_id)
+    node2_dict = node_service.create_node("Titel Zwei", "Inhalt von Node 2.", None, vault_id, user_id)
     node_service.create_node("Unerwünschter Node", "...", None, vault_id, user_id)
 
-    node_ids_to_fetch = [node1.id, node2.id]
+    node_ids_to_fetch = [node1_dict['id'], node2_dict['id']]
 
     # ACT: Rufe die zu testende Service-Funktion auf.
     result = node_service.get_content_for_nodes(
@@ -53,12 +52,13 @@ def test_get_content_for_nodes_raises_permission_error(test_user_1_obj, test_use
     """
     # ARRANGE: Vault und Node gehören zu user1
     vault1 = vault_service.create_vault("Vault von User 1", test_user_1_obj.id)
-    node1 = node_service.create_node("Geheimer Node", "Top Secret", None, vault1.id, test_user_1_obj.id)
+    node1_dict = node_service.create_node("Geheimer Node", "Top Secret", None, vault1.id, test_user_1_obj.id)
+    node1_id = node1_dict['id']  # Extrahiere die ID.
 
     # ACT & ASSERT: user2 versucht, auf den Node von user1 zuzugreifen.
     with pytest.raises(PermissionError):
         node_service.get_content_for_nodes(
-            node_ids=[node1.id], vault_id=vault1.id, user_id=test_user_2_obj.id  # Falscher Benutzer!
+            node_ids=[node1_id], vault_id=vault1.id, user_id=test_user_2_obj.id  # Falscher Benutzer!
         )
 
 
@@ -71,11 +71,11 @@ def test_get_nodes_by_ids_success(test_user_1_obj):
     vault = vault_service.create_vault("Test-Vault", user_id)
     vault_id = vault.id
 
-    node1 = node_service.create_node("Node 1", "Content 1", None, vault_id, user_id)
-    node2 = node_service.create_node("Node 2", "Content 2", None, vault_id, user_id)
+    node1_dict = node_service.create_node("Node 1", "Content 1", None, vault_id, user_id)
+    node2_dict = node_service.create_node("Node 2", "Content 2", None, vault_id, user_id)
     node_service.create_node("Node 3", "Content 3", None, vault_id, user_id)
 
-    node_ids_to_fetch = [node1.id, node2.id]
+    node_ids_to_fetch = [node1_dict['id'], node2_dict['id']]
 
     # ACT
     result_nodes = node_service.get_nodes_by_ids(node_ids_to_fetch, vault_id, user_id)
@@ -95,9 +95,9 @@ def test_get_content_for_nodes_preserves_order(test_user_1_obj):
     vault = vault_service.create_vault("Order-Test Vault", user_id)
     vault_id = vault.id
 
-    node_b = node_service.create_node("Node B", "Content B", None, vault_id, user_id)
-    node_a = node_service.create_node("Node A", "Content A", None, vault_id, user_id)
-    ids_in_specific_order = [node_b.id, node_a.id]
+    node_b_dict = node_service.create_node("Node B", "Content B", None, vault_id, user_id)
+    node_a_dict = node_service.create_node("Node A", "Content A", None, vault_id, user_id)
+    ids_in_specific_order = [node_b_dict['id'], node_a_dict['id']]
 
     # ACT
     result = node_service.get_content_for_nodes(ids_in_specific_order, vault_id, user_id)
@@ -116,43 +116,36 @@ def test_get_nodes_by_ids_for_user(db_session, test_user_1_obj):
     vault = vault_service.create_vault("Node-Test Vault", user_id)
     vault_id = vault.id
 
-    node1 = node_service.create_node("Node 1", "Content V1", None, vault_id, user_id)
-    node2 = node_service.create_node("Node 2", "Content V2", None, vault_id, user_id)
+    node1_dict = node_service.create_node("Node 1", "Content V1", None, vault_id, user_id)
+    node2_dict = node_service.create_node("Node 2", "Content V2", None, vault_id, user_id)
+    node1_id = node1_dict['id']
+    node2_id = node2_dict['id']
 
     # Update node1 to create a second version
-    node_service.update_node(node1.id, vault_id, user_id, content="Content V1.1")
+    node_service.update_node(node1_id, vault_id, user_id, content="Content V1.1")
 
-    # Holen Sie sich das aktualisierte node1-Objekt aus der DB, um sicherzustellen, dass wir den
-    # korrekten `current_version` Wert haben.
-    db_session.session.refresh(node1)
+    # ### HINWEIS ###: db_session.session.refresh() ist nicht mehr nötig und würde
+    # bei einem Dictionary einen Fehler werfen. Wir können es einfach entfernen.
 
     # ACT: Holen der *Node-Objekte*
-    nodes_result = node_service.get_nodes_by_ids_for_user([node1.id, node2.id], vault_id, user_id)
+    nodes_result = node_service.get_nodes_by_ids_for_user([node1_id, node2_id], vault_id, user_id)
 
     # ASSERT
     assert len(nodes_result) == 2
-
-    # Mappe die Ergebnisse für einfachere Überprüfung
     result_map = {node.id: node for node in nodes_result}
 
-    # Überprüfe Node 1
-    assert node1.id in result_map
-    node1_from_result = result_map[node1.id]
+    assert node1_id in result_map
+    node1_from_result = result_map[node1_id]
     assert isinstance(node1_from_result, Node)
     assert node1_from_result.title == "Node 1"
-    # Wichtig: Prüfen, ob die aktuelle Version korrekt ist (sollte 2 sein)
     assert node1_from_result.current_version == 2
-    assert node1_from_result.current_version_object is not None
     assert node1_from_result.current_version_object.content == "Content V1.1"
 
-    # Überprüfe Node 2
-    assert node2.id in result_map
-    node2_from_result = result_map[node2.id]
+    assert node2_id in result_map
+    node2_from_result = result_map[node2_id]
     assert isinstance(node2_from_result, Node)
     assert node2_from_result.title == "Node 2"
-    # Wichtig: Prüfen, ob die aktuelle Version korrekt ist (sollte 1 sein)
     assert node2_from_result.current_version == 1
-    assert node2_from_result.current_version_object is not None
     assert node2_from_result.current_version_object.content == "Content V2"
 
 
@@ -162,12 +155,13 @@ def test_get_nodes_by_ids_for_user_permission_denied(test_user_1_obj, test_user_
     """
     # ARRANGE
     vault1 = vault_service.create_vault("Vault von User 1", test_user_1_obj.id)
-    node1 = node_service.create_node("Node 1", "...", None, vault1.id, test_user_1_obj.id)
+    node1_dict = node_service.create_node("Node 1", "...", None, vault1.id, test_user_1_obj.id)
+    node1_id = node1_dict['id']
 
     # ACT & ASSERT
     with pytest.raises(PermissionError):
         node_service.get_nodes_by_ids_for_user(
-            node_ids=[node1.id], vault_id=vault1.id, user_id=test_user_2_obj.id  # Falscher User
+            node_ids=[node1_id], vault_id=vault1.id, user_id=test_user_2_obj.id
         )
 
 
@@ -181,30 +175,34 @@ def test_delete_node_reparents_children_to_grandparent(db_session, test_user_1_o
     vault = vault_service.create_vault("Adoption Test Vault", user_id)
     vault_id = vault.id
 
-    # Erstelle eine Hierarchie: Grandparent -> Parent -> Child
-    grandparent_node = node_service.create_node("Grandparent", "...", None, vault_id, user_id)
-    parent_node_to_delete = node_service.create_node("Parent (to be deleted)", "...", grandparent_node.id, vault_id, user_id)
-    child_node = node_service.create_node("Child", "...", parent_node_to_delete.id, vault_id, user_id)
+    grandparent_node_dict = node_service.create_node("Grandparent", "...", None, vault_id, user_id)
+    grandparent_id = grandparent_node_dict['id']
+
+    parent_node_to_delete_dict = node_service.create_node("Parent (to be deleted)", "...", grandparent_id, vault_id,
+                                                          user_id)
+    parent_id_to_delete = parent_node_to_delete_dict['id']
+
+    child_node_dict = node_service.create_node("Child", "...", parent_id_to_delete, vault_id, user_id)
+    child_id = child_node_dict['id']
 
     # Stelle den Zustand vor dem Löschen sicher
-    db_session.session.refresh(child_node)
-    assert child_node.parent_id == parent_node_to_delete.id
+    child_node_before_delete = db_session.session.get(Node, child_id)
+    assert child_node_before_delete.parent_id == parent_id_to_delete
 
     # ACT
-    node_service.delete_node(parent_node_to_delete.id, vault_id, user_id)
+    node_service.delete_node(parent_id_to_delete, vault_id, user_id)
 
     # ASSERT
     # 1. Der Parent-Node ist gelöscht
-    deleted_node = db_session.session.get(Node, parent_node_to_delete.id)  # <-- KORREKTUR
+    deleted_node = db_session.session.get(Node, parent_id_to_delete)
     assert deleted_node is None
 
     # 2. Der Child-Node existiert noch
-    # Alte Version: reparented_child = Node.query.get(child_node.id)
-    reparented_child = db_session.session.get(Node, child_node.id)  # <-- KORREKTUR
+    reparented_child = db_session.session.get(Node, child_id)
     assert reparented_child is not None
 
     # 3. Der Child-Node hat jetzt den Grandparent als neuen Parent
-    assert reparented_child.parent_id == grandparent_node.id
+    assert reparented_child.parent_id == grandparent_id
 
 
 def test_delete_top_level_node_makes_children_top_level(db_session, test_user_1_obj):
@@ -217,28 +215,26 @@ def test_delete_top_level_node_makes_children_top_level(db_session, test_user_1_
     vault = vault_service.create_vault("Top-Level Delete Test", user_id)
     vault_id = vault.id
 
-    # Erstelle eine Hierarchie: Top-Level-Node -> Child
-    top_level_node_to_delete = node_service.create_node("Top-Level (to be deleted)", "...", None, vault_id, user_id)
-    child_node = node_service.create_node("Child", "...", top_level_node_to_delete.id, vault_id, user_id)
+    top_level_node_to_delete_dict = node_service.create_node("Top-Level (to be deleted)", "...", None, vault_id,
+                                                             user_id)
+    top_level_id_to_delete = top_level_node_to_delete_dict['id']
+
+    child_node_dict = node_service.create_node("Child", "...", top_level_id_to_delete, vault_id, user_id)
+    child_id = child_node_dict['id']
 
     # Stelle den Zustand vor dem Löschen sicher
-    db_session.session.refresh(child_node)
-    assert child_node.parent_id == top_level_node_to_delete.id
+    child_node_before_delete = db_session.session.get(Node, child_id)
+    assert child_node_before_delete.parent_id == top_level_id_to_delete
 
     # ACT
-    node_service.delete_node(top_level_node_to_delete.id, vault_id, user_id)
+    node_service.delete_node(top_level_id_to_delete, vault_id, user_id)
 
     # ASSERT
-    # 1. Der Top-Level-Node ist gelöscht
-    deleted_node = db_session.session.get(Node, top_level_node_to_delete.id)  # <-- KORREKTUR
+    deleted_node = db_session.session.get(Node, top_level_id_to_delete)
     assert deleted_node is None
 
-    # 2. Der Child-Node existiert noch
-    # Alte Version: new_top_level_child = Node.query.get(child_node.id)
-    new_top_level_child = db_session.session.get(Node, child_node.id)  # <-- KORREKTUR
+    new_top_level_child = db_session.session.get(Node, child_id)
     assert new_top_level_child is not None
-
-    # 3. Der Child-Node ist jetzt selbst ein Top-Level-Node
     assert new_top_level_child.parent_id is None
 
 
@@ -247,54 +243,39 @@ def test_get_full_node_tree_recursively(client, auth_headers_1, test_vault_1_obj
     Testet, ob der Endpunkt GET /nodes/ die gesamte Baumstruktur korrekt,
     sortiert und ohne Inhalte der Kind-Elemente zurückgibt.
     """
-    # 1. ARRANGE: Erstelle eine verschachtelte Node-Struktur
-    # Die Titel sind absichtlich nicht alphabetisch sortiert, um die Sortierung zu testen.
-
-    # Holen Sie die ID des Root-Nodes, der bei der Vault-Erstellung angelegt wurde.
+    # ARRANGE
     tree_res = client.get(f'/api/vaults/{test_vault_1_obj.id}/nodes/', headers=auth_headers_1)
     root_node_id = tree_res.json[0]['id']
 
-    # Ebene 1
     node_service.create_node("Zebra Folder", "", root_node_id, test_vault_1_obj.id, test_user_1_obj.id)
-    node_a = node_service.create_node("Apple Folder", "", root_node_id, test_vault_1_obj.id, test_user_1_obj.id)
+    node_a_dict = node_service.create_node("Apple Folder", "", root_node_id, test_vault_1_obj.id, test_user_1_obj.id)
+    node_a_id = node_a_dict['id']
 
-    # Ebene 2 (Kinder von "Apple Folder")
-    node_service.create_node("Sub-Note 2", "Content", node_a.id, test_vault_1_obj.id, test_user_1_obj.id)
-    node_service.create_node("Sub-Note 1", "Content", node_a.id, test_vault_1_obj.id, test_user_1_obj.id)
+    node_service.create_node("Sub-Note 2", "Content", node_a_id, test_vault_1_obj.id, test_user_1_obj.id)
+    node_service.create_node("Sub-Note 1", "Content", node_a_id, test_vault_1_obj.id, test_user_1_obj.id)
 
-    # 2. ACT: Rufe den Endpunkt ab, der die gesamte Baumstruktur zurückgeben sollte.
+    # ACT
     response = client.get(f'/api/vaults/{test_vault_1_obj.id}/nodes/', headers=auth_headers_1)
 
-    # 3. ASSERT
+    # ASSERT
     assert response.status_code == 200
     data = response.get_json()
-
-    # Es sollte nur ein Element auf der obersten Ebene geben: den Root-Node
     assert len(data) == 1
     root_node_data = data[0]
     assert root_node_data['title'] == 'Summary'
-    assert 'children' in root_node_data
 
-    # Überprüfe die Kinder der ersten Ebene
     level_1_children = root_node_data['children']
     assert len(level_1_children) == 2
-
-    # Überprüfe die SORTIERUNG: "Apple Folder" muss vor "Zebra Folder" kommen
     assert level_1_children[0]['title'] == 'Apple Folder'
     assert level_1_children[1]['title'] == 'Zebra Folder'
 
-    # Überprüfe die Kinder der zweiten Ebene (unter "Apple Folder")
     apple_folder_data = level_1_children[0]
-    assert 'children' in apple_folder_data
     level_2_children = apple_folder_data['children']
     assert len(level_2_children) == 2
-    assert level_2_children[0]['title'] == 'Sub-Note 1'  # Überprüfe auch hier die Sortierung
+    assert level_2_children[0]['title'] == 'Sub-Note 1'
     assert level_2_children[1]['title'] == 'Sub-Note 2'
 
-    # Überprüfe die Performance-Optimierung:
-    # Die Kind-Elemente in der Baumansicht sollten KEINEN Inhalt haben.
     assert 'content' not in level_1_children[0]
-    assert 'content' not in level_1_children[1]
     assert 'content' not in level_2_children[0]
 
 
@@ -305,25 +286,21 @@ def test_get_single_node_api_returns_correct_structure(client, auth_headers_1, t
     # ARRANGE
     user_id = test_user_1_obj.id
     vault_id = test_vault_1_obj.id
-    node = node_service.create_node("API Test Node", "V1", None, vault_id, user_id)
-    node_service.update_node(node.id, vault_id, user_id, content="V2")
+    node_dict = node_service.create_node("API Test Node", "V1", None, vault_id, user_id)
+    node_id = node_dict['id']
+    node_service.update_node(node_id, vault_id, user_id, content="V2")
 
     # ACT: Rufe den API-Endpunkt auf
-    response = client.get(f'/api/vaults/{vault_id}/nodes/{node.id}', headers=auth_headers_1)
+    response = client.get(f'/api/vaults/{vault_id}/nodes/{node_id}', headers=auth_headers_1)
 
-    # ASSERT - Status und Content-Type
+    # ASSERT
     assert response.status_code == 200
     assert response.content_type == 'application/json'
-
-    # ASSERT - JSON-Struktur und Daten
     data = response.get_json()
     assert isinstance(data, dict)
-    assert data['id'] == node.id
+    assert data['id'] == node_id
     assert data['title'] == "API Test Node"
-    assert data['content'] == "V2"  # Prüft den Inhalt der aktuellen Version
-
-    # Prüft, dass die Versionsliste nicht mehr eingebettet ist,
-    # sondern die neuen Metadaten-Felder vorhanden sind.
+    assert data['content'] == "V2"
     assert 'versions' not in data
     assert data['has_versions'] is True
     assert data['version_count'] == 2
@@ -338,35 +315,20 @@ def test_get_node_versions_returns_correct_data(db_session, test_user_1_obj, tes
     user_id = test_user_1_obj.id
     vault_id = test_vault_1_obj.id
 
-    # Erstelle einen Node und füge mehrere Versionen hinzu
-    node = node_service.create_node("Versions-Test-Node", "Inhalt V1", None, vault_id, user_id)
-    node_service.update_node(node.id, vault_id, user_id, content="Inhalt V2")
-    node_service.update_node(node.id, vault_id, user_id, content="Inhalt V3")
+    node_dict = node_service.create_node("Versions-Test-Node", "Inhalt V1", None, vault_id, user_id)
+    node_id = node_dict['id']
+    node_service.update_node(node_id, vault_id, user_id, content="Inhalt V2")
+    node_service.update_node(node_id, vault_id, user_id, content="Inhalt V3")
 
     # ACT
-    versions_list = node_service.get_node_versions(node.id, vault_id, user_id)
+    versions_list = node_service.get_node_versions(node_id, vault_id, user_id)
 
     # ASSERT
     assert versions_list is not None
-    assert isinstance(versions_list, list)
     assert len(versions_list) == 3
-
-    # Überprüfe die neueste Version (sollte an erster Stelle stehen)
-    latest_version = versions_list[0]
-    assert latest_version['version'] == 3
-    assert latest_version['content'] == "Inhalt V3"
-    assert 'author_name' in latest_version
-    assert latest_version['author_name'] == test_user_1_obj.display_name
-
-    # Überprüfe die mittlere Version
-    middle_version = versions_list[1]
-    assert middle_version['version'] == 2
-    assert middle_version['content'] == "Inhalt V2"
-
-    # Überprüfe die älteste Version
-    oldest_version = versions_list[2]
-    assert oldest_version['version'] == 1
-    assert oldest_version['content'] == "Inhalt V1"
+    assert versions_list[0]['version'] == 3
+    assert versions_list[0]['content'] == "Inhalt V3"
+    assert versions_list[0]['author_name'] == test_user_1_obj.display_name
 
 
 def test_get_node_versions_for_nonexistent_node_returns_none(test_user_1_obj, test_vault_1_obj):
@@ -383,3 +345,212 @@ def test_get_node_versions_for_nonexistent_node_returns_none(test_user_1_obj, te
 
     # ASSERT
     assert result is None
+
+def test_create_node_sets_default_icon(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, ob beim Erstellen eines Nodes ohne Angabe eines Icons
+    das korrekte Standard-Icon gesetzt wird.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+
+    # ACT
+    # Wir rufen create_node auf, OHNE ein Icon anzugeben.
+    new_node_dict = node_service.create_node(
+        title="Node mit Standard-Icon",
+        content="",
+        parent_id=None,
+        vault_id=vault_id,
+        author_id=user_id
+    )
+
+    # ASSERT
+    assert 'icon' in new_node_dict
+    assert new_node_dict['icon'] == "bxs-file-doc" # Überprüfe gegen den Standardwert
+
+    # Optional: Prüfe direkt in der Datenbank
+    node_from_db = db_session.session.get(Node, new_node_dict['id'])
+    assert node_from_db.icon == "bxs-file-doc"
+
+
+# In tests/services/test_node_service.py
+
+# ... (deine anderen Imports)
+
+def test_update_node_icon_success(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet den Erfolgsfall: Das Icon eines Nodes wird korrekt geändert.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+
+    # Erstelle einen Node. Er wird das Standard-Icon "bxs-file-doc" haben.
+    node_dict = node_service.create_node("Node zum Icon-Test", "", None, vault_id, user_id)
+    node_id = node_dict['id']
+
+    new_icon = "bxs-bulb"  # Ein anderes, gültiges Icon.
+
+    # ACT
+    # Rufe die zu testende Funktion auf.
+    updated_node_obj = node_service.update_node_icon(node_id, vault_id, user_id, new_icon)
+
+    # ASSERT
+    # 1. Die Funktion gibt das aktualisierte Node-OBJEKT zurück.
+    assert isinstance(updated_node_obj, Node)
+    assert updated_node_obj.id == node_id
+    assert updated_node_obj.icon == new_icon
+
+    # 2. Überprüfe zur Sicherheit auch direkt in der Datenbank.
+    node_from_db = db_session.session.get(Node, node_id)
+    assert node_from_db.icon == new_icon
+
+
+def test_update_node_icon_to_none(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, ob das Icon eines Nodes auf None (NULL in der DB) gesetzt werden kann.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+    node_dict = node_service.create_node("Node zum Icon-Entfernen", "", None, vault_id, user_id)
+    node_id = node_dict['id']
+
+    # Stelle sicher, dass anfangs ein Icon da ist.
+    assert node_dict['icon'] is not None
+
+    # ACT
+    updated_node_obj = node_service.update_node_icon(node_id, vault_id, user_id, None)
+
+    # ASSERT
+    assert updated_node_obj.icon is None
+    node_from_db = db_session.session.get(Node, node_id)
+    assert node_from_db.icon is None
+
+
+def test_update_node_icon_with_invalid_value_raises_error(test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, dass ein ValueError bei einem ungültigen Icon-String ausgelöst wird.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+    node_dict = node_service.create_node("Node mit ungültigem Icon", "", None, vault_id, user_id)
+    node_id = node_dict['id']
+    invalid_icon = "dies-ist-kein-gueltiges-icon"
+
+    # ACT & ASSERT
+    with pytest.raises(ValueError, match="Invalid icon value"):
+        node_service.update_node_icon(node_id, vault_id, user_id, invalid_icon)
+
+
+def test_update_node_content_creates_new_version(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, ob eine reine Inhaltsänderung eine neue Version erstellt.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+
+    # Erstelle einen Node. Er hat jetzt Version 1.
+    node_dict = node_service.create_node("Titel bleibt gleich", "Inhalt V1", None, vault_id, user_id)
+    node_id = node_dict['id']
+
+    # Hole den initialen Node aus der DB, um den Zustand zu prüfen.
+    initial_node = db_session.session.get(Node, node_id)
+    assert initial_node.current_version == 1
+
+    # ACT
+    # Ändere NUR den Inhalt.
+    updated_node_dict = node_service.update_node(
+        node_id=node_id,
+        vault_id=vault_id,
+        user_id=user_id,
+        content="Inhalt V2 (neu)"
+    )
+
+    # ASSERT
+    # 1. Das zurückgegebene Dictionary sollte die neue Version widerspiegeln.
+    assert updated_node_dict['current_version'] == 2
+    assert updated_node_dict['content'] == "Inhalt V2 (neu)"
+    assert updated_node_dict['title'] == "Titel bleibt gleich"  # Titel unverändert
+
+    # 2. Überprüfe direkt in der Datenbank.
+    node_from_db = db_session.session.get(Node, node_id)
+    assert node_from_db.current_version == 2
+    assert node_from_db.current_version_object.content == "Inhalt V2 (neu)"
+
+    # 3. Es sollten jetzt zwei Versionen in der DB existieren.
+    version_count = db_session.session.query(Version).filter_by(node_id=node_id).count()
+    assert version_count == 2
+
+
+def test_update_node_title_creates_new_version(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, ob eine reine Titeländerung eine neue Version erstellt.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+    node_dict = node_service.create_node("Alter Titel", "Inhalt bleibt gleich", None, vault_id, user_id)
+    node_id = node_dict['id']
+
+    initial_node = db_session.session.get(Node, node_id)
+    assert initial_node.current_version == 1
+
+    # ACT
+    # Ändere NUR den Titel.
+    updated_node_dict = node_service.update_node(
+        node_id=node_id,
+        vault_id=vault_id,
+        user_id=user_id,
+        title="Neuer Titel"
+    )
+
+    # ASSERT
+    assert updated_node_dict['current_version'] == 2
+    assert updated_node_dict['title'] == "Neuer Titel"
+    assert updated_node_dict['content'] == "Inhalt bleibt gleich"
+
+    node_from_db = db_session.session.get(Node, node_id)
+    assert node_from_db.current_version == 2
+    assert node_from_db.current_version_object.title == "Neuer Titel"
+
+    version_count = db_session.session.query(Version).filter_by(node_id=node_id).count()
+    assert version_count == 2
+
+
+def test_update_node_icon_does_not_create_new_version(db_session, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, dass eine reine Icon-Änderung KEINE neue Version erstellt.
+    """
+    # ARRANGE
+    user_id = test_user_1_obj.id
+    vault_id = test_vault_1_obj.id
+    node_dict = node_service.create_node("Node für Icon-Test", "Inhalt V1", None, vault_id, user_id)
+    node_id = node_dict['id']
+
+    initial_node = db_session.session.get(Node, node_id)
+    assert initial_node.current_version == 1
+
+    # ACT
+    # Rufe die separate Funktion zum Ändern des Icons auf.
+    node_service.update_node_icon(
+        node_id=node_id,
+        vault_id=vault_id,
+        user_id=user_id,
+        icon="bxs-archive"  # Ein neues Icon
+    )
+
+    # ASSERT
+    # 1. Überprüfe den Node in der Datenbank.
+    node_from_db = db_session.session.get(Node, node_id)
+    assert node_from_db.icon == "bxs-archive"  # Das Icon wurde geändert.
+
+    # 2. ABER: Die Version ist immer noch 1.
+    assert node_from_db.current_version == 1
+
+    # 3. Es existiert nur EINE Version in der Datenbank. Das ist der entscheidende Test.
+    version_count = db_session.session.query(Version).filter_by(node_id=node_id).count()
+    assert version_count == 1

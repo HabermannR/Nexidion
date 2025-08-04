@@ -68,12 +68,34 @@ def test_stream_new_message_success_and_db_persistence(
 
     # b) Erstelle die notwendigen Daten über die Services
     session = chat_service.create_new_session(test_vault_1_obj.id, test_user_1_obj.id)
-    node1 = node_service.create_node("Node 1", "Content V1", None, test_vault_1_obj.id, test_user_1_obj.id)
-    node_service.update_node(node1.id, test_vault_1_obj.id, test_user_1_obj.id, content="Content V2")
-    node2 = node_service.create_node("Node 2", "Other content", None, test_vault_1_obj.id, test_user_1_obj.id)
+
+    # create_node gibt ein Dictionary zurück
+    node1_dict = node_service.create_node(
+        title="Node 1",
+        content="Content V1",
+        parent_id=None,
+        vault_id=test_vault_1_obj.id,
+        author_id=test_user_1_obj.id
+    )
+    node1_id = node1_dict['id']  # Hol die ID aus dem Dictionary
+
+    # Aktualisiere den Node, um eine zweite Version zu erstellen
+    node_service.update_node(node1_id, test_vault_1_obj.id, test_user_1_obj.id, content="Content V2")
+
+    # Erstelle den zweiten Node
+    # ### KORREKTUR ###: `node2` ist auch ein Dictionary
+    node2_dict = node_service.create_node(
+        title="Node 2",
+        content="Other content",
+        parent_id=None,
+        vault_id=test_vault_1_obj.id,
+        author_id=test_user_1_obj.id
+    )
+    node2_id = node2_dict['id']  # Hol die ID aus dem Dictionary
 
     # Wir wollen die neueste Version von node1 (V2) und node2 (V1) als Kontext
-    node_ids_for_context = [node1.id, node2.id]
+    # ### KORREKTUR ###: Verwende die aus den Dictionaries extrahierten IDs
+    node_ids_for_context = [node1_id, node2_id]
 
     # 2. ACT
     stream_generator = chat_service.stream_new_message(
@@ -84,6 +106,7 @@ def test_stream_new_message_success_and_db_persistence(
         node_ids=node_ids_for_context
     )
     # Konsumiere den Stream, um die Aktionen auszulösen
+    # Annahme: _consume_stream ist eine Hilfsfunktion, die du definiert hast.
     events, full_response_content = _consume_stream(stream_generator)
 
     # 3. ASSERT
@@ -93,6 +116,7 @@ def test_stream_new_message_success_and_db_persistence(
 
     # b) Überprüfe den Zustand der Datenbank (das ist der wichtigste Teil)
     db_session.session.refresh(session)
+    # Annahme: 'messages' ist die back-populierte relationship in ChatSession
     messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
 
     assert len(messages) == 2  # Eine User-Nachricht, eine Assistenten-Nachricht

@@ -1,4 +1,4 @@
-// src/features/vaults/vaults.loader.js
+// src/features/vaults/vaults.manager.loader.js
 
 import apiClient from '../../api/apiClient';
 

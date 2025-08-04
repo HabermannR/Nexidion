@@ -1,6 +1,6 @@
 # tests/api/v2/test_nodes_api.py
-
 import pytest
+from backend.services import node_service
 
 
 # --- Helper-Funktion für diese Testdatei ---
@@ -329,7 +329,7 @@ def test_create_node_with_parent_from_other_vault_fails(client, auth_headers_1, 
 
     response = client.post(f'/api/vaults/{test_vault_1_obj.id}/nodes/', headers=auth_headers_1, json=node_data)
     assert response.status_code == 403  # Oder 400, aber 403 ist semantisch passender hier.
-    assert "Parent node not found" in response.get_json()['error']
+    assert "Cannot assign a parent from a different vault" in response.get_json()['error']
 
 
 @pytest.mark.parametrize("payload, expected_error", [
@@ -354,3 +354,98 @@ def test_bulk_get_nodes_with_non_existent_id_fails(client, auth_headers_1, test_
     response = client.post(f'/api/vaults/{vault_id}/nodes/bulk-get', headers=auth_headers_1, json=payload)
     assert response.status_code == 404
     assert "not found" in response.get_json()['error']
+
+
+def test_api_update_node_icon_success(client, auth_headers_1, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet den "Happy Path" für den PATCH /.../icon Endpunkt.
+    """
+    # ARRANGE
+    # Erstelle einen Node über den Service, um ein Objekt zum Ändern zu haben.
+    node_dict = node_service.create_node("API Icon Test", "", None, test_vault_1_obj.id, test_user_1_obj.id)
+    node_id = node_dict['id']
+
+    payload = {'icon': 'bxs-brain'}  # Ein gültiges, neues Icon
+
+    # ACT
+    response = client.patch(
+        f'/api/vaults/{test_vault_1_obj.id}/nodes/{node_id}/icon',
+        headers=auth_headers_1,
+        json=payload
+    )
+
+    # ASSERT
+    assert response.status_code == 200
+    response_data = response.get_json()
+    assert response_data['id'] == node_id
+    assert response_data['icon'] == 'bxs-brain'
+
+    # Zusätzliche Überprüfung: Hole den Node erneut und prüfe, ob die Änderung persistent ist.
+    get_response = client.get(f'/api/vaults/{test_vault_1_obj.id}/nodes/{node_id}', headers=auth_headers_1)
+    assert get_response.get_json()['icon'] == 'bxs-brain'
+
+
+def test_api_update_node_icon_to_null(client, auth_headers_1, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, ob das Icon via API auf `null` gesetzt werden kann.
+    """
+    # ARRANGE
+    node_dict = node_service.create_node("API Icon auf Null", "", None, test_vault_1_obj.id, test_user_1_obj.id)
+    node_id = node_dict['id']
+
+    payload = {'icon': None}  # JSON `null` wird zu Python `None`
+
+    # ACT
+    response = client.patch(
+        f'/api/vaults/{test_vault_1_obj.id}/nodes/{node_id}/icon',
+        headers=auth_headers_1,
+        json=payload
+    )
+
+    # ASSERT
+    assert response.status_code == 200
+    assert response.get_json()['icon'] is None
+
+
+def test_api_update_node_icon_with_invalid_icon_returns_400(client, auth_headers_1, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, dass die API einen 400 Bad Request bei einem ungültigen Icon zurückgibt.
+    """
+    # ARRANGE
+    node_dict = node_service.create_node("API Ungültiges Icon", "", None, test_vault_1_obj.id, test_user_1_obj.id)
+    node_id = node_dict['id']
+
+    payload = {'icon': 'ungueltiger-string-123'}
+
+    # ACT
+    response = client.patch(
+        f'/api/vaults/{test_vault_1_obj.id}/nodes/{node_id}/icon',
+        headers=auth_headers_1,
+        json=payload
+    )
+
+    # ASSERT
+    assert response.status_code == 400  # Weil ein ValueError im Service zu 400 wird
+    assert "Invalid icon value" in response.get_json()['error']
+
+
+def test_api_update_node_icon_with_missing_key_returns_400(client, auth_headers_1, test_user_1_obj, test_vault_1_obj):
+    """
+    Testet, dass die API einen 400 Bad Request zurückgibt, wenn der 'icon'-Schlüssel fehlt.
+    """
+    # ARRANGE
+    node_dict = node_service.create_node("API Fehlender Key", "", None, test_vault_1_obj.id, test_user_1_obj.id)
+    node_id = node_dict['id']
+
+    payload = {'falscher_key': 'bxs-brain'}  # Der 'icon'-Key fehlt
+
+    # ACT
+    response = client.patch(
+        f'/api/vaults/{test_vault_1_obj.id}/nodes/{node_id}/icon',
+        headers=auth_headers_1,
+        json=payload
+    )
+
+    # ASSERT
+    assert response.status_code == 400
+    assert "Request body must contain 'icon'" in response.get_json()['error']

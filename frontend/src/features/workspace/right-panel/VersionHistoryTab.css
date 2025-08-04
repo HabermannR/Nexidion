@@ -1,0 +1,43 @@
+/* src/components/VersionHistoryTab.css */
+
+.version-list-item {
+    cursor: pointer;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    /* Übergang für einen sanften Farbwechsel */
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* Hover-Effekt für normale Listeneinträge (nicht die aktive 'base'-Version) */
+.version-list-item:not(.active):hover {
+    background-color: #f8f9fa; /* Standard Bootstrap Hover-Grau */
+}
+
+/* Stil für die zweite, zum Vergleich ausgewählte Version (hellblau) */
+.version-list-item.diff-compare-active {
+    color: #0c5460 !important; /* Dunkler Text für Kontrast */
+    background-color: #d1ecf1 !important; /* Hellblaues Hintergrund */
+    border-color: #bee5eb !important;
+}
+
+/* Verhindert, dass der Hover-Effekt das Hellblau der 'compare'-Version überschreibt */
+.version-list-item.diff-compare-active:hover {
+    background-color: #c1e6ee !important; /* Ein etwas dunkleres Blau beim Hovern */
+}
+
+/*
+ * KORREKTUR FÜR BUTTON-HOVER
+ * Wir zielen direkt auf den Button innerhalb des Listeneintrags.
+*/
+
+/* Hover-Effekt für den "Vergleichen"-Button (outline-info) */
+.version-list-item .btn-outline-info:hover {
+    background-color: #17a2b8; /* Bootstrap 'info' color */
+    color: white;
+}
+
+/* Hover-Effekt für den "Vergleich aufheben"-Button (info) */
+.version-list-item .btn-info:hover {
+    background-color: #138496; /* Dunklere Variante von 'info' */
+    border-color: #117a8b;
+}

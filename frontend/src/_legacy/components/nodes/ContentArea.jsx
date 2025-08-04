@@ -6,8 +6,8 @@ import Button from 'react-bootstrap/Button';
 
 // Import der Unterkomponenten
 import DiffViewer from '../common/DiffViewer';
-import ContentHeader from '../../../features/nodes/ui/ContentHeader.jsx';
-import NodeEditor from '../../../features/nodes/ui/NodeEditor.jsx';
+import ContentHeader from '../../../features/workspace/center-panel/ContentHeader.jsx';
+import NodeEditor from '../../../features/workspace/center-panel/NodeEditor.jsx';
 import ResizableImage from '../common/ResizableImage.jsx'; 
 
 // Import der CSS-Datei

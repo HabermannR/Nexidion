@@ -8,8 +8,8 @@ import {
 } from "react-router-dom";
 import {useDrag, useDrop} from "react-dnd"; // useDragLayer wurde entfernt
 // getEmptyImage wird nicht mehr benötigt
-import apiClient from "../../api/apiClient";
-import {useContextStore} from "../context/contextStore.js";
+import apiClient from "../../../api/apiClient.js";
+import { useWorkspaceStore } from '../workspaceStore.js';
 import "./ProjectTree.css";
 
 const ItemTypes = {NODE: "NODE"};
@@ -27,12 +27,7 @@ const TreeNode = React.memo(({node, onAddNode, onMoveNode}) => {
     const wrapperRef = useRef(null);
     const dropRef = useRef(null);
 
-    const {
-        collapsedNodes,
-        toggleNodeCollapse,
-        selectedNodeIds,
-        toggleNodeSelection,
-    } = useContextStore();
+    const { collapsedNodes, toggleNodeCollapse, selectedNodeIds, toggleNodeSelection, activeNodeId } = useWorkspaceStore();
     const isSelected = selectedNodeIds.has(node.id);
     const isExpanded = !collapsedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;

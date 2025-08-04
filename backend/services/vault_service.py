@@ -56,13 +56,14 @@ def create_vault(name: str, owner_id: int) -> Vault:
         db.session.add(new_vault)
         db.session.flush()
 
-        root_node = Node(title="Summary", vault_id=new_vault.id, parent_id=None, current_version=1)
+        root_node = Node(vault_id=new_vault.id, parent_id=None, current_version=1)
         db.session.add(root_node)
         db.session.flush()
 
         initial_version = Version(
             node_id=root_node.id,
             version=1,
+            title="Summary",
             content=f"This is the root node for the '{name_stripped}' vault.",
             author_id=owner_id
         )

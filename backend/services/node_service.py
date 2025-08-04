@@ -8,6 +8,7 @@ from sqlalchemy import case, func, select
 from .vault_service import _verify_vault_access
 from ..models import db, Node, Version
 
+DEFAULT_NODE_ICON = "bxs-file-doc"
 # Konstante mit allen erlaubten Icon-Strings
 ALLOWED_ICONS: Set[str] = {
     # Ordner/Container
@@ -97,20 +98,41 @@ def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user
 def get_nodes_as_tree(vault_id: int, user_id: int, v3_mode: bool = False) -> list[dict]:
     """
     Holt die komplette Node-Hierarchie als Baumstruktur.
+    Sortiert jetzt explizit auf Query-Ebene.
     """
     _verify_vault_access(vault_id, user_id)
     root_nodes = (
         Node.query
         .options(
+            # Wir laden die Kinder und deren Kinder...
             subqueryload(Node.children).subqueryload(Node.children),
-            contains_eager(Node.current_version_object)
+            # ...und stellen sicher, dass die aktuelle Version für die Sortierung verfügbar ist.
+            joinedload(Node.current_version_object)
         )
-        .join(Node.current_version_object, isouter=True)
         .filter(Node.vault_id == vault_id, Node.parent_id.is_(None))
-        .order_by(Node.title)
+        # +++ HINZUGEFÜGT: Explizite Sortierung in der Abfrage +++
+        .join(Node.current_version_object)  # Joinen, um auf den Titel der Version zugreifen zu können
+        .order_by(Version.title)  # Sortiere nach dem Titel in der Version-Tabelle
         .all()
     )
-    return [node.to_dict(include_children=True, include_content=False) for node in root_nodes]
+
+    # WICHTIG: Da die Sortierung in der `relationship` nicht mehr greift,
+    # müssen wir die Kinder möglicherweise auch im Python-Code sortieren, wenn die DB-Sortierung nicht tief genug geht.
+    # In den meisten Fällen ist die DB-Sortierung der Root-Nodes aber ausreichend.
+    # Für eine perfekte Sortierung auf allen Ebenen müsste man die `to_dict`-Methode anpassen.
+
+    # Für eine perfekte Sortierung auf allen Ebenen:
+    def sorted_to_dict(node):
+        node_dict = node.to_dict(include_children=False,
+                                 include_content=False)  # Kinder nicht rekursiv von to_dict holen lassen
+
+        # Kinder manuell holen und sortieren
+        sorted_children = sorted(node.children, key=lambda child: child.title or "")
+        node_dict['children'] = [sorted_to_dict(child) for child in sorted_children]
+
+        return node_dict
+
+    return [sorted_to_dict(node) for node in root_nodes]
 
 
 def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False) -> list[dict]:
@@ -120,26 +142,42 @@ def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False) -> lis
         Node.query
         .options(joinedload(Node.current_version_object))
         .filter_by(vault_id=vault_id)
-        .order_by(Node.title)
+        # +++ GEÄNDERT +++
+        .join(Node.current_version_object)
+        .order_by(Version.title)
         .all()
     )
     return [node.to_dict(include_content=True) for node in nodes]
 
 
 def find_node_by_title(title: str, vault_id: int, user_id: int) -> dict | None:
-    """Findet den besten Treffer für einen Node-Titel."""
+    """Findet den besten Treffer für einen Node-Titel in der Versions-Tabelle."""
     _verify_vault_access(vault_id, user_id)
     if not title or not title.strip():
         raise ValueError("Search title cannot be empty")
     search_term = f"%{title}%"
-    relevance = case((Node.title.ilike(title), 0), else_=1)
-    node = (
-        Node.query
-        .options(joinedload(Node.current_version_object))
-        .filter(Node.vault_id == vault_id, Node.title.ilike(search_term))
-        .order_by(relevance, Node.title)
-        .first()
+
+    # +++ GEÄNDERT +++
+    # Die Logik wird komplexer, da wir über Versionen suchen müssen.
+    # Wir suchen nach Versionen, die dem Titel entsprechen und holen uns den zugehörigen Node.
+    relevance = case((Version.title.ilike(title), 0), else_=1)
+
+    # Finde die relevanteste Version, die zur aktuellen Version eines Nodes gehört.
+    subquery = (
+        select(Version.node_id)
+        .join(Node, Version.node_id == Node.id)
+        .filter(
+            Node.vault_id == vault_id,
+            Version.title.ilike(search_term),
+            Node.current_version == Version.version  # Nur aktuelle Titel durchsuchen
+        )
+        .order_by(relevance, Version.title)
+        .limit(1)
+        .scalar_subquery()
     )
+
+    node = Node.query.options(joinedload(Node.current_version_object)).filter(Node.id == subquery).first()
+
     return node.to_dict(include_content=True) if node else None
 
 
@@ -220,52 +258,107 @@ def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int) -> D
 # ========================================================================
 # WRITE OPERATIONS
 # ========================================================================
-
-def create_node(title: str, content: str, parent_id: str | None, vault_id: int, author_id: int) -> Node:
-    """Erstellt einen neuen Node und seine initiale Version."""
+def create_node(
+        title: str,
+        content: str,
+        parent_id: Optional[str],
+        vault_id: int,
+        author_id: int,
+        icon: Optional[str] = None  # <--- NEUES, OPTIONALES ARGUMENT
+) -> dict:
+    """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     _verify_vault_access(vault_id, author_id)
+    if not title or not title.strip():
+        raise ValueError("Title cannot be empty.")
+
     if parent_id:
-        parent_node = Node.query.filter_by(id=parent_id, vault_id=vault_id).first()
+        parent_node = db.session.get(Node, parent_id)
         if not parent_node:
-            raise ValueError("Parent node not found in the specified vault.")
+            raise ValueError(f"Parent node with ID {parent_id} not found.")
+        if parent_node.vault_id != vault_id:
+            raise PermissionError("Cannot assign a parent from a different vault.")
 
-    new_node = Node(title=title, parent_id=parent_id, current_version=1, vault_id=vault_id)
+    # ### KORREKTUR ###
+    # Bestimme den Icon-Wert. Wenn keiner übergeben wird, nimm den Standard.
+    final_icon = icon if icon is not None else DEFAULT_NODE_ICON
+
+    # Erstelle den Node jetzt MIT dem Icon.
+    new_node = Node(
+        parent_id=parent_id,
+        current_version=1,
+        vault_id=vault_id,
+        icon=final_icon  # <--- HIER WIRD DAS ICON GESETZT
+    )
     db.session.add(new_node)
-    db.session.flush()  # We need the new_node.id for the version
+    db.session.flush()
 
-    initial_version = Version(node_id=new_node.id, version=1, content=content, author_id=author_id)
+    # Der Rest der Funktion bleibt gleich...
+    initial_version = Version(
+        node_id=new_node.id,
+        version=1,
+        title=title,
+        content=content,
+        author_id=author_id
+    )
     db.session.add(initial_version)
 
     db.session.commit()
-    return new_node
+    return new_node.to_dict()
 
 
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,
-                content: Optional[str] = None) -> Node:
-    """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt eine neue Version."""
+                content: Optional[str] = None) -> dict:
+    """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt IMMER eine neue Version."""
     _verify_vault_access(vault_id, user_id)
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).options(joinedload(Node.current_version_object)).first()
     if not node:
         raise ValueError("Node not found in the specified vault")
 
-    current_title = node.title
-    current_content = node.current_version_object.content if node.current_version_object else ""
+    # +++ GEÄNDERT +++
+    # Wir holen uns die aktuellen Werte aus der letzten Version.
+    last_version = node.current_version_object
+    if not last_version:
+        raise ValueError("Cannot update a node with no existing versions.")
+
+    current_title = last_version.title
+    current_content = last_version.content
+
+    # Wenn weder Titel noch Inhalt übergeben wurden, gibt es nichts zu tun.
+    if title is None and content is None:
+        return node.to_dict()
+
     new_title = title if title is not None else current_title
     new_content = content if content is not None else current_content
 
+    # Wir erstellen keine neue Version, wenn sich absolut nichts geändert hat.
     if new_title == current_title and new_content == current_content:
-        return node  # Keine Änderung, keine neue Version
+        return node.to_dict()
 
-    next_version_number = (db.session.query(func.max(Version.version)).filter(
-        Version.node_id == node.id).scalar() or 0) + 1
-    new_version = Version(node_id=node.id, version=next_version_number, content=new_content, author_id=user_id)
+    # Der Titel darf nicht leer sein.
+    if not new_title or not new_title.strip():
+        raise ValueError("Title cannot be empty.")
+
+    next_version_number = node.current_version + 1
+
+    new_version = Version(
+        node_id=node.id,
+        version=next_version_number,
+        title=new_title,  # Neuer Titel hier
+        content=new_content,
+        author_id=user_id
+    )
     db.session.add(new_version)
 
-    node.title = new_title
+    # Der Node selbst wird nur noch aktualisiert, um auf die neue Version zu zeigen.
+    # --- ENTFERNT --- node.title = new_title
     node.current_version = next_version_number
     db.session.commit()
     db.session.refresh(node)
-    return node
+
+    # Lade die gerade erstellte Version, um sie mit `to_dict` zurückzugeben
+    updated_node_with_new_version = Node.query.options(joinedload(Node.current_version_object)).filter_by(
+        id=node_id).one()
+    return updated_node_with_new_version.to_dict()
 
 
 def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: int) -> Node:
