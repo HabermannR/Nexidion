@@ -2,12 +2,15 @@
 
 import { redirect } from "react-router-dom";
 import apiClient from "../../api/apiClient.js";
-import { useWorkspaceStore } from "./workspaceStore.js";
 
-/**
- * RADIKALE VEREINFACHUNG: Alle erfolgreichen Mutationen redirecten zur sauberen URL.
- * Dadurch zeigen sie automatisch die neueste Version, ohne komplexe useEffect-Logik.
- */
+
+// WICHTIG: Füge einen Timestamp als Query-Parameter hinzu, um Cache zu umgehen
+const createFreshRedirect = (path) => {
+    const url = new URL(path, 'http://localhost'); // Base URL nur für URL-Konstruktion
+    url.searchParams.set('_t', Date.now().toString());
+    return redirect(url.pathname + url.search);
+};
+
 export async function nodeAction({ request, params }) {
     const { vaultId, nodeId } = params;
     const formData = await request.formData();
@@ -20,27 +23,26 @@ export async function nodeAction({ request, params }) {
         if (intent === "updateContent") {
             const payload = {
                 content: formData.get("content"),
-                title: formData.get("title"), // Titel mitsenden damit er nicht überschrieben wird
+                title: formData.get("title"),
             };
 
             await apiClient.put(`/api/vaults/${vaultId}/nodes/${nodeId}`, payload);
             console.log('[ACTION] updateContent erfolgreich - redirect zur sauberen URL');
 
-            // REDIRECT statt return {ok: true} - das ist der Schlüssel!
-            return redirect(`/vaults/${vaultId}/nodes/${nodeId}`);
+            return createFreshRedirect(`/vaults/${vaultId}/nodes/${nodeId}`);
         }
 
         // --- INTENT: TITEL ÄNDERN ---
         if (intent === "renameNode") {
             const payload = {
                 title: formData.get("title"),
-                content: formData.get("content"), // Inhalt mitsenden damit er nicht verloren geht
+                content: formData.get("content"),
             };
 
             await apiClient.put(`/api/vaults/${vaultId}/nodes/${nodeId}`, payload);
             console.log('[ACTION] renameNode erfolgreich - redirect zur sauberen URL');
 
-            return redirect(`/vaults/${vaultId}/nodes/${nodeId}`);
+            return createFreshRedirect(`/vaults/${vaultId}/nodes/${nodeId}`);
         }
 
         // --- INTENT: ICON ÄNDERN ---
@@ -53,8 +55,7 @@ export async function nodeAction({ request, params }) {
 
             console.log('[ACTION] changeIcon erfolgreich - redirect zur sauberen URL');
 
-            // AUCH HIER: Redirect statt return {ok: true}
-            return redirect(`/vaults/${vaultId}/nodes/${nodeId}`);
+            return createFreshRedirect(`/vaults/${vaultId}/nodes/${nodeId}`);
         }
 
         // --- INTENT: NEUEN NODE ERSTELLEN ---
@@ -69,26 +70,22 @@ export async function nodeAction({ request, params }) {
             const newNode = response.data;
 
             console.log('[ACTION] createNode erfolgreich - redirect zum neuen Node');
-            return redirect(`/vaults/${vaultId}/nodes/${newNode.id}`);
+            return createFreshRedirect(`/vaults/${vaultId}/nodes/${newNode.id}`);
         }
 
         // --- INTENT: NODE LÖSCHEN ---
         if (intent === "deleteNode") {
-            // Holen die parentId aus den Formulardaten
             const parentId = formData.get("parentId");
 
             await apiClient.delete(`/api/vaults/${vaultId}/nodes/${nodeId}`);
 
-            // Lokalen Zustand aufräumen
-            //useWorkspaceStore.getState().removeNodeFromContext(nodeId);
-
             // Entscheiden, wohin umgeleitet wird
             if (parentId) {
                 console.log(`[ACTION] deleteNode erfolgreich - redirect zum Parent-Node ${parentId}`);
-                return redirect(`/vaults/${vaultId}/nodes/${parentId}`);
+                return createFreshRedirect(`/vaults/${vaultId}/nodes/${parentId}`);
             } else {
                 console.log('[ACTION] deleteNode erfolgreich - redirect zur Vault-Wurzel (kein Parent)');
-                return redirect(`/vaults/${vaultId}`);
+                return createFreshRedirect(`/vaults/${vaultId}`);
             }
         }
 
@@ -99,8 +96,6 @@ export async function nodeAction({ request, params }) {
         const errorMessage = error.response?.data?.error || "Ein unbekannter Fehler ist aufgetreten.";
         console.error(`[NODE ACTION] Fehler bei Intent '${intent}':`, errorMessage);
 
-        // Bei Fehlern geben wir KEIN redirect zurück, sondern ein Fehlerobjekt
-        // Das erlaubt der UI, den Fehler anzuzeigen
         return { ok: false, error: errorMessage };
     }
 }

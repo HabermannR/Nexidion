@@ -63,17 +63,34 @@ const router = createBrowserRouter([
                 id: 'workspace-layout',
                 element: <WorkspaceLayout />,
                 loader: vaultTreeLoader,
-                // +++ KORRIGIERTE LOGIK +++
-                shouldRevalidate: ({ currentParams, nextParams, formMethod }) => {
-                    // Revalidiere, wenn die Vault-ID sich ändert (Navigation)
+                shouldRevalidate: ({ currentParams, nextParams, formMethod, currentUrl, nextUrl }) => {
+                    console.log('=== WORKSPACE shouldRevalidate DEBUG ===');
+                    console.log('currentParams:', currentParams);
+                    console.log('nextParams:', nextParams);
+                    console.log('formMethod:', formMethod);
+                    console.log('currentUrl:', currentUrl?.pathname + (currentUrl?.search || ''));
+                    console.log('nextUrl:', nextUrl?.pathname + (nextUrl?.search || ''));
+
+                    // Revalidiere bei Vault-ID Änderung
                     if (currentParams.vaultId !== nextParams.vaultId) {
+                        console.log('→ REVALIDATE: vaultId changed');
                         return true;
                     }
-                    // ODER wenn eine schreibende Aktion (POST, PUT, DELETE, etc.) stattgefunden hat
+
+                    // Revalidiere bei schreibenden Aktionen
                     if (formMethod && formMethod.toLowerCase() !== 'get') {
+                        console.log('→ REVALIDATE: formMethod is write operation');
                         return true;
                     }
-                    // In allen anderen Fällen nicht revalidieren
+
+                    // Revalidiere bei Pfad-Änderung ODER wenn _t Parameter vorhanden ist (Cache-Buster)
+                    if (currentUrl?.pathname !== nextUrl?.pathname ||
+                        nextUrl?.searchParams?.has('_t')) {
+                        console.log('→ REVALIDATE: pathname changed or cache buster present');
+                        return true;
+                    }
+
+                    console.log('→ NO REVALIDATE');
                     return false;
                 },
                 children: [
