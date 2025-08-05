@@ -1,13 +1,13 @@
-// src/features/workspace/right-panel/ChatTab.jsx
-import React from 'react';
-import { Form } from 'react-bootstrap';
+// IN: src/features/workspace/right-panel/ChatTab.jsx
 
-export default function ChatTab({ nodeId }) {
+import React from 'react';
+import Chat from './Chat/Chat'; // NEU: Importiere die Haupt-Chat-Komponente
+
+export default function ChatTab() {
     return (
-        <div className="p-3">
-            <h6 className="text-muted">Chat</h6>
-            <p className="small">Chat-Funktionalität für Node <strong>{nodeId || 'N/A'}</strong>.</p>
-            <Form.Control as="textarea" rows={3} placeholder="Stelle eine Frage..." />
-        </div>
+        // Wir brauchen keinen zusätzlichen Wrapper, die Chat-Komponente bringt
+        // ihr eigenes Layout mit und soll den gesamten verfügbaren Platz ausfüllen.
+        // Das Styling in `Chat.css` (h-100) sorgt dafür.
+        <Chat />
     );
 }

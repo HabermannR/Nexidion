@@ -363,7 +363,7 @@ def test_api_update_node_icon_success(client, auth_headers_1, test_user_1_obj, t
     # ARRANGE
     # Erstelle einen Node über den Service, um ein Objekt zum Ändern zu haben.
     node_dict = node_service.create_node("API Icon Test", "", None, test_vault_1_obj.id, test_user_1_obj.id)
-    node_id = node_dict['id']
+    node_id = node_dict.id
 
     payload = {'icon': 'bxs-brain'}  # Ein gültiges, neues Icon
 
@@ -391,7 +391,7 @@ def test_api_update_node_icon_to_null(client, auth_headers_1, test_user_1_obj, t
     """
     # ARRANGE
     node_dict = node_service.create_node("API Icon auf Null", "", None, test_vault_1_obj.id, test_user_1_obj.id)
-    node_id = node_dict['id']
+    node_id = node_dict.id
 
     payload = {'icon': None}  # JSON `null` wird zu Python `None`
 
@@ -413,7 +413,7 @@ def test_api_update_node_icon_with_invalid_icon_returns_400(client, auth_headers
     """
     # ARRANGE
     node_dict = node_service.create_node("API Ungültiges Icon", "", None, test_vault_1_obj.id, test_user_1_obj.id)
-    node_id = node_dict['id']
+    node_id = node_dict.id
 
     payload = {'icon': 'ungueltiger-string-123'}
 
@@ -435,7 +435,7 @@ def test_api_update_node_icon_with_missing_key_returns_400(client, auth_headers_
     """
     # ARRANGE
     node_dict = node_service.create_node("API Fehlender Key", "", None, test_vault_1_obj.id, test_user_1_obj.id)
-    node_id = node_dict['id']
+    node_id = node_dict.id
 
     payload = {'falscher_key': 'bxs-brain'}  # Der 'icon'-Key fehlt
 

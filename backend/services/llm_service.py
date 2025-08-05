@@ -143,7 +143,7 @@ def generate_structured_response(system_prompt: str, user_prompt: str, model: st
     return content
 
 
-def generate_chat_title(chat_history: str, model: str, max_tokens: int = 100) -> str:
+def generate_chat_title(chat_history: str, model: str, max_tokens: int = 1000) -> str:
     system_prompt = "Based on the conversation, create a short, concise title (4-6 words max). Use the provided tool."
 
     # --- CONFIG-DRIVEN LOGIC as per "LLM choice v3" ---

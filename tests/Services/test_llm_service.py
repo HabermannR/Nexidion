@@ -77,7 +77,7 @@ def test_stream_new_message_success_and_db_persistence(
         vault_id=test_vault_1_obj.id,
         author_id=test_user_1_obj.id
     )
-    node1_id = node1_dict['id']  # Hol die ID aus dem Dictionary
+    node1_id = node1_dict.id
 
     # Aktualisiere den Node, um eine zweite Version zu erstellen
     node_service.update_node(node1_id, test_vault_1_obj.id, test_user_1_obj.id, content="Content V2")
@@ -91,7 +91,7 @@ def test_stream_new_message_success_and_db_persistence(
         vault_id=test_vault_1_obj.id,
         author_id=test_user_1_obj.id
     )
-    node2_id = node2_dict['id']  # Hol die ID aus dem Dictionary
+    node2_id = node2_dict.id
 
     # Wir wollen die neueste Version von node1 (V2) und node2 (V1) als Kontext
     # ### KORREKTUR ###: Verwende die aus den Dictionaries extrahierten IDs

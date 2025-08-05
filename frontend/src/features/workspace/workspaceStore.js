@@ -37,6 +37,57 @@ export const useWorkspaceStore = create(
                     titleModel: state.titleModel || availableModels[0],
                 };
             }),
+            // ===============================================
+            // NEU: Chat-Aktionen
+            // ===============================================
+            startNewChat: () => set({
+                activeChatSessionId: null,
+                activeChatTitle: 'New Chat',
+                activeChatMessages: []
+            }),
+
+            // Setzt eine komplette Session (z.B. nach dem Laden aus der History)
+            setActiveChatSession: (sessionId, title, messages) => set({
+                activeChatSessionId: sessionId,
+                activeChatTitle: title || 'Chat',
+                activeChatMessages: messages || [],
+            }),
+
+            // Fügt eine neue Nachricht zum Live-Puffer hinzu
+            appendMessage: (message) => set(state => {
+                // ==========================================================
+                // HIER IST DIE KORREKTUR
+                // ==========================================================
+                // Stelle sicher, dass state.activeChatMessages immer ein Array ist, bevor du den Spread-Operator verwendest.
+                const currentMessages = Array.isArray(state.activeChatMessages) ? state.activeChatMessages : [];
+
+                return {
+                    activeChatMessages: [...currentMessages, message]
+                };
+            }),
+
+            // Aktualisiert eine existierende Nachricht (z.B. von 'pending' zu 'confirmed')
+            updateMessage: (messageId, updates) => set(state => {
+                const currentMessages = Array.isArray(state.activeChatMessages) ? state.activeChatMessages : [];
+                return {
+                    activeChatMessages: currentMessages.map(msg =>
+                        msg.id === messageId ? { ...msg, ...updates } : msg
+                    )
+                };
+            }),
+
+            // Fügt einen Token-Chunk zu einer streamenden Nachricht hinzu
+            appendChunkToMessage: (messageId, chunk) => set(state => {
+                const currentMessages = Array.isArray(state.activeChatMessages) ? state.activeChatMessages : [];
+                return {
+                    activeChatMessages: currentMessages.map(msg =>
+                        msg.id === messageId ? { ...msg, content: msg.content + chunk } : msg
+                    )
+                };
+            }),
+
+            setActiveChatTitle: (title) => set({ activeChatTitle: title }),
+
 
             // --- Direkte Diff-Aktionen (vereinfacht) ---
             setDiffBase: (version) => set({ diffSelection: { base: version, compare: null } }),

@@ -478,53 +478,6 @@ def test_stream_retry_message_inserts_and_shifts(test_user_1_obj, test_vault_1_o
 # TESTS FÜR propose_node_update_from_chat (mit gemocktem LLM)
 # =========================================================================
 
-@pytest.fixture
-def proposal_test_setup(db_session, test_user_1_obj, test_vault_1_obj):
-    """
-    Ein dediziertes Fixture, das die DB-Objekte für die Proposal-Tests erstellt.
-    Macht die Tests sauberer und wiederverwendbar.
-    """
-    # === KORREKTUR HIER ===
-    # Finde den Root-Node (der automatisch beim Erstellen des Vaults angelegt wird)
-    # mit einer direkten DB-Abfrage. Das ist der robusteste Weg im Test-Setup.
-    root_node = db_session.session.query(Node).filter_by(
-        vault_id=test_vault_1_obj.id,
-        parent_id=None
-    ).one_or_none()
-
-    # Ein Vault sollte immer genau einen Root-Node haben.
-    assert root_node is not None, "Root-Node konnte für den Test-Vault nicht gefunden werden."
-
-    # Erstelle die restlichen Objekte wie gehabt
-    context_node = node_service.create_node(
-        title="Project Requirements",
-        content="The project must be completed by Q4.",
-        parent_id=root_node.id, vault_id=test_vault_1_obj.id, author_id=test_user_1_obj.id
-    )
-
-    target_node = node_service.create_node(
-        title="Team Allocation",
-        content="Current team: Alice (Lead).",
-        parent_id=root_node.id, vault_id=test_vault_1_obj.id, author_id=test_user_1_obj.id
-    )
-
-    session = ChatSession(vault_id=test_vault_1_obj.id, owner_id=test_user_1_obj.id)
-    msg1 = ChatMessage(session=session, role='user', content="Who else should be on the team?",
-                       author_id=test_user_1_obj.id, sort_order=1)
-    msg2 = ChatMessage(session=session, role='assistant', content="We should add Bob and Carol.",
-                       author_id=test_user_1_obj.id, sort_order=2)
-
-    db_session.session.add_all([session, msg1, msg2])
-    db_session.session.commit()
-
-    return {
-        "user_id": test_user_1_obj.id,
-        "session_id": session.id,
-        "target_node_id": target_node.id,
-        "context_node_ids": [context_node.id]
-    }
-
-
 def test_propose_node_update_happy_path(proposal_setup, mocker):
     """
     Testet den "Happy Path" von `propose_node_update_from_chat`.

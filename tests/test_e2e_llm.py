@@ -38,6 +38,7 @@ def test_stream_new_message_service_with_real_llm(db_session, llm_model_name):
     chat_session = ChatSession(vault_id=vault.id, owner_id=user_id)
     db_session.session.add(chat_session)
     db_session.session.commit()
+    initial_title = chat_session.title
 
     # === 2. EXECUTE: Rufe die Service-Funktion mit dem dynamischen Modellnamen auf ===
     print(f"\n[INFO] Running E2E test with model: {llm_model_name}")
@@ -45,6 +46,7 @@ def test_stream_new_message_service_with_real_llm(db_session, llm_model_name):
         session_id=chat_session.id, user_id=user_id,
         user_input="Explain photosynthesis in simple terms for a child.",
         model=llm_model_name,
+        title_model=llm_model_name,
         node_ids=[node_a.id], client_message_id='test-client-id-123'
     )
 
@@ -84,6 +86,23 @@ def test_stream_new_message_service_with_real_llm(db_session, llm_model_name):
     assert assistant_msg_db is not None
     assert assistant_msg_db.content.strip() == full_content.strip()
     assert assistant_msg_db.llm_model_source == llm_model_name
+
+    db_session.session.commit()  # Stelle sicher, dass alle Transaktionen abgeschlossen sind
+    updated_session = db_session.session.get(ChatSession, chat_session.id)
+
+    print(f"\n[TITLE CHECK ({llm_model_name})]")
+    print(f"--- INITIAL TITLE ---\n{initial_title}")
+    print(f"--- UPDATED TITLE ---\n{updated_session.title}")
+    print(f"---------------------")
+
+    # Der Titel sollte nicht mehr der ursprüngliche sein.
+    assert updated_session.title is not None
+    assert updated_session.title != initial_title
+
+    # Der Titel sollte relevante Schlüsselwörter enthalten.
+    updated_title_lower = updated_session.title.lower()
+    assert "photosynthesis" in updated_title_lower
+    assert any(keyword in updated_title_lower for keyword in ["simple", "child", "explain", "einfach", "kind", "Kids"])
 
 
 @pytest.mark.llm

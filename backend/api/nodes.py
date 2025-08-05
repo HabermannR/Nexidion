@@ -160,7 +160,7 @@ def create_node(vault_id: int):
     try:
         # +++ GEÄNDERT +++
         # Ruft die neue Service-Funktion auf, die jetzt ein Dictionary zurückgibt.
-        new_node_dict = node_service.create_node(
+        new_node = node_service.create_node(
             title=title.strip(),
             content=data.get('content', ''),
             parent_id=data.get('parent_id'),
@@ -168,7 +168,7 @@ def create_node(vault_id: int):
             author_id=user_id
         )
         # Wir geben das zurückgegebene Dictionary direkt weiter.
-        return jsonify(new_node_dict), 201
+        return jsonify(new_node.to_dict()), 201
 
     except (PermissionError, ValueError) as e:
         return jsonify({"error": str(e)}), 403 if isinstance(e, PermissionError) else 400

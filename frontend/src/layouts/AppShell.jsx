@@ -1,17 +1,24 @@
 // IN: src/layouts/AppShell.jsx
 
 import React from 'react';
-import {useRouteLoaderData, Link, useParams, Form, Outlet, useNavigation} from 'react-router-dom';
-import {Navbar, Nav, Button, NavDropdown, Container, Spinner} from 'react-bootstrap';
+import { Link, useParams, Form, Outlet, useNavigation } from 'react-router-dom';
+import { Navbar, Nav, Button, NavDropdown, Container, Spinner } from 'react-bootstrap';
+import { useQuery } from '@tanstack/react-query'; // <-- HIER IST DIE KORREKTUR
+import apiClient from '../api/apiClient'; // <-- Stelle sicher, dass dieser Import auch da ist
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './AppShell.css';
-import LlmSelector from '../components/LlmSelector'; // NEU: Importiere die Komponente
+import { useUser } from '../features/auth/useUser';
+import LlmSelector from '../components/LlmSelector';
 
 export default function AppShell() {
-    const {user, vaults} = useRouteLoaderData('root') || {};
+    const { data: vaults, isLoading: isLoadingVaults } = useQuery({
+        queryKey: ['allVaults'], // Eindeutiger Key für die Vault-Liste
+        queryFn: () => apiClient.get('/api/vaults/').then(res => res.data),
+    });
+    const { data: user, isLoading: isLoadingUser } = useUser();
     const {vaultId} = useParams();
     const navigation = useNavigation();
-    const isLoading = navigation.state === 'loading';
+    const isLoading = navigation.state === 'loading' || isLoadingVaults || isLoadingUser;
 
     const currentVault = vaults?.find(v => v.id.toString() === vaultId);
 

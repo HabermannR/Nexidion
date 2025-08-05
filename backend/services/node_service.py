@@ -265,7 +265,7 @@ def create_node(
         vault_id: int,
         author_id: int,
         icon: Optional[str] = None  # <--- NEUES, OPTIONALES ARGUMENT
-) -> dict:
+) -> Node:
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     _verify_vault_access(vault_id, author_id)
     if not title or not title.strip():
@@ -303,7 +303,7 @@ def create_node(
     db.session.add(initial_version)
 
     db.session.commit()
-    return new_node.to_dict()
+    return new_node
 
 
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,

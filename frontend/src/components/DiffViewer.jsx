@@ -1,69 +1,89 @@
-// src/components/DiffViewer.jsx (NEUE DATEI)
+// src/components/DiffViewer.jsx
 
-import React, { useEffect, useRef } from 'react';
-import { createPatch } from 'diff';
-import { Diff2HtmlUI } from 'diff2html/lib/ui/js/diff2html-ui';
+import React, { useMemo } from 'react';
+import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued-react19';
 
-// Wichtig: Die CSS-Imports müssen hier sein!
-import 'highlight.js/styles/github.css';
-import 'diff2html/bundles/css/diff2html.min.css';
+// Die CSS-Imports der alten Komponente sind nicht mehr nötig!
+// react-diff-viewer kümmert sich intern um das Styling.
 
-const DiffViewer = ({ oldContent, newContent, oldTitle = 'Original', newTitle = 'Vergleich' }) => {
-    const diffContainerRef = useRef(null);
+const DiffViewer = ({
+                                oldContent,
+                                newContent,
+                                oldTitle = 'Original',
+                                newTitle = 'Vergleich',
+                                splitView = true, // Neue Prop: Standardmäßig Split-View
+                                useDarkTheme = false, // Neue Prop: Dark Mode
+                            }) => {
+    // Sicherstellen, dass wir keine null/undefined Werte haben
+    const safeOldContent = oldContent || '';
+    const safeNewContent = newContent || '';
 
-    useEffect(() => {
-        if (diffContainerRef.current) {
-            // Container leeren, bevor neu gezeichnet wird
-            diffContainerRef.current.innerHTML = '';
+    // Nichts tun, wenn beide leer sind
+    if (safeOldContent === '' && safeNewContent === '') {
+        return (
+            <div className="alert alert-info m-3">
+                Keine Inhalte zum Vergleichen vorhanden.
+            </div>
+        );
+    }
 
-            // Sicherstellen, dass wir keine null/undefined Werte haben
-            const safeOldContent = oldContent || '';
-            const safeNewContent = newContent || '';
+    // Wenn Inhalte identisch sind, zeige eine Meldung an.
+    // react-diff-viewer würde dies auch tun, aber eine explizite Meldung ist oft benutzerfreundlicher.
+    if (safeOldContent === safeNewContent) {
+        return (
+            <div className="alert alert-success m-3">
+                Keine Unterschiede zwischen den ausgewählten Versionen gefunden.
+            </div>
+        );
+    }
 
-            // Nichts tun, wenn beide leer sind
-            if (safeOldContent === '' && safeNewContent === '') {
-                return;
-            }
-
-            // NEUE PRÜFUNG: Wenn Inhalte identisch sind, zeige eine Meldung an.
-            if (safeOldContent === safeNewContent) {
-                diffContainerRef.current.innerHTML = `
-                    <div class="alert alert-success m-3">
-                        Keine Unterschiede zwischen den ausgewählten Versionen gefunden.
-                    </div>
-                `;
-                return; // Beende die Funktion hier
-            }
-
-            // Den Patch-String erstellen
-            const diffString = createPatch(
-                'node-content.md', // Dateiname ist nur für die Anzeige
-                safeOldContent,
-                safeNewContent,
-                oldTitle,
-                newTitle,
-                { context: 9999 } // Zeigt den gesamten Kontext
-            );
-
-            // Konfiguration für die Anzeige
-            const configuration = {
-                drawFileList: false,
-                matching: 'lines',
-                outputFormat: 'side-by-side', // oder 'line-by-line'
-                highlight: true,
-                renderNothingWhenEmpty: true // Wichtig
-            };
-
-            // UI-Instanz erstellen und zeichnen
-            const diff2htmlUi = new Diff2HtmlUI(diffContainerRef.current, diffString, configuration);
-            diff2htmlUi.draw();
-            diff2htmlUi.highlightCode();
+    // Optional: Definiere benutzerdefinierte Styles, um das Aussehen anzupassen.
+    // Dies ist ein riesiger Vorteil gegenüber der alten Methode!
+    // Wir verwenden useMemo, um zu verhindern, dass das Objekt bei jedem Render neu erstellt wird.
+    const customStyles = useMemo(() => ({
+        variables: {
+            dark: {
+                diffViewerBackground: '#1e1e1e',
+                addedBackground: '#0a3d13',
+                removedBackground: '#5c1212',
+            },
+        },
+        line: {
+            padding: '10px 2px',
+            '&:hover': {
+                background: useDarkTheme ? '#2a2a2a' : '#f0f0f0',
+            },
+        },
+        gutter: {
+            minWidth: '40px',
+        },
+        marker: {
+            width: '20px',
         }
-    }, [oldContent, newContent, oldTitle, newTitle]);
+    }), [useDarkTheme]);
 
-    // Ein einfacher div, der als Mount-Point für diff2html dient
     return (
-        <div ref={diffContainerRef}></div>
+        <ReactDiffViewer
+            oldValue={safeOldContent}
+            newValue={safeNewContent}
+            leftTitle={oldTitle}
+            rightTitle={newTitle}
+            splitView={splitView}
+            useDarkTheme={useDarkTheme}
+            compareMethod={DiffMethod.WORDS} // Bessere Vergleichsmethode für Text
+
+            // === Weitere nützliche "aufgebohrte" Features ===
+
+            // Blendet lange, unveränderte Abschnitte aus und zeigt einen "Expand"-Button.
+            showDiffOnly={true}
+            extraLinesSurroundingDiff={3} // Zeigt 3 Zeilen Kontext um eine Änderung herum
+
+            // Schaltet die Hervorhebung einzelner Wörter an/aus
+            disableWordDiff={false}
+
+            // Wende unsere optionalen Custom-Styles an
+            styles={customStyles}
+        />
     );
 };
 

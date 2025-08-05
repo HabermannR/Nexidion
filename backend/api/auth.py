@@ -3,6 +3,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from backend.services import auth_service
+from datetime import timedelta
 
 
 # Erstelle einen Blueprint. Der erste Parameter ist der Name des Blueprints.
@@ -30,9 +31,10 @@ def login():
     if user:
         # Erfolgsfall bleibt gleich
         identity_as_string = str(user.id)
-        access_token = create_access_token(identity=identity_as_string)
-        return jsonify(access_token=access_token, user=user.to_dict())
+        expires = timedelta(hours=8)  # 8 Stunden für einen normalen Arbeitstag
+        access_token = create_access_token(identity=identity_as_string, expires_delta=expires)
 
+        return jsonify(access_token=access_token, user=user.to_dict())
     return jsonify({"error": "Invalid credentials"}), 401
 
 @auth_bp.route('/me', methods=['GET'], strict_slashes=False)

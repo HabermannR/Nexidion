@@ -204,8 +204,8 @@ def proposal_setup(db_session, test_user_1_obj, test_vault_1_obj):
     return {
         "user_id": test_user_1_obj.id,
         "session_id": session.id,
-        "target_node_id": target_node_dict['id'],
-        "context_node_ids": [context_node_dict['id']]
+        "target_node_id": target_node_dict.id,
+        "context_node_ids": [context_node_dict.id]
     }
 
 

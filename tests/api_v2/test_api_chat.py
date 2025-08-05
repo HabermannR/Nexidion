@@ -55,7 +55,8 @@ def test_api_add_message_and_stream(client, auth_headers_1, test_vault_1_obj, db
         user_input=payload['user_input'],
         model=payload['model'],
         node_ids=payload['node_ids'],
-        client_message_id=None  # <-- DIES IST DIE ERGÄNZUNG
+        client_message_id=None,
+        title_model=None
     )
 
 
