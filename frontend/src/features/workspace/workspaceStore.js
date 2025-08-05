@@ -16,61 +16,38 @@ export const useWorkspaceStore = create(
             // ===============================================
             // === ZUSTAND ===
             // ===============================================
-
-            // --- Linkes Panel & Baum (wird persistiert) ---
             selectedNodeIds: new Set(),
             collapsedNodes: new Set(),
             savedSets: {},
-
-            // --- Versionsauswahl (nicht persistiert) ---
-            activeNodeVersions: [],
             diffSelection: { base: null, compare: null },
+            chatModel: null,
+            titleModel: null,
 
             // ===============================================
             // === AKTIONEN ===
             // ===============================================
 
-            setActiveNodeVersions: (versions) => {
-                const current = get().activeNodeVersions;
+            // --- LLM-Aktionen ---
+            setChatModel: (model) => set({ chatModel: model }),
+            setTitleModel: (model) => set({ titleModel: model }),
+            initializeModels: (availableModels) => set(state => {
+                if (!availableModels || availableModels.length === 0) return {};
+                return {
+                    chatModel: state.chatModel || availableModels[0],
+                    titleModel: state.titleModel || availableModels[0],
+                };
+            }),
 
-                // Einfacher Vergleich - nur updaten wenn sich was geändert hat
-                if (JSON.stringify(current) !== JSON.stringify(versions)) {
-                    console.log(`[STORE] Neue Versionen erhalten (${versions?.length || 0} Stück)`);
-                    set({ activeNodeVersions: versions || [] });
+            // --- Direkte Diff-Aktionen (vereinfacht) ---
+            setDiffBase: (version) => set({ diffSelection: { base: version, compare: null } }),
+            setDiffCompare: (version) => set(state => {
+                // Wenn das gleiche Compare-Element geklickt wird, hebe die Auswahl auf.
+                if (state.diffSelection.compare?.id === version?.id) {
+                    return { diffSelection: { ...state.diffSelection, compare: null } };
                 }
-            },
-
-            /**
-             * SIMPLE LOGIK: URL-Parameter bestimmen die Anzeige
-             * - versionNumber = null → neueste Version (Index 0)
-             * - versionNumber = "5" → Version 5
-             * - compareNumber = "3" → Version 3 zum Vergleich
-             */
-            syncDiffSelectionFromUrl: (versionNumber, compareNumber) => {
-                const { activeNodeVersions } = get();
-
-                console.log(`[STORE] Sync: version=${versionNumber}, compare=${compareNumber}`);
-
-                if (!activeNodeVersions || activeNodeVersions.length === 0) {
-                    console.log('[STORE] Keine Versionen verfügbar');
-                    set({ diffSelection: { base: null, compare: null } });
-                    return;
-                }
-
-                // SIMPLE REGEL: null = neueste (Index 0), sonst suche die Version
-                const base = versionNumber === null
-                    ? activeNodeVersions[0]  // Neueste Version nach Mutation
-                    : activeNodeVersions.find(v => String(v.version) === versionNumber);
-
-                const compare = compareNumber
-                    ? activeNodeVersions.find(v => String(v.version) === compareNumber)
-                    : null;
-
-                console.log(`[STORE] Setze Auswahl: ${base ? `v${base.version}` : 'null'}${compare ? ` vs v${compare.version}` : ''}`);
-
-                // Immer setzen - React wird nur re-rendern wenn sich was geändert hat
-                set({ diffSelection: { base, compare } });
-            },
+                return { diffSelection: { ...state.diffSelection, compare: version } };
+            }),
+            clearDiff: () => set({ diffSelection: { base: null, compare: null } }),
 
             // --- Baum-Aktionen ---
             toggleNodeSelection: (nodeId) =>
@@ -111,15 +88,6 @@ export const useWorkspaceStore = create(
                     delete newSets[name];
                     return { savedSets: newSets };
                 });
-            },
-
-            // --- Direkte Diff-Aktionen ---
-            setDiffSelection: (selection) => {
-                set({ diffSelection: selection });
-            },
-
-            clearDiffSelection: () => {
-                set({ diffSelection: { base: null, compare: null } });
             },
 
             // --- Aufräumen ---
@@ -171,6 +139,9 @@ export const useWorkspaceStore = create(
                 selectedNodeIds: state.selectedNodeIds,
                 collapsedNodes: state.collapsedNodes,
                 savedSets: state.savedSets,
+                // NEU: Auch die Modellauswahl persistieren, damit sie erhalten bleibt.
+                chatModel: state.chatModel,
+                titleModel: state.titleModel,
             }),
         }
     )

@@ -11,55 +11,61 @@ export default function VersionHistoryTab() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { vaultId, nodeId } = useParams();
+    const { setDiffBase, setDiffCompare } = useWorkspaceStore();
+    const diffSelection = useWorkspaceStore(state => state.diffSelection);
 
     // ==========================================================
     // SÄULE 2: DIE DATEN-ENGINE (TanStack Query)
     // Dieser Hook ersetzt den alten Loader-Mechanismus und den 'activeNodeVersions' Store.
     // ==========================================================
     const { data: versions, isLoading, isError, error } = useQuery({
-        queryKey: ['versions', nodeId],
+        queryKey: ['versions', vaultId, nodeId],
+
         queryFn: async () => {
-            if (!nodeId) return []; // Führe keinen API-Call ohne nodeId aus
-            console.log(`[useQuery] Fetching versions for node: ${nodeId}`);
+            // Die Logik hier war schon korrekt, aber der Key muss passen.
+            if (!nodeId) return [];
+            console.log(`[useQuery] Fetching versions for node: ${nodeId} in vault: ${vaultId}`);
             const response = await apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`);
             return response.data || [];
         },
-        // Der Query wird nur aktiviert, wenn eine nodeId in der URL vorhanden ist.
-        enabled: !!nodeId,
+        // Die enabled-Bedingung muss ebenfalls vaultId prüfen, um konsistent zu sein.
+        enabled: !!vaultId && !!nodeId,
     });
 
-    // ==========================================================
-    // SÄULE 3: DER UI-CONTROLLER (Zustand)
-    // 'diffSelection' ist reiner Client-Zustand und bleibt in Zustand.
-    // ==========================================================
-    const diffSelection = useWorkspaceStore(state => state.diffSelection);
 
     // ==========================================================
     // HANDLER-FUNKTIONEN
     // ==========================================================
 
+    const updateUrl = (params) => {
+        navigate(`?${params.toString()}`, { replace: true });
+    };
+
     const handleSelectVersion = (version) => {
-        const newSearchParams = new URLSearchParams(searchParams);
+        setDiffBase(version); // 1. Store aktualisieren
+        const newSearchParams = new URLSearchParams();
         newSearchParams.set('version', String(version.version));
-        newSearchParams.delete('compare');
-        navigate(`?${newSearchParams.toString()}`, { replace: true });
+        updateUrl(newSearchParams); // 2. URL aktualisieren
     };
 
     const handleCompareVersion = (version) => {
-        const newSearchParams = new URLSearchParams(searchParams);
+        setDiffCompare(version); // 1. Store aktualisieren
+        const newSearchParams = new URLSearchParams(window.location.search);
+        // Logik zum Hinzufügen/Entfernen des compare-Parameters
         if (newSearchParams.get('compare') === String(version.version)) {
             newSearchParams.delete('compare');
         } else {
             newSearchParams.set('compare', String(version.version));
         }
-        navigate(`?${newSearchParams.toString()}`, { replace: true });
+        updateUrl(newSearchParams); // 2. URL aktualisieren
     };
 
     const handleShowCurrent = () => {
-        const newSearchParams = new URLSearchParams(searchParams);
-        newSearchParams.delete('version');
-        newSearchParams.delete('compare');
-        navigate(`?${newSearchParams.toString()}`, { replace: true });
+        if (versions && versions.length > 0) {
+            setDiffBase(versions[0]); // 1. Store auf die neueste Version setzen
+            const newSearchParams = new URLSearchParams();
+            updateUrl(newSearchParams); // 2. URL aufräumen
+        }
     };
 
     // ==========================================================

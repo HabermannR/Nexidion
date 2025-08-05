@@ -41,7 +41,6 @@ def _prepare_llm_context(session: ChatSession, node_ids: list, user_id: int) -> 
         f"<context>\n{context_content}\n</context>"
     )
 
-    # *** GEÄNDERT: Sortierung nach sort_order ***
     active_messages = session.messages.filter_by(status='active').order_by(ChatMessage.sort_order.asc()).all()
     chat_history = [{"role": msg.role, "content": msg.content} for msg in active_messages]
 
@@ -49,11 +48,8 @@ def _prepare_llm_context(session: ChatSession, node_ids: list, user_id: int) -> 
 
 
 # --- Kernfunktionen (Streaming-First-Ansatz) ---
-
-# in backend/services/chat_service.py
-
 def stream_new_message(session_id: str, user_id: int, user_input: str, model: str, node_ids: list,
-                       client_message_id: str = None):
+                       client_message_id: str = None, title_model: str = None):
     """
     Fügt eine User-Nachricht und die gestreamte Antwort des Assistenten hinzu.
     Speichert eine Teil-Antwort, wenn der Stream fehlschlägt.
@@ -132,7 +128,7 @@ def stream_new_message(session_id: str, user_id: int, user_input: str, model: st
 
         if is_first_assistant_message and session.title == "New Chat":
             history_for_title = f"User: {user_input}\nAssistant: {full_response.strip()}"
-            new_title = llm_service.generate_chat_title(history_for_title, model=model)
+            new_title = llm_service.generate_chat_title(history_for_title, model=title_model)
             session.title = new_title
             title_was_updated = True
 

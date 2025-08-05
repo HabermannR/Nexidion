@@ -1,65 +1,90 @@
-// src/features/workspace/center-panel/NodeContent.jsx
+// WESENTLICHE ÄNDERUNGEN:
+// - useLoaderData, useFetcher, useNavigation entfernt.
+// - NEU: useQuery, useMutation, useQueryClient von @tanstack/react-query
+// - Datenladung und Mutationen werden direkt in der Komponente verwaltet.
 
 import React, { useState, useEffect } from 'react';
-import { useLoaderData, useOutletContext, useFetcher, useParams, useSearchParams, useNavigation } from 'react-router-dom';
+import { useOutletContext, useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Modal, Form as BootstrapForm, Alert } from 'react-bootstrap';
-import DiffViewer from '../../../components/DiffViewer.jsx';
 
+import apiClient from '../../../api/apiClient';
+import DiffViewer from '../../../components/DiffViewer.jsx';
 import { useWorkspaceStore } from '../workspaceStore';
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
 
-// Die Hilfsfunktion kann außerhalb der Komponente, da sie keinen Zustand benötigt.
+// Die Hilfsfunktion bleibt unverändert
 const findPathInTree = (nodes, nodeId, currentPath = []) => {
+    // ... (keine Änderung)
     for (const node of nodes) {
-        const newPath = [
-            ...currentPath,
-            {
-                id: node.id,
-                title: node.title,
-                to: `/vaults/${node.vault_id}/nodes/${node.id}`,
-            },
-        ];
-
-        if (node.id === nodeId) {
-            return newPath;
-        }
-
+        const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${node.vault_id}/nodes/${node.id}`}];
+        if (node.id === nodeId) return newPath;
         if (node.children && node.children.length > 0) {
             const foundPath = findPathInTree(node.children, nodeId, newPath);
-            if (foundPath) {
-                return foundPath;
-            }
+            if (foundPath) return foundPath;
         }
     }
     return null;
 };
 
 export default function NodeContent() {
-    // --- Hooks ---
-    const { versions } = useLoaderData();
+    // --- Hooks (V4-Stil) ---
     const { vaultId, nodeId } = useParams();
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { setBreadcrumbPath, treeData } = useOutletContext();
-    const navigation = useNavigation();
-    const fetcher = useFetcher();
 
-    // --- Store Actions & Data ---
-    const setActiveNodeVersions = useWorkspaceStore(state => state.setActiveNodeVersions);
-    const syncDiffSelectionFromUrl = useWorkspaceStore(state => state.syncDiffSelectionFromUrl);
+    // --- Datenladung mit useQuery ---
+
+    const { data: versions, isLoading: isLoadingVersions, isError } = useQuery({
+        queryKey: ['versions', vaultId, nodeId],
+        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data),
+        enabled: !!vaultId && !!nodeId, // Query nur ausführen, wenn IDs vorhanden sind
+    });
+
+    // --- Store Actions & Data  ---
+    const { setDiffBase, clearDiff } = useWorkspaceStore();
     const { base: baseVersionData, compare: compareVersionData } = useWorkspaceStore(state => state.diffSelection);
-    const latestVersionId = useWorkspaceStore(state => state.activeNodeVersions?.[0]?.id);
 
-    // --- Lokaler UI Zustand ---
+    // --- Lokaler UI Zustand  ---
     const [isEditing, setIsEditing] = useState(false);
     const [localContent, setLocalContent] = useState('');
-    const [showRenameModal, setShowRenameModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
 
 
     // ==========================================================
-    // --- DATEN-SYNCHRONISATION & UI-UPDATES ---
+    // --- Mutationen mit useMutation ---
+    // ==========================================================
+
+    const saveContentMutation = useMutation({
+        mutationFn: (payload) => apiClient.put(`/api/vaults/${vaultId}/nodes/${nodeId}`, payload),
+        onSuccess: () => {
+            console.log("Inhalt erfolgreich gespeichert.");
+            queryClient.invalidateQueries({ queryKey: ['versions', vaultId, nodeId] });
+            setIsEditing(false);
+        },
+        onError: (err) => console.error("Fehler beim Speichern:", err),
+    });
+
+    const deleteNodeMutation = useMutation({
+        mutationFn: () => apiClient.delete(`/api/vaults/${vaultId}/nodes/${nodeId}`),
+        onSuccess: () => {
+            console.log("Node erfolgreich gelöscht.");
+            // Den Baum invalidieren, damit er sich aktualisiert
+            queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
+            // Weg navigieren, z.B. zum Parent oder Vault-Root
+            const parentId = baseVersionData?.parent_id;
+            navigate(parentId ? `/vaults/${vaultId}/nodes/${parentId}` : `/vaults/${vaultId}`);
+        },
+        onError: (err) => console.error("Fehler beim Löschen:", err),
+    });
+
+
+    // ==========================================================
+    // --- DATEN-SYNCHRONISATION & UI-UPDATES (angepasst) ---
     // ==========================================================
 
     useEffect(() => {
@@ -72,11 +97,21 @@ export default function NodeContent() {
     }, [treeData, nodeId, setBreadcrumbPath]);
 
     useEffect(() => {
-        setActiveNodeVersions(versions);
-        const versionNumber = searchParams.get('version');
-        const compareNumber = searchParams.get('compare');
-        syncDiffSelectionFromUrl(versionNumber, compareNumber);
-    }, [versions, searchParams, setActiveNodeVersions, syncDiffSelectionFromUrl]);
+        if (versions && versions.length > 0) {
+            // Finde die Version aus der URL, falls vorhanden, sonst nimm die neueste.
+            const versionParam = new URL(window.location.href).searchParams.get('version');
+            const initialBase = versionParam
+                ? versions.find(v => String(v.version) === versionParam)
+                : versions[0];
+
+            setDiffBase(initialBase || versions[0]);
+        }
+
+        // Aufräumfunktion: Wenn die Komponente unmounted wird, leere die Auswahl.
+        return () => {
+            clearDiff();
+        };
+    }, [versions, nodeId, setDiffBase, clearDiff]);
 
     useEffect(() => {
         if (baseVersionData) {
@@ -87,15 +122,14 @@ export default function NodeContent() {
 
 
     // ==========================================================
-    // --- HANDLER FÜR UI-AKTIONEN ---
+    // --- HANDLER FÜR UI-AKTIONEN (angepasst) ---
     // ==========================================================
 
     const handleSave = () => {
-        fetcher.submit(
-            { intent: 'updateContent', content: localContent, title: baseVersionData.title },
-            { method: 'post' }
-        );
-        setIsEditing(false);
+        saveContentMutation.mutate({
+            content: localContent,
+            title: baseVersionData.title, // Titel mitsenden, wie es die API erwartet
+        });
     };
 
     const handleCancel = () => {
@@ -103,42 +137,27 @@ export default function NodeContent() {
         setIsEditing(false);
     };
 
-    const handleRenameConfirm = (event) => {
-        event.preventDefault();
-        const formData = new FormData(event.target);
-        formData.append('content', baseVersionData.content || '');
-        fetcher.submit(formData, { method: 'post' });
-        setShowRenameModal(false);
-    };
-
-    // HIER IST DIE KORREKTUR
     const handleDeleteConfirm = () => {
-        // Wir erstellen ein Payload-Objekt, das sowohl den Intent als auch die parentId enthält.
-        // baseVersionData enthält alle Infos zum Node, auch die parent_id.
-        // `|| ''` ist eine Sicherheit, falls parent_id null ist (bei Top-Level-Nodes).
-        const payload = {
-            intent: 'deleteNode',
-            parentId: baseVersionData.parent_id || ''
-        };
-
-        fetcher.submit(payload, { method: 'post' });
+        deleteNodeMutation.mutate();
         setShowDeleteModal(false);
     };
 
 
     // ==========================================================
-    // --- RENDER-LOGIK & DATENVORBEREITUNG ---
+    // --- RENDER-LOGIK & DATENVORBEREITUNG  ---
     // ==========================================================
 
-    if (navigation.state === 'loading' && navigation.location.pathname.includes(nodeId)) {
+    // Ersetzt den navigation.state check
+    if (isLoadingVersions) {
         return <p className="p-4">Lädt Dokument...</p>;
     }
 
-    if (!baseVersionData) {
-        return <p className="p-4">Dokument wird initialisiert...</p>;
+    if (isError || !baseVersionData) {
+        return <p className="p-4">Dokument konnte nicht geladen werden oder ist nicht vorhanden.</p>;
     }
 
-    const isSaving = fetcher.state === 'submitting';
+    const isSaving = saveContentMutation.isPending;
+    const latestVersionId = versions?.[0]?.id;
     const isViewingOldVersion = baseVersionData.id !== latestVersionId;
 
     let sortedOldVersion = baseVersionData;
@@ -159,23 +178,12 @@ export default function NodeContent() {
                         : 'Sie bearbeiten den aktuellen Inhalt.'}
                     <br/>Beim Speichern wird eine neue, aktuelle Version erstellt.
                 </Alert>
-            ) : isViewingOldVersion || compareVersionData ? (
-                <ContentHeader
-                    currentVersion={baseVersionData}
-                    vaultId={vaultId}
-                    isEditing={false}
-                    onEditClick={() => setIsEditing(true)}
-                    onRenameClick={() => setShowRenameModal(true)}
-                    onDeleteClick={() => setShowDeleteModal(true)}
-                    hideRenameDelete={true}
-                />
             ) : (
                 <ContentHeader
                     currentVersion={baseVersionData}
                     vaultId={vaultId}
                     isEditing={isEditing}
                     onEditClick={() => setIsEditing(true)}
-                    onRenameClick={() => setShowRenameModal(true)}
                     onDeleteClick={() => setShowDeleteModal(true)}
                 />
             )}
@@ -205,26 +213,6 @@ export default function NodeContent() {
                 <MarkdownRenderer content={baseVersionData.content || ''} />
             )}
 
-            {/* Modals (bleiben unverändert) */}
-            <Modal show={showRenameModal} onHide={() => setShowRenameModal(false)}>
-                <BootstrapForm onSubmit={handleRenameConfirm}>
-                    <Modal.Header closeButton>
-                        <Modal.Title>Dokument umbenennen</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        <BootstrapForm.Group>
-                            <BootstrapForm.Label>Neuer Titel</BootstrapForm.Label>
-                            <input type="hidden" name="intent" value="renameNode" />
-                            <BootstrapForm.Control name="title" defaultValue={baseVersionData?.title} required autoFocus />
-                        </BootstrapForm.Group>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={() => setShowRenameModal(false)}>Abbrechen</Button>
-                        <Button variant="primary" type="submit">Umbenennen</Button>
-                    </Modal.Footer>
-                </BootstrapForm>
-            </Modal>
-
             <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
                 <Modal.Header closeButton>
                     <Modal.Title>Dokument löschen</Modal.Title>
@@ -233,8 +221,10 @@ export default function NodeContent() {
                     Sind Sie sicher, dass Sie "<strong>{baseVersionData?.title}</strong>" endgültig löschen möchten?
                 </Modal.Body>
                 <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>Abbrechen</Button>
-                    <Button variant="danger" onClick={handleDeleteConfirm}>Endgültig löschen</Button>
+                    <Button variant="secondary" onClick={() => setShowDeleteModal(false)} disabled={deleteNodeMutation.isPending}>Abbrechen</Button>
+                    <Button variant="danger" onClick={handleDeleteConfirm} disabled={deleteNodeMutation.isPending}>
+                        {deleteNodeMutation.isPending ? 'Löscht...' : 'Endgültig löschen'}
+                    </Button>
                 </Modal.Footer>
             </Modal>
         </div>

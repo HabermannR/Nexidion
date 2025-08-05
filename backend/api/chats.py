@@ -79,13 +79,14 @@ def add_message(vault_id, session_id):
     if not user_input:
         return jsonify({"error": "user_input is required"}), 400
 
-    # --- NEU: Client-Message-ID aus dem Request holen ---
-    # Wir holen die ID aus dem Request. Wenn sie nicht da ist (z.B. bei alten Clients),
-    # ist das auch in Ordnung, da der Parameter in der Service-Funktion optional sein wird.
     client_message_id = data.get('client_message_id')
-
     model = data.get('model')
     node_ids = data.get('node_ids', [])
+
+    # --- NEW: Get the user's chosen title model from the request payload. ---
+    # It's optional, so we use .get() which returns None if not found.
+    title_model = data.get('titleModel')
+    # --- END NEW LOGIC ---
 
     try:
         # Die Berechtigungsprüfung bleibt gleich.
@@ -98,7 +99,8 @@ def add_message(vault_id, session_id):
             user_input=user_input,
             model=model,
             node_ids=node_ids,
-            client_message_id=client_message_id  # <-- HIER WIRD DIE ID ÜBERGEBEN
+            client_message_id=client_message_id,
+            title_model=title_model
         )
 
         return Response(stream_with_context(response_generator), mimetype='text/event-stream')

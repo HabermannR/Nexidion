@@ -1,8 +1,9 @@
 // src/features/nodes/ui/IconSelectorDropdown.jsx (KORRIGIERT)
 
-import React, {useEffect, useRef} from 'react';
-import {Dropdown} from 'react-bootstrap';
-import {useFetcher, useRevalidator} from 'react-router-dom';
+import React from 'react';
+import { Dropdown } from 'react-bootstrap';
+import { useMutation, useQueryClient } from '@tanstack/react-query'; // NEU
+import apiClient from '../../../api/apiClient'; // NEU
 
 // Datenstruktur für die Icons, gruppiert nach Kategorien
 const iconGroups = [
@@ -46,36 +47,56 @@ const iconGroups = [
     },
 ];
 
-// Wichtig: nodeId wird jetzt explizit übergeben.
 export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId }) {
-    const fetcher = useFetcher();
+    const queryClient = useQueryClient(); // NEU: QueryClient für die Invalidierung
 
-    useEffect(() => {
-        console.log(`[ICON FETCHER] Zustand: ${fetcher.state}, Daten:`, fetcher.data);
-    }, [fetcher.state, fetcher.data]);
+    // NEU: Mutation für die Icon-Änderung
+    const changeIconMutation = useMutation({
+        mutationFn: (payload) => {
+            // Die Mutation-Funktion führt den API-Aufruf aus.
+            return apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeId}/icon`, {
+                icon: payload.iconId,
+            });
+        },
+        onSuccess: () => {
+            console.log("[MUTATION SUCCESS] Invalidating queries after icon change.");
+            // Invalidiere beide Queries, in denen das Icon angezeigt wird.
+            queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
+            queryClient.invalidateQueries({ queryKey: ['versions', vaultId, nodeId] });
+        },
+        onError: (error) => {
+            console.error("Fehler beim Ändern des Icons:", error);
+            // Optional: Hier könnte man den Optimistic Update zurückrollen, falls implementiert.
+        }
+    });
 
     if (!currentVersion) return null;
 
     const handleIconSelect = (iconId) => {
-        console.log(`[ICON SELECTOR] Klick registriert. iconId: '${iconId}', vaultId: '${vaultId}', nodeId: '${nodeId}'`);
-        if (iconId === currentVersion.icon) return;
+        if (iconId === currentVersion.icon || changeIconMutation.isPending) {
+            return; // Verhindere Klicks während eine Änderung läuft
+        }
 
-        fetcher.submit(
-            { intent: 'changeIcon', icon: iconId },
-            {
-                method: 'post',
-                // Explizit die Action-URL angeben ist am robustesten.
-                action: `/vaults/${vaultId}/nodes/${nodeId}`,
-            }
-        );
+        // Rufe die Mutation mit dem neuen Icon auf.
+        changeIconMutation.mutate({ iconId });
     };
 
-    // Optimistic Update: Zeige das Icon an, das gerade gesendet wird, oder das aktuelle.
-    const displayIcon = fetcher.formData?.get('icon') || currentVersion.icon;
+    // Wir können das Icon, das gesendet wird, für ein "Optimistic Update" verwenden.
+    // `variables` enthält das, was an `mutate()` übergeben wurde.
+    const displayIcon = changeIconMutation.isPending
+        ? changeIconMutation.variables.iconId
+        : currentVersion.icon;
 
     return (
         <Dropdown>
-            <Dropdown.Toggle variant="light" size="sm" id="icon-selector-dropdown" title="Icon ändern" className="d-flex align-items-center">
+            <Dropdown.Toggle
+                variant="light"
+                size="sm"
+                id="icon-selector-dropdown"
+                title="Icon ändern"
+                className="d-flex align-items-center"
+                disabled={changeIconMutation.isPending} // Deaktiviere den Button während des Ladens
+            >
                 <i className={`bx ${displayIcon} fs-5`}></i>
             </Dropdown.Toggle>
 
