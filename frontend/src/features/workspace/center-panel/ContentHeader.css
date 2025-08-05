@@ -11,12 +11,6 @@
     position: sticky;
     top: 0;
 
-    /* ======================================================= */
-    /* HIER SIND DIE ENTSCHEIDENDEN KORREKTUREN                  */
-    /* ======================================================= */
-
-    /* 1. NEU: Hintergrundfarbe hinzufügen, um den durchscrollenden Text zu verdecken. */
-    /*    Wir nutzen die Bootstrap-Variable für Theming-Kompatibilität. */
     background-color: var(--secondary-color, #f5f5f5);
 
     /* 2. NEU: Stacking-Kontext sicherstellen, damit der Header über dem Inhalt bleibt. */
@@ -24,8 +18,7 @@
 
     /* Dein Padding und die Border für die Optik */
     padding-top: 0.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--bs-border-color, #e0e0e0);
+    padding-bottom: 0;
 }
 
 .content-title {
@@ -34,6 +27,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.4;
 }
 
 .action-buttons {

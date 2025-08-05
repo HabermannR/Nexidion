@@ -11,6 +11,10 @@
     flex-direction: column;
 }
 
+.d2h-code-side-linenumber {
+    display: none !important;
+}
+
 /*
   Die PanelGroup (eine Bibliothek-Komponente) muss gezwungen werden,
   den vollen verfügbaren Platz auszufüllen. [data-panel-group-direction]

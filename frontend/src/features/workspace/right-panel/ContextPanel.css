@@ -1,15 +1,20 @@
+/* Der Hauptcontainer, den wir im JSX hinzugefügt haben. */
+/* Er verhält sich wie ein Flex-Container in Spaltenrichtung. */
 .context-panel-container {
     display: flex;
     flex-direction: column;
     height: 100%;
-    overflow: hidden;
+    overflow: hidden; /* Verhindert Scrollbalken am Container selbst */
 }
 
+/* Die von React-Bootstrap erzeugte Tab-Leiste. */
+/* Sie soll nicht wachsen (flex-shrink: 0). */
 .context-panel-container .nav-tabs {
     flex-shrink: 0;
     border-bottom: 1px solid #dee2e6;
 }
 
+/* Optional: Etwas Styling für die Tabs selbst. */
 .context-panel-container .nav-tabs .nav-link {
     font-size: 0.9rem;
     color: #6c757d;
@@ -18,26 +23,26 @@
 .context-panel-container .nav-tabs .nav-link.active {
     color: #000;
     font-weight: 500;
-    background-color: #fff;
-    border-bottom-color: #fff;
 }
 
+/*
+ * ========================================================================
+ * HIER IST DIE MAGIE: Der Container für den Tab-Inhalt
+ * ========================================================================
+ */
+
+/* Wir weisen den Inhaltsbereich an, den restlichen Platz einzunehmen. */
 .context-panel-container .tab-content {
     flex-grow: 1;
-    display: flex; /* Stellt sicher, dass das Tab-Content den Raum füllt */
-    min-height: 0;
+    /* Wichtig, damit das Kind (.tab-pane) die Höhe korrekt erben kann. */
+    display: flex;
+    min-height: 0; /* Flexbox-Fix für scrollbare Kinder */
 }
 
+/* Der jeweils aktive Tab soll sich ebenfalls ausdehnen. */
 .context-panel-container .tab-pane.active {
     flex-grow: 1;
-    display: flex; /* Stellt sicher, dass das Tab-Pane den Raum füllt */
+    display: flex;
     flex-direction: column;
-    min-height: 0;
-}
-
-/* Die scroll-pane Klasse ist jetzt der primäre scrollbare Container innerhalb eines Tabs */
-.scroll-pane {
-    flex-grow: 1;
-    overflow-y: auto;
     min-height: 0;
 }

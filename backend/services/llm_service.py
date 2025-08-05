@@ -145,13 +145,12 @@ def generate_structured_response(system_prompt: str, user_prompt: str, model: st
 
 def generate_chat_title(chat_history: str, model: str, max_tokens: int = 100) -> str:
     system_prompt = "Based on the conversation, create a short, concise title (4-6 words max). Use the provided tool."
-    chosen_model = model or current_app.config.get('DEFAULT_CHAT_MODEL', 'gemini-1.5-flash')
-    if "gemini" in chosen_model:
-        chosen_model = 'gemini-1.5-flash'
-    elif "claude" in chosen_model:
-        chosen_model = 'claude-3-haiku-20240307'
-    elif "gpt" in chosen_model:
-        chosen_model = 'gpt-4o-mini'
+
+    # --- CONFIG-DRIVEN LOGIC as per "LLM choice v3" ---
+    # 1. If a specific model was passed in (from user selection), use it.
+    # 2. Otherwise, get the default title model from the app config.
+    chosen_model = model or current_app.config['DEFAULT_TITLE_MODEL']
+
     try:
         short_history = chat_history[:1500]
         response_data = generate_json_response(system_prompt, short_history, chosen_model, get_title_generation_schema,
