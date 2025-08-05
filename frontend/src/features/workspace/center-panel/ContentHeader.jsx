@@ -33,7 +33,7 @@ export default function ContentHeader({
                 <div className="action-buttons">
                     <ButtonGroup>
                         <Button variant="primary" size="sm" onClick={onEditClick} title="Inhalt bearbeiten">
-                            <i className="bx bx-pencil me-1"></i> Bearbeiten
+                            <i className="bx bx-pencil me-1"></i>
                         </Button>
                         <Dropdown as={ButtonGroup}>
                             <Dropdown.Toggle split variant="primary" size="sm" id="node-actions-dropdown" title="Weitere Aktionen" />

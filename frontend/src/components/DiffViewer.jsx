@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { createPatch } from 'diff';
-import { Diff2HtmlUI } from 'diff2html/lib/ui/js/diff2html-ui-slim.js';
+import { Diff2HtmlUI } from 'diff2html/lib/ui/js/diff2html-ui';
 
 // Wichtig: Die CSS-Imports müssen hier sein!
 import 'highlight.js/styles/github.css';
@@ -23,6 +23,16 @@ const DiffViewer = ({ oldContent, newContent, oldTitle = 'Original', newTitle = 
             // Nichts tun, wenn beide leer sind
             if (safeOldContent === '' && safeNewContent === '') {
                 return;
+            }
+
+            // NEUE PRÜFUNG: Wenn Inhalte identisch sind, zeige eine Meldung an.
+            if (safeOldContent === safeNewContent) {
+                diffContainerRef.current.innerHTML = `
+                    <div class="alert alert-success m-3">
+                        Keine Unterschiede zwischen den ausgewählten Versionen gefunden.
+                    </div>
+                `;
+                return; // Beende die Funktion hier
             }
 
             // Den Patch-String erstellen

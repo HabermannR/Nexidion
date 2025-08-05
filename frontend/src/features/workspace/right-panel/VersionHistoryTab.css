@@ -1,5 +1,18 @@
 /* src/components/VersionHistoryTab.css */
 
+.version-history-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0.5rem;
+}
+
+.version-list-scroll-area {
+    flex-grow: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
 .version-list-item {
     cursor: pointer;
     padding-top: 0.5rem;
