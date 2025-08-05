@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLoaderData, useOutletContext, useFetcher, useParams, useSearchParams, useNavigation } from 'react-router-dom';
 import { Button, Modal, Form as BootstrapForm, Alert } from 'react-bootstrap';
-import ReactDiffViewer from 'react-diff-viewer-continued';
+import DiffViewer from '../../../components/DiffViewer.jsx';
 
 import { useWorkspaceStore } from '../workspaceStore';
 import ContentHeader from './ContentHeader.jsx';
@@ -195,13 +195,11 @@ export default function NodeContent() {
                     </div>
                 </>
             ) : compareVersionData ? (
-                <ReactDiffViewer
-                    oldValue={sortedOldVersion?.content || ''}
-                    newValue={sortedNewVersion?.content || ''}
-                    splitView={true}
-                    leftTitle={`v${sortedOldVersion?.version}: ${new Date(sortedOldVersion.timestamp).toLocaleString('de-DE')}`}
-                    rightTitle={`v${sortedNewVersion?.version}: ${new Date(sortedNewVersion.timestamp).toLocaleString('de-DE')}`}
-                    useDarkTheme={false}
+                <DiffViewer
+                    oldContent={sortedOldVersion?.content || ''}
+                    newContent={sortedNewVersion?.content || ''}
+                    oldTitle={`v${sortedOldVersion?.version}: ${new Date(sortedOldVersion.timestamp).toLocaleString('de-DE')}`}
+                    newTitle={`v${sortedNewVersion?.version}: ${new Date(sortedNewVersion.timestamp).toLocaleString('de-DE')}`}
                 />
             ) : (
                 <MarkdownRenderer content={baseVersionData.content || ''} />
