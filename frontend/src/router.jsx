@@ -63,6 +63,7 @@ const router = createBrowserRouter([
                 id: 'workspace-layout',
                 element: <WorkspaceLayout />,
                 loader: vaultTreeLoader,
+                action: nodeAction,
                 shouldRevalidate: ({ currentParams, nextParams, formMethod, currentUrl, nextUrl }) => {
                     console.log('=== WORKSPACE shouldRevalidate DEBUG ===');
                     console.log('currentParams:', currentParams);
@@ -83,10 +84,9 @@ const router = createBrowserRouter([
                         return true;
                     }
 
-                    // Revalidiere bei Pfad-Änderung ODER wenn _t Parameter vorhanden ist (Cache-Buster)
-                    if (currentUrl?.pathname !== nextUrl?.pathname ||
-                        nextUrl?.searchParams?.has('_t')) {
-                        console.log('→ REVALIDATE: pathname changed or cache buster present');
+                    // WICHTIG: Revalidiere bei Cache-Buster (_t Parameter)
+                    if (nextUrl?.searchParams?.has('_t')) {
+                        console.log('→ REVALIDATE: cache buster present');
                         return true;
                     }
 

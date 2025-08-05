@@ -170,9 +170,17 @@ export default function ProjectTree() {
                     `/api/vaults/${vaultId}/nodes/`,
                     payload,
                 );
-                revalidator.revalidate();
-                navigate(`/vaults/${vaultId}/nodes/${response.data.id}`);
+
                 console.log("Element erfolgreich erstellt!");
+
+                // WICHTIG: Erst navigieren, DANN revalidieren
+                // Oder: mit _t Parameter navigieren um Revalidation zu erzwingen
+                const timestamp = Date.now();
+                navigate(`/vaults/${vaultId}/nodes/${response.data.id}?_t=${timestamp}`);
+
+                // Alternativ: Kleine Verzögerung vor Revalidation
+                // setTimeout(() => revalidator.revalidate(), 100);
+
             } catch (err) {
                 console.error("Fehler beim Erstellen des Elements:", err);
                 alert(`Fehler: ${err.response?.data?.error || err.message}`);
@@ -190,14 +198,20 @@ export default function ProjectTree() {
                 await apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}`, {
                     parent_id: newParentId,
                 });
-                revalidator.revalidate();
+
+                // WICHTIG: Navigation mit _t Parameter für Revalidation
+                const timestamp = Date.now();
+                navigate(`/vaults/${vaultId}/nodes/${nodeIdToMove}?_t=${timestamp}`);
+
             } catch (err) {
                 console.error("Fehler beim Verschieben des Elements:", err);
                 alert(`Fehler: ${err.response?.data?.error || err.message}`);
+
+                // Bei Fehler: Revalidation ohne Navigation
                 revalidator.revalidate();
             }
         },
-        [vaultId, revalidator],
+        [vaultId, revalidator, navigate],
     );
 
     if (!treeData)

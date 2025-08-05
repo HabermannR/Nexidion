@@ -28,6 +28,7 @@ from backend.api.nodes import nodes_bp
 from backend.api.chats import chats_bp
 from backend.api.llm import llm_bp
 from backend.api.images import image_bp
+from backend.api.workflows import workflows_bp
 
 migrate = Migrate()
 
@@ -74,6 +75,7 @@ def create_app(config_class=Config):
     app.register_blueprint(chats_bp)
     app.register_blueprint(llm_bp)
     app.register_blueprint(image_bp, url_prefix='/api/image')
+    app.register_blueprint(workflows_bp)
 
     # --- CLI Befehle (bereinigt) ---
     register_cli_commands(app)
