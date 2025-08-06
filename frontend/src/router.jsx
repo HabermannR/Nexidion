@@ -18,10 +18,18 @@ import NodeContent from './features/workspace/center-panel/NodeContent.jsx';
 
 import { vaultIndexLoader } from './features/vaults/vaults.index.loader.js';
 import VaultIndexRedirector from './features/vaults/VaultIndexRedirector.jsx';
-import VaultManager from './features/vaults/VaultManager.jsx';
-import { vaultManagerLoader } from './features/vaults/vaults.manager.loader.js';
-import { vaultManagerAction } from './features/vaults/vaults.manager.action.js';
+import VaultManager from './features/settings/VaultManager.jsx'; // Component remains
 import AdminDashboard from './features/admin/AdminDashboard.jsx';
+
+// --- NEUE SETTINGS-SEITEN ---
+import LlmSettings from './features/settings/LlmSettings.jsx';
+import UserSettings from './features/settings/UserSettings.jsx';
+
+
+// --- VERALTETE IMPORTS (nicht mehr benötigt nach dem Refactoring) ---
+// import { vaultManagerLoader } from './features/vaults/vaults.manager.loader.js';
+// import { vaultManagerAction } from './features/vaults/vaults.manager.action.js';
+
 
 const router = createBrowserRouter([
     // --- GRUPPE 1: Öffentliche Routen ---
@@ -64,12 +72,21 @@ const router = createBrowserRouter([
                 ]
             },
 
-            // --- B) Die Vault-Verwaltungsseite (unverändert) ---
+            // --- A) Die Vault-Verwaltungsseite (REFACTORING) ---
+            // Loader und Action wurden entfernt. Die Komponente nutzt jetzt TanStack Query.
             {
                 path: "settings/vaults",
                 element: <VaultManager />,
-                loader: vaultManagerLoader,
-                action: vaultManagerAction,
+            },
+
+            // --- B) NEUE EINSTELLUNGS-SEITEN ---
+            {
+                path: "settings/llms",
+                element: <LlmSettings />,
+            },
+            {
+                path: "settings/user",
+                element: <UserSettings />,
             },
 
             // --- C) Die Admin-Dashboard-Seite (unverändert) ---

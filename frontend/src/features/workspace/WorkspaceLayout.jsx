@@ -1,17 +1,19 @@
-// src/features/workspace/WorkspaceLayout.jsx
-
 import React, { useState, useRef, useMemo } from 'react';
-// WICHTIG: Wir importieren Outlet, Link und useLoaderData.
-// useRouteLoaderData ist hier nicht mehr nötig, da der Loader direkt an dieser Route hängt.
 import { Outlet, Link, useLoaderData } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
 import ProjectTree from './left-panel/ProjectTree.jsx';
-import ContextBar from './left-panel/ContextBar.jsx';
 import ContextPanel from './right-panel/ContextPanel.jsx';
 import './WorkspaceLayout.css';
 
-// Die BreadcrumbTrail-Komponente kann unverändert bleiben.
+// Import the new "dumb" presentational component
+import ContextBarDisplay from './ContextBarDisplay.jsx';
+
+// Import Zustand hooks
+import { useWorkspaceStore } from './workspaceStore.js';
+import { shallow } from 'zustand/shallow';
+
+// The BreadcrumbTrail component remains unchanged.
 const BreadcrumbTrail = ({ path }) => {
     if (!path || path.length === 0) return null;
     return (
@@ -30,23 +32,53 @@ const BreadcrumbTrail = ({ path }) => {
     );
 };
 
-
 export default function WorkspaceLayout() {
-    // --- LOKALER UI-ZUSTAND (für die Panel-Steuerung, etc.) ---
+    // --- LOCAL UI-ZUSTAND (for panel control, etc.) ---
     const [rightPanelMode, setRightPanelMode] = useState('normal');
     const [showMobileTree, setShowMobileTree] = useState(false);
     const [showMobileContext, setShowMobileContext] = useState(false);
-    const [breadcrumbPath, setBreadcrumbPath] = useState([]); // Wird vom Kind (NodeContent) befüllt
+    const [breadcrumbPath, setBreadcrumbPath] = useState([]);
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
     const programmaticResizeRef = useRef(false);
 
-    // --- DATEN-LOGIK (SAUBER & EINFACH) ---
-    // Der Baum kommt direkt vom Loader dieser Route (`vaultTreeLoader`).
-    // React Router sorgt dafür, dass diese Daten aktuell sind.
+    // --- DATA LOGIC (from React Router loader) ---
     const treeData = useLoaderData();
 
-    // --- UI-HANDLER (unverändert) ---
+    const outletContext = useMemo(() => ({
+        setBreadcrumbPath,
+        treeData
+    }), [treeData]); // The dependency array is key!
+
+    // --- ZUSTAND HOOK (acts as the "Container" logic) ---
+    // This parent component subscribes to the store ONCE.
+    // Comment out this entire block.
+    /*
+    const {
+        selectionSize,
+        savedSetsForDisplay,
+        clearSelection,
+        setSelection,
+        saveCurrentSet,
+        deleteSet
+    } = useWorkspaceStore(
+        (state) => ({
+            selectionSize: state.selectedNodeIds.size,
+            savedSetsForDisplay: Object.entries(state.savedSets).map(([name, ids]) => ({
+                name,
+                count: ids.length,
+                ids
+            })),
+            clearSelection: state.clearSelection,
+            setSelection: state.setSelection,
+            saveCurrentSet: state.saveCurrentSet,
+            deleteSet: state.deleteSet,
+        }),
+        shallow
+    );
+    */
+
+    // --- UI-HANDLER ---
     const handleLayout = () => {
         if (programmaticResizeRef.current) {
             programmaticResizeRef.current = false;
@@ -77,17 +109,26 @@ export default function WorkspaceLayout() {
         }
     };
 
-    // --- MEMOISIERTE KOMPONENTEN ---
-
-    // Der Baum wird nur neu erstellt, wenn sich die `treeData` wirklich ändern (bei Vault-Wechsel).
-    // Diese Optimierung ist korrekt und sinnvoll.
+    // --- MEMOIZED COMPONENTS ---
     const treeComponent = useMemo(() => (
         <ProjectTree treeData={treeData || []} />
     ), [treeData]);
 
-    // Das `ContextPanel` im rechten Bereich wird einfach so gerendert. Es ist
-    // nicht mehr von Daten aus diesem Layout abhängig, sondern holt sich seinen
-    // Zustand (wie die `diffSelection`) direkt aus dem `zustand`-Store.
+    // Create a single, shared instance of the "dumb" display component.
+    // We pass the state and actions from our single Zustand subscription as props.
+    // Comment out this block.
+    /*
+    const contextBarComponent = (
+        <ContextBarDisplay
+            selectionSize={selectionSize}
+            savedSets={savedSetsForDisplay}
+            onClear={clearSelection}
+            onSave={saveCurrentSet}
+            onLoadSet={setSelection}
+            onDeleteSet={deleteSet}
+        />
+    );
+    */
 
     console.log('🍞 WorkspaceLayout: aktueller breadcrumbPath:', breadcrumbPath);
 
@@ -101,7 +142,9 @@ export default function WorkspaceLayout() {
                     <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
                         <div className="left-panel-content-wrapper">
                             <div className="scroll-pane">{treeComponent}</div>
-                            <ContextBar />
+                            {/* Render the shared component instance here */}
+                            {/* {contextBarComponent} */}
+
                         </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
@@ -121,27 +164,20 @@ export default function WorkspaceLayout() {
                             </ButtonGroup>
                         </div>
                         <div className="scroll-pane px-4 pb-4">
-                            {/*
-                                Das Outlet rendert das Kind, also <NodeContent />.
-                                Wir übergeben die `setBreadcrumbPath`-Funktion via context,
-                                damit der Kind-Inhalt den Breadcrumb im Eltern-Layout setzen kann.
-                                Dies ist ein Standard-Pattern in React Router.
-                            */}
-                            <Outlet context={{ setBreadcrumbPath, treeData }} />
+                            <Outlet context={outletContext} />
                         </div>
                     </Panel>
 
                     {/* Right Panel */}
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
                     <Panel ref={rightPanelRef} id="right-panel" defaultSize={25} minSize={15} order={3} className="pane-template" collapsible>
-                        {/* Das ContextPanel ist jetzt völlig unabhängig. */}
                         <ContextPanel />
                     </Panel>
 
                 </PanelGroup>
             </div>
 
-            {/* --- Mobile Layout (unverändert in der Logik) --- */}
+            {/* --- Mobile Layout --- */}
             <div className="d-lg-none d-flex flex-column h-100">
                 <div className="mobile-action-bar p-2 border-bottom bg-light">
                     <div className="mobile-action-bar-buttons w-100">
@@ -150,12 +186,14 @@ export default function WorkspaceLayout() {
                     </div>
                 </div>
                 <div className="mobile-content-scroll-area">
-                    <Outlet context={{ setBreadcrumbPath, treeData }} />
+                    <Outlet context={outletContext} />
                 </div>
-                <ContextBar />
+                {/* Render the exact same shared component instance here */}
+                {/* {contextBarComponent} */}
+
             </div>
 
-            {/* --- Mobile Offcanvas Menus (unverändert in der Logik) --- */}
+            {/* --- Mobile Offcanvas Menus --- */}
             <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start" className="offcanvas-full-mobile">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Navigation</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body>{treeComponent}</Offcanvas.Body>

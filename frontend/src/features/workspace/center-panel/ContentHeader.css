@@ -2,10 +2,8 @@
 
 .content-header-container {
     display: flex;
-    flex-wrap: wrap; /* Gut für Responsiveness */
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
+    align-items: center; /* Vertikal zentrieren */
+    width: 100%;
 
     /* Die Sticky-Positionierung */
     position: sticky;
@@ -22,16 +20,25 @@
 }
 
 .content-title {
-    /* Verhindert, dass der Titel die Buttons aus dem Bild schiebt */
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    line-height: 1.4;
+    flex-grow: 1;  /* Nimmt den meisten Platz ein */
+    min-width: 0;    /* Wichtig für text-truncate, damit es funktioniert */
+    margin-bottom: 0;
+    font-size: 1.5rem; /* Etwas kleiner als eine Standard-h1, passt besser */
 }
+
 
 .action-buttons {
     display: flex;
     gap: 0.5rem;
     flex-shrink: 0; /* Verhindert, dass die Buttons schrumpfen */
+}
+
+.edit-button-responsive .bx-pencil {
+    margin-right: 0; /* Standardmäßig kein Margin */
+}
+
+@media (max-width: 991.98px) {
+    .edit-button-responsive .bx-pencil {
+        margin-right: 0.25rem; /* Entspricht me-1 von Bootstrap */
+    }
 }

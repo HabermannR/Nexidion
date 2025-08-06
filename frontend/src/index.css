@@ -32,3 +32,9 @@ h1, h2, h3, h4, h5, h6, p, ul, ol {
 a {
     color: var(--primary-color);
 }
+
+/* Scrollbares Dropdown für lange Listen */
+.scrollable-dropdown {
+    max-height: 400px; /* Eine vernünftige maximale Höhe */
+    overflow-y: auto;  /* Fügt eine vertikale Scrollleiste hinzu, wenn nötig */
+}

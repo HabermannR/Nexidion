@@ -1,0 +1,269 @@
+// src/features/vaults/VaultManager.jsx
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useOutletContext, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+    Container,
+    Row,
+    Col,
+    Card,
+    Button,
+    Form as BootstrapForm,
+    Table,
+    Alert,
+    Spinner,
+    InputGroup
+} from 'react-bootstrap';
+import apiClient from '../../api/apiClient.js';
+
+// --- VaultRow Component (Refactored) ---
+function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutation }) {
+    const [isEditing, setIsEditing] = useState(false);
+
+    // Check if a mutation targeting THIS row is in progress
+    const isRenaming = renameMutation.isPending && renameMutation.variables?.vaultId === vault.id;
+    const isDeleting = deleteMutation.isPending && deleteMutation.variables === vault.id;
+
+    // Close editing mode on successful rename
+    useEffect(() => {
+        if (renameMutation.isSuccess) {
+            setIsEditing(false);
+        }
+    }, [renameMutation.isSuccess]);
+
+    const handleRenameSubmit = (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        const newName = formData.get('newName');
+        if (newName && newName.trim() !== '') {
+            renameMutation.mutate({ vaultId: vault.id, newName: newName.trim() });
+        }
+    };
+
+    const handleDelete = () => {
+        if (window.confirm(`Möchten Sie den Vault "${vault.name}" wirklich löschen?`)) {
+            deleteMutation.mutate(vault.id);
+        }
+    };
+
+    return (
+        <tr key={vault.id}>
+            <td>
+                {isEditing ? (
+                    <BootstrapForm onSubmit={handleRenameSubmit} className="d-flex">
+                        <InputGroup>
+                            <BootstrapForm.Control
+                                type="text"
+                                name="newName"
+                                defaultValue={vault.name}
+                                autoFocus
+                                disabled={isRenaming}
+                            />
+                            <Button type="submit" variant="outline-success" size="sm" disabled={isRenaming}>
+                                {isRenaming ? <Spinner size="sm" /> : '✓'}
+                            </Button>
+                            <Button variant="outline-secondary" size="sm" onClick={() => setIsEditing(false)} disabled={isRenaming}>
+                                ✕
+                            </Button>
+                        </InputGroup>
+                    </BootstrapForm>
+                ) : (
+                    <strong>{vault.name}</strong>
+                )}
+            </td>
+            <td>
+                {activeVault?.id === vault.id ? (
+                    <span className="badge bg-success">Aktiv</span>
+                ) : (
+                    <Link to={`/vaults/${vault.id}`} className="btn btn-sm btn-outline-primary">
+                        Aktivieren
+                    </Link>
+                )}
+            </td>
+            <td>
+                {!isEditing && (
+                    <div className="btn-group" role="group">
+                        <Button variant="outline-primary" size="sm" onClick={() => setIsEditing(true)} disabled={isDeleting || isRenaming}>
+                            Umbenennen
+                        </Button>
+                        <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={handleDelete}
+                            disabled={isDeleting || isRenaming || vaultsCount <= 1}
+                            title={vaultsCount <= 1 ? "Der letzte Vault kann nicht gelöscht werden" : ""}
+                        >
+                            {isDeleting ? <Spinner size="sm" /> : 'Löschen'}
+                        </Button>
+                    </div>
+                )}
+            </td>
+        </tr>
+    );
+}
+
+
+// --- Main VaultManager Component (Refactored) ---
+export default function VaultManager() {
+    const { activeVault } = useOutletContext();
+    const navigate = useNavigate();
+    const queryClient = useQueryClient();
+
+    const [isBatchMode, setIsBatchMode] = useState(false);
+    const [alert, setAlert] = useState(null); // Local alert state for success/error messages
+    const formRef = useRef();
+    const inputRef = useRef();
+
+    // --- DATA FETCHING with useQuery ---
+    const { data: vaults, isLoading, isError, error: loaderError } = useQuery({
+        queryKey: ['vaults'],
+        queryFn: () => apiClient.get('/api/vaults/').then(res => res.data)
+    });
+
+    // --- MUTATIONS ---
+    const createVaultMutation = useMutation({
+        mutationFn: (name) => apiClient.post('/api/vaults/', { name }),
+        onSuccess: (newVault) => {
+            queryClient.invalidateQueries({ queryKey: ['vaults'] });
+            setAlert({ type: 'success', message: `Vault "${newVault.name}" wurde erfolgreich erstellt.` });
+
+            if (isBatchMode) {
+                formRef.current?.reset();
+                inputRef.current?.focus();
+            } else {
+                navigate(`/vaults/${newVault.id}`);
+            }
+        },
+        onError: (err) => {
+            setAlert({ type: 'danger', message: err.response?.data?.error || 'Ein Fehler ist aufgetreten.' });
+        }
+    });
+
+    const renameVaultMutation = useMutation({
+        mutationFn: ({ vaultId, newName }) => apiClient.put(`/api/vaults/${vaultId}`, { name: newName }),
+        onSuccess: (updatedVault) => {
+            queryClient.invalidateQueries({ queryKey: ['vaults'] });
+            // Invalidate AppShell's query too, so the name updates in the header.
+            queryClient.invalidateQueries({ queryKey: ['allVaults'] });
+            setAlert({ type: 'success', message: `Vault erfolgreich in "${updatedVault.name}" umbenannt.` });
+        },
+        onError: (err) => setAlert({ type: 'danger', message: err.response?.data?.error || 'Umbenennen fehlgeschlagen.' })
+    });
+
+    const deleteVaultMutation = useMutation({
+        mutationFn: (vaultId) => apiClient.delete(`/api/vaults/${vaultId}`),
+        onSuccess: (data, vaultIdToDelete) => {
+            // After successful deletion, refetch the vaults list
+            queryClient.invalidateQueries({ queryKey: ['vaults']}).then(() => {
+                // This logic runs AFTER the query is refetched
+                const remainingVaults = queryClient.getQueryData(['vaults']);
+
+                // If the deleted vault was the active one, navigate away
+                if (activeVault?.id === vaultIdToDelete) {
+                    if (remainingVaults && remainingVaults.length > 0) {
+                        navigate(`/vaults/${remainingVaults[0].id}`);
+                    } else {
+                        navigate('/settings/vaults'); // Navigate to the manager if no vaults are left
+                    }
+                }
+            });
+            // Invalidate AppShell's query too
+            queryClient.invalidateQueries({ queryKey: ['allVaults'] });
+            setAlert({ type: 'success', message: 'Vault wurde erfolgreich gelöscht.' });
+        },
+        onError: (err) => setAlert({ type: 'danger', message: err.response?.data?.error || 'Löschen fehlgeschlagen.' })
+    });
+
+    const handleCreateSubmit = (event) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        const name = formData.get('name');
+        if (name && name.trim() !== '') {
+            createVaultMutation.mutate(name.trim());
+        }
+    };
+
+    const isSubmitting = createVaultMutation.isPending || renameVaultMutation.isPending || deleteVaultMutation.isPending;
+
+    return (
+        <Container className="py-4">
+            <div className="d-flex justify-content-between align-items-center mb-4">
+                <h2>Vault-Verwaltung</h2>
+                <Button as={Link} to={activeVault ? `/vaults/${activeVault.id}` : '/'} variant="secondary">
+                    Zurück zu den Nodes
+                </Button>
+            </div>
+
+            {alert && <Alert variant={alert.type} onClose={() => setAlert(null)} dismissible>{alert.message}</Alert>}
+
+            <Card className="mb-4">
+                <Card.Header as="h5">Neuen Vault erstellen</Card.Header>
+                <Card.Body>
+                    <BootstrapForm ref={formRef} onSubmit={handleCreateSubmit}>
+                        <Row>
+                            <Col md={12}>
+                                <BootstrapForm.Group>
+                                    <BootstrapForm.Label htmlFor="new-vault-name">Vault-Name</BootstrapForm.Label>
+                                    <BootstrapForm.Control
+                                        id="new-vault-name" type="text" name="name"
+                                        placeholder="Namen für den neuen Vault eingeben..."
+                                        required disabled={createVaultMutation.isPending}
+                                        ref={inputRef} autoFocus
+                                    />
+                                </BootstrapForm.Group>
+                            </Col>
+                        </Row>
+                        <Row className="mt-3">
+                            <Col xs={7} md={8}>
+                                <BootstrapForm.Check
+                                    type="switch" id="batch-mode-switch"
+                                    label="Batch-Erstellung (erstellen & hier bleiben)"
+                                    checked={isBatchMode} onChange={(e) => setIsBatchMode(e.target.checked)}
+                                    disabled={createVaultMutation.isPending}
+                                />
+                            </Col>
+                            <Col xs={5} md={4} className="d-flex align-items-end">
+                                <Button type="submit" variant="primary" disabled={createVaultMutation.isPending} className="w-100">
+                                    {createVaultMutation.isPending ? (
+                                        <><Spinner as="span" animation="border" size="sm" /> Erstellen...</>
+                                    ) : 'Vault erstellen'}
+                                </Button>
+                            </Col>
+                        </Row>
+                    </BootstrapForm>
+                </Card.Body>
+            </Card>
+
+            <Card>
+                <Card.Header as="h5">Bestehende Vaults</Card.Header>
+                <Card.Body>
+                    {isLoading ? (
+                        <div className="text-center"><Spinner animation="border" /> Lade Vaults...</div>
+                    ) : isError ? (
+                        <Alert variant="danger">{loaderError.message}</Alert>
+                    ) : vaults.length === 0 ? (
+                        <Alert variant="info">Keine Vaults vorhanden. Erstellen Sie Ihren ersten Vault oben.</Alert>
+                    ) : (
+                        <Table responsive hover>
+                            <thead>
+                            <tr><th>Name</th><th>Status</th><th>Aktionen</th></tr>
+                            </thead>
+                            <tbody>
+                            {vaults.map((vault) => (
+                                <VaultRow
+                                    key={vault.id} vault={vault}
+                                    activeVault={activeVault} vaultsCount={vaults.length}
+                                    renameMutation={renameVaultMutation}
+                                    deleteMutation={deleteVaultMutation}
+                                    isSubmitting={isSubmitting}
+                                />
+                            ))}
+                            </tbody>
+                        </Table>
+                    )}
+                </Card.Body>
+            </Card>
+        </Container>
+    );
+}

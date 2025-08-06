@@ -17,7 +17,6 @@ import MarkdownRenderer from './MarkdownRenderer.jsx';
 
 // Die Hilfsfunktion bleibt unverändert
 const findPathInTree = (nodes, nodeId, currentPath = []) => {
-    // ... (keine Änderung)
     for (const node of nodes) {
         const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${node.vault_id}/nodes/${node.id}`}];
         if (node.id === nodeId) return newPath;
@@ -94,11 +93,10 @@ export default function NodeContent() {
         } else {
             setBreadcrumbPath([]);
         }
-    }, [treeData, nodeId, setBreadcrumbPath]);
+    }, [treeData, nodeId]);
 
     useEffect(() => {
         if (versions && versions.length > 0) {
-            // Finde die Version aus der URL, falls vorhanden, sonst nimm die neueste.
             const versionParam = new URL(window.location.href).searchParams.get('version');
             const initialBase = versionParam
                 ? versions.find(v => String(v.version) === versionParam)
@@ -107,11 +105,11 @@ export default function NodeContent() {
             setDiffBase(initialBase || versions[0]);
         }
 
-        // Aufräumfunktion: Wenn die Komponente unmounted wird, leere die Auswahl.
+        // The cleanup function also uses a stable action, so it's safe.
         return () => {
             clearDiff();
         };
-    }, [versions, nodeId, setDiffBase, clearDiff]);
+    }, [versions, nodeId]);
 
     useEffect(() => {
         if (baseVersionData) {

@@ -6,93 +6,96 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 const STORAGE_KEY = 'nexidion-workspace-state-v1';
 
 /**
- * RADIKALE VEREINFACHUNG: Zentraler Zustandsspeicher für den Arbeitsbereich.
- * Keine komplexe Mutation-Detection, keine Race Conditions.
- * Einfache Regel: URL-Parameter bestimmen, was angezeigt wird.
+ * Central state store for the entire workspace.
+ * Manages UI state like selections, collapsed nodes, and the active chat session.
+ * State is persisted to localStorage to maintain user context across sessions.
  */
 export const useWorkspaceStore = create(
     persist(
         (set, get) => ({
             // ===============================================
-            // === ZUSTAND ===
+            // === STATE PROPERTIES ===
             // ===============================================
+
+            // --- Tree/Graph State ---
             selectedNodeIds: new Set(),
             collapsedNodes: new Set(),
             savedSets: {},
+
+            // --- Diff State ---
             diffSelection: { base: null, compare: null },
+
+            // --- LLM Model State ---
             chatModel: null,
             titleModel: null,
 
+            // --- Active Chat Session State (Initialized for predictability) ---
+            activeChatSessionId: null,
+            activeChatTitle: 'New Chat',
+            activeChatMessages: [], // Always initialize as an array
+
             // ===============================================
-            // === AKTIONEN ===
+            // === ACTIONS ===
             // ===============================================
 
-            // --- LLM-Aktionen ---
+            // --- LLM Actions ---
+
             setChatModel: (model) => set({ chatModel: model }),
             setTitleModel: (model) => set({ titleModel: model }),
-            initializeModels: (availableModels) => set(state => {
-                if (!availableModels || availableModels.length === 0) return {};
-                return {
-                    chatModel: state.chatModel || availableModels[0],
-                    titleModel: state.titleModel || availableModels[0],
-                };
-            }),
-            // ===============================================
-            // NEU: Chat-Aktionen
-            // ===============================================
+            initializeModels: (availableModels) => {
+                if (!availableModels || availableModels.length === 0) {
+                    return;
+                }
+                const { chatModel, titleModel } = get();
+                const needsUpdate = !chatModel || !titleModel;
+                if (needsUpdate) {
+                    set({
+                        chatModel: chatModel || availableModels[0],
+                        titleModel: titleModel || availableModels[0],
+                    });
+                }
+            },
+
+
+            // --- Chat Actions (Now simplified) ---
             startNewChat: () => set({
                 activeChatSessionId: null,
                 activeChatTitle: 'New Chat',
                 activeChatMessages: []
             }),
 
-            // Setzt eine komplette Session (z.B. nach dem Laden aus der History)
+            // Sets a complete session (e.g., after loading from history)
             setActiveChatSession: (sessionId, title, messages) => set({
                 activeChatSessionId: sessionId,
                 activeChatTitle: title || 'Chat',
                 activeChatMessages: messages || [],
             }),
 
-            // Fügt eine neue Nachricht zum Live-Puffer hinzu
-            appendMessage: (message) => set(state => {
-                // ==========================================================
-                // HIER IST DIE KORREKTUR
-                // ==========================================================
-                // Stelle sicher, dass state.activeChatMessages immer ein Array ist, bevor du den Spread-Operator verwendest.
-                const currentMessages = Array.isArray(state.activeChatMessages) ? state.activeChatMessages : [];
+            // Appends a new message to the live buffer
+            appendMessage: (message) => set(state => ({
+                activeChatMessages: [...state.activeChatMessages, message]
+            })),
 
-                return {
-                    activeChatMessages: [...currentMessages, message]
-                };
-            }),
+            // Updates an existing message (e.g., from 'pending' to 'confirmed')
+            updateMessage: (messageId, updates) => set(state => ({
+                activeChatMessages: state.activeChatMessages.map(msg =>
+                    msg.id === messageId ? { ...msg, ...updates } : msg
+                )
+            })),
 
-            // Aktualisiert eine existierende Nachricht (z.B. von 'pending' zu 'confirmed')
-            updateMessage: (messageId, updates) => set(state => {
-                const currentMessages = Array.isArray(state.activeChatMessages) ? state.activeChatMessages : [];
-                return {
-                    activeChatMessages: currentMessages.map(msg =>
-                        msg.id === messageId ? { ...msg, ...updates } : msg
-                    )
-                };
-            }),
-
-            // Fügt einen Token-Chunk zu einer streamenden Nachricht hinzu
-            appendChunkToMessage: (messageId, chunk) => set(state => {
-                const currentMessages = Array.isArray(state.activeChatMessages) ? state.activeChatMessages : [];
-                return {
-                    activeChatMessages: currentMessages.map(msg =>
-                        msg.id === messageId ? { ...msg, content: msg.content + chunk } : msg
-                    )
-                };
-            }),
+            // Appends a token chunk to a streaming message
+            appendChunkToMessage: (messageId, chunk) => set(state => ({
+                activeChatMessages: state.activeChatMessages.map(msg =>
+                    msg.id === messageId ? { ...msg, content: msg.content + chunk } : msg
+                )
+            })),
 
             setActiveChatTitle: (title) => set({ activeChatTitle: title }),
 
-
-            // --- Direkte Diff-Aktionen (vereinfacht) ---
+            // --- Diff Actions ---
             setDiffBase: (version) => set({ diffSelection: { base: version, compare: null } }),
             setDiffCompare: (version) => set(state => {
-                // Wenn das gleiche Compare-Element geklickt wird, hebe die Auswahl auf.
+                // If the same compare item is clicked, deselect it.
                 if (state.diffSelection.compare?.id === version?.id) {
                     return { diffSelection: { ...state.diffSelection, compare: null } };
                 }
@@ -100,7 +103,7 @@ export const useWorkspaceStore = create(
             }),
             clearDiff: () => set({ diffSelection: { base: null, compare: null } }),
 
-            // --- Baum-Aktionen ---
+            // --- Tree Actions ---
             toggleNodeSelection: (nodeId) =>
                 set((state) => {
                     const newSelection = new Set(state.selectedNodeIds);
@@ -119,7 +122,7 @@ export const useWorkspaceStore = create(
                     return { collapsedNodes: newCollapsed };
                 }),
 
-            // --- Kontext-Sets ---
+            // --- Context Set Actions ---
             saveCurrentSet: (name) => {
                 if (!name?.trim()) return;
                 const currentSelection = get().selectedNodeIds;
@@ -141,7 +144,7 @@ export const useWorkspaceStore = create(
                 });
             },
 
-            // --- Aufräumen ---
+            // --- Cleanup Action ---
             removeNodeFromContext: (nodeId) => {
                 set((state) => {
                     const newSelection = new Set(state.selectedNodeIds);
@@ -168,10 +171,11 @@ export const useWorkspaceStore = create(
         }),
         {
             // ===============================================
-            // === PERSISTIERUNG ===
+            // === PERSISTENCE CONFIGURATION ===
             // ===============================================
             name: STORAGE_KEY,
             storage: createJSONStorage(() => localStorage, {
+                // Custom replacer/reviver to handle Set objects, which JSON doesn't support natively.
                 replacer: (key, value) => {
                     if (value instanceof Set) {
                         return { __type: 'Set', value: [...value] };
@@ -179,20 +183,27 @@ export const useWorkspaceStore = create(
                     return value;
                 },
                 reviver: (key, value) => {
-                    if (value?.__type === 'Set') {  // ← Zwei Punkte, nicht drei!
+                    if (value?.__type === 'Set') {
                         return new Set(value.value);
                     }
                     return value;
                 },
             }),
-            // Nur UI-Zustände persistieren, nicht die Versionsauswahl
+            // Selectively persist only the parts of the state that make sense to restore.
             partialize: (state) => ({
+                // UI State
                 selectedNodeIds: state.selectedNodeIds,
                 collapsedNodes: state.collapsedNodes,
                 savedSets: state.savedSets,
-                // NEU: Auch die Modellauswahl persistieren, damit sie erhalten bleibt.
+
+                // Model Preferences
                 chatModel: state.chatModel,
                 titleModel: state.titleModel,
+
+                // Active Chat Session (for better UX on refresh)
+                activeChatSessionId: state.activeChatSessionId,
+                activeChatTitle: state.activeChatTitle,
+                activeChatMessages: state.activeChatMessages,
             }),
         }
     )

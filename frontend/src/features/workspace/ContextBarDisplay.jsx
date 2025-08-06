@@ -1,42 +1,34 @@
+// src/features/workspace/left-panel/ContextBarDisplay.jsx (NEW FILE)
+
 import React from 'react';
 import { Button, ButtonGroup, Dropdown } from 'react-bootstrap';
-import { useWorkspaceStore } from '../workspaceStore.js';
-import './ContextBar.css'; // Zugehörige Stile für die Komponente
+import './ContextBar.css';
 
 /**
- * ContextBar ist eine in sich geschlossene Komponente zur Verwaltung der Node-Auswahl.
- * Sie zeigt den aktuellen Status an und bietet Aktionen zum Leeren, Speichern und Laden
- * von "Kontext-Sets". Sie ist vollständig vom globalen `zustand`-Store gesteuert.
+ * A "dumb" presentational component for the context bar.
+ * It has no knowledge of Zustand and receives all its data and functions as props.
+ * This makes it safe to be rendered multiple times.
  */
-export default function ContextBar() {
-    // Alle benötigten Zustände und Aktionen werden direkt aus dem Store geholt.
-    // Die Komponente ist dadurch komplett "prop-less" und autonom.
-    const {
-        selectedNodeIds,
-        savedSets,
-        clearSelection,
-        setSelection,
-        saveCurrentSet,
-        deleteSet
-    } = useWorkspaceStore ();
+export default function ContextBarDisplay({
+                                              selectionSize,
+                                              savedSets, // This is now our array: [{name, count, ids}, ...]
+                                              onClear,
+                                              onSave,
+                                              onLoadSet,
+                                              onDeleteSet
+                                          }) {
 
     const handleSave = () => {
         const name = prompt("Name für diese Auswahl eingeben:");
-        // Die Logik (Prüfungen, Speichern) ist im Store gekapselt.
         if (name) {
-            saveCurrentSet(name);
+            onSave(name); // Call the function from props
         }
     };
 
-    const handleLoad = (ids) => {
-        setSelection(ids);
-    };
-
     const handleDelete = (e, name) => {
-        // Verhindert, dass der Klick auf den Löschen-Button auch das Laden auslöst.
         e.stopPropagation();
         if (window.confirm(`Soll das Kontext-Set "${name}" wirklich gelöscht werden?`)) {
-            deleteSet(name);
+            onDeleteSet(name); // Call the function from props
         }
     };
 
@@ -45,15 +37,15 @@ export default function ContextBar() {
     return (
         <div className="context-bar">
             <span className="context-status-text">
-                <strong>{selectedNodeIds.size}</strong> Node(s) als Kontext ausgewählt
+                <strong>{selectionSize}</strong> Node(s) als Kontext ausgewählt
             </span>
 
             <ButtonGroup>
                 <Button
                     variant="outline-secondary"
                     size="sm"
-                    onClick={clearSelection}
-                    disabled={selectedNodeIds.size === 0}
+                    onClick={onClear} // Call the function from props
+                    disabled={selectionSize === 0}
                     title="Aktuelle Auswahl zurücksetzen"
                 >
                     <i className="bx bx-x"></i> Leeren
@@ -71,7 +63,7 @@ export default function ContextBar() {
                     <Dropdown.Menu align="end">
                         <Dropdown.Item
                             onClick={handleSave}
-                            disabled={selectedNodeIds.size === 0}
+                            disabled={selectionSize === 0}
                         >
                             <i className="bx bx-save me-2"></i>Aktuelle Auswahl speichern...
                         </Dropdown.Item>
@@ -80,22 +72,23 @@ export default function ContextBar() {
                         <Dropdown.Header>Gespeicherte Sets</Dropdown.Header>
 
                         {hasSavedSets ? (
-                            Object.entries(savedSets).map(([name, ids]) => (
+                            // MAP OVER THE ARRAY DIRECTLY
+                            savedSets.map((set) => (
                                 <Dropdown.Item
-                                    key={name}
+                                    key={set.name}
                                     className="context-set-item"
-                                    onClick={() => handleLoad(ids)}
-                                    title={`Set "${name}" laden`}
+                                    onClick={() => onLoadSet(set.ids)} // Use the ids property
+                                    title={`Set "${set.name}" laden`}
                                 >
                                     <span className="context-set-name">
-                                        {name} ({ids.length})
+                                        {set.name} ({set.count}) {/* Use the name and count properties */}
                                     </span>
                                     <Button
                                         variant="link"
                                         size="sm"
                                         className="text-danger p-0"
-                                        onClick={(e) => handleDelete(e, name)}
-                                        title={`Set "${name}" löschen`}
+                                        onClick={(e) => handleDelete(e, set.name)} // Use the name property
+                                        title={`Set "${set.name}" löschen`}
                                     >
                                         <i className="bx bxs-trash"></i>
                                     </Button>

@@ -103,14 +103,16 @@ export default function ContentHeader({
                     </InputGroup>
                 </Form>
             ) : (
-                <h1 className="content-title mb-0">{currentVersion.title}</h1>
+                <h1 className="content-title text-truncate text-center mx-2">{currentVersion.title}</h1>
             )}
 
             {!isEditing && !isRenaming && (
                 <div className="action-buttons">
                     <ButtonGroup>
-                        <Button variant="primary" size="sm" onClick={onEditClick} title="Inhalt bearbeiten">
-                            <i className="bx bx-pencil me-1"></i>
+                        <Button variant="primary" size="sm" onClick={onEditClick} title="Inhalt bearbeiten" className="edit-button-responsive">
+                            <i className="bx bx-pencil"></i>
+                            {/* d-none d-sm-inline: Text ist nur auf sm-Bildschirmen (>=576px) und größer sichtbar */}
+                            <span className="d-none d-sm-inline ms-1">Bearbeiten</span>
                         </Button>
                         <Dropdown as={ButtonGroup}>
                             <Dropdown.Toggle split variant="primary" size="sm" id="node-actions-dropdown" title="Weitere Aktionen" />
