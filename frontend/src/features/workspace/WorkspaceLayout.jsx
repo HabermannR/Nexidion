@@ -4,6 +4,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
 import ProjectTree from './left-panel/ProjectTree.jsx';
 import ContextPanel from './right-panel/ContextPanel.jsx';
+import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
 
 // Import the new "dumb" presentational component
@@ -50,34 +51,6 @@ export default function WorkspaceLayout() {
         treeData
     }), [treeData]); // The dependency array is key!
 
-    // --- ZUSTAND HOOK (acts as the "Container" logic) ---
-    // This parent component subscribes to the store ONCE.
-    // Comment out this entire block.
-    /*
-    const {
-        selectionSize,
-        savedSetsForDisplay,
-        clearSelection,
-        setSelection,
-        saveCurrentSet,
-        deleteSet
-    } = useWorkspaceStore(
-        (state) => ({
-            selectionSize: state.selectedNodeIds.size,
-            savedSetsForDisplay: Object.entries(state.savedSets).map(([name, ids]) => ({
-                name,
-                count: ids.length,
-                ids
-            })),
-            clearSelection: state.clearSelection,
-            setSelection: state.setSelection,
-            saveCurrentSet: state.saveCurrentSet,
-            deleteSet: state.deleteSet,
-        }),
-        shallow
-    );
-    */
-
     // --- UI-HANDLER ---
     const handleLayout = () => {
         if (programmaticResizeRef.current) {
@@ -114,23 +87,6 @@ export default function WorkspaceLayout() {
         <ProjectTree treeData={treeData || []} />
     ), [treeData]);
 
-    // Create a single, shared instance of the "dumb" display component.
-    // We pass the state and actions from our single Zustand subscription as props.
-    // Comment out this block.
-    /*
-    const contextBarComponent = (
-        <ContextBarDisplay
-            selectionSize={selectionSize}
-            savedSets={savedSetsForDisplay}
-            onClear={clearSelection}
-            onSave={saveCurrentSet}
-            onLoadSet={setSelection}
-            onDeleteSet={deleteSet}
-        />
-    );
-    */
-
-    console.log('🍞 WorkspaceLayout: aktueller breadcrumbPath:', breadcrumbPath);
 
     return (
         <>
@@ -142,9 +98,7 @@ export default function WorkspaceLayout() {
                     <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
                         <div className="left-panel-content-wrapper">
                             <div className="scroll-pane">{treeComponent}</div>
-                            {/* Render the shared component instance here */}
-                            {/* {contextBarComponent} */}
-
+                            <ContextBarContainer />
                         </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
@@ -178,31 +132,54 @@ export default function WorkspaceLayout() {
             </div>
 
             {/* --- Mobile Layout --- */}
-            <div className="d-lg-none d-flex flex-column h-100">
+            <div className="d-lg-none mobile-layout-wrapper">
                 <div className="mobile-action-bar p-2 border-bottom bg-light">
                     <div className="mobile-action-bar-buttons w-100">
                         <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileTree(true)}>☰ Navigation</Button>
                         <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileContext(true)}>⚙️ Context</Button>
                     </div>
                 </div>
-                <div className="mobile-content-scroll-area">
-                    <Outlet context={outletContext} />
-                </div>
-                {/* Render the exact same shared component instance here */}
-                {/* {contextBarComponent} */}
 
+                {/* This is the new scrollable content area */}
+                <main className="mobile-main-content p-3 pt-0">
+                    <Outlet context={outletContext} />
+                </main>
+
+                {/* The context bar is now wrapped in our fixed footer element */}
+                <footer className="mobile-fixed-footer">
+                    <ContextBarContainer />
+                </footer>
             </div>
 
-            {/* --- Mobile Offcanvas Menus --- */}
             <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start" className="offcanvas-full-mobile">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Navigation</Offcanvas.Title></Offcanvas.Header>
-                <Offcanvas.Body>{treeComponent}</Offcanvas.Body>
+                {/*
+                  Make the body a flex container so we can position the context bar at the bottom.
+                  p-0 removes default padding so the context bar is flush with the edges.
+                */}
+                <Offcanvas.Body className="d-flex flex-column p-0">
+                    {/* The tree now needs to be in its own scrollable sub-container */}
+                    <div className="flex-grow-1 overflow-auto p-3">
+                        {treeComponent}
+                    </div>
+                    {/* Add a second, independent instance of the context bar here */}
+                    <ContextBarContainer />
+                </Offcanvas.Body>
             </Offcanvas>
 
             <Offcanvas show={showMobileContext} onHide={() => setShowMobileContext(false)} placement="end" className="offcanvas-full-mobile">
                 <Offcanvas.Header closeButton><Offcanvas.Title>Context</Offcanvas.Title></Offcanvas.Header>
-                <Offcanvas.Body className="p-0">
-                    <ContextPanel />
+                {/*
+                  Apply the same flex-column pattern here as we did for the left panel.
+                */}
+                <Offcanvas.Body className="d-flex flex-column p-0">
+                    {/* The existing ContextPanel now becomes the scrollable main content. */}
+                    {/* It already handles its own internal padding and scrolling, so we just let it grow. */}
+                    <div className="flex-grow-1 overflow-auto">
+                        <ContextPanel />
+                    </div>
+                    {/* Add a third, independent instance of the context bar here. */}
+                    <ContextBarContainer />
                 </Offcanvas.Body>
             </Offcanvas>
         </>

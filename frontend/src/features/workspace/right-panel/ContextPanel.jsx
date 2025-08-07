@@ -14,13 +14,14 @@ export default function ContextPanel() {
         // 1. DIESER DIV ist jetzt der Flex-Container, der die Höhe kontrolliert.
         <div className="context-panel-container">
             <Tabs
-                defaultActiveKey="versions"
+                defaultActiveKey="chat"
                 id="context-panel-tabs"
                 mountOnEnter
                 unmountOnExit
                 // `fill` sorgt dafür, dass die Tabs die volle Breite einnehmen.
                 // WICHTIG: Keine Flexbox-Klassen mehr hier!
                 fill
+                className="context-panel-grid-tabs"
             >
                 <Tab eventKey="chat" title="Chat">
                     <ChatTab />

@@ -168,7 +168,7 @@ export default function NodeContent() {
     }
 
     return (
-        <div className="pt-3">
+        <>
             {isEditing ? (
                 <Alert variant="info">
                     {isViewingOldVersion
@@ -225,6 +225,6 @@ export default function NodeContent() {
                     </Button>
                 </Modal.Footer>
             </Modal>
-        </div>
+        </>
     );
 }

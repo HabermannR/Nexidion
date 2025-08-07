@@ -126,25 +126,32 @@
     font-size: 0.875rem; /* Entspricht Bootstrap's 'sm' Größe */
 }
 
-/* Der Scroll-Bereich für den mobilen Inhalt */
-.mobile-content-scroll-area {
-    flex-grow: 1;
-    overflow-y: auto;
-    padding: 0 1.5rem;
-    /* Wichtig: Platz für die fixe ContextBar am unteren Rand lassen! */
+
+/* This is the new main wrapper for the entire mobile view */
+.mobile-layout-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative; /* Establishes a positioning context for the footer */
+}
+
+/* This will contain the scrollable Outlet content */
+.mobile-main-content {
+    flex-grow: 1;       /* Allows this area to take up all available vertical space */
+    overflow-y: auto;   /* Makes ONLY this area scrollable */
+    /* IMPORTANT: Add padding to the bottom equal to the footer's approximate height */
+    /* This prevents the last bit of content from being hidden by the footer */
     padding-bottom: 70px;
 }
 
-/* Die ContextBar selbst wird für Mobile über die "ContextBar.css" gesteuert,
-   aber wir können hier eine Regel hinzufügen, die sie fixiert. */
-@media (max-width: 991.98px) {
-    .context-bar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 1040; /* Muss über dem Inhalt, aber unter Offcanvas liegen */
-        border-top: 1px solid #dee2e6;
-        background-color: #fff; /* Sicherstellen, dass sie nicht transparent ist */
-    }
+/* This will be our fixed context bar at the bottom */
+.mobile-fixed-footer {
+    position: absolute; /* Positioned relative to mobile-layout-wrapper */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;      /* Ensures it's above the scrollable content */
+    /* We style the wrapper, not the context-bar directly, for better separation */
+    background-color: #f8f9fa; /* Or your preferred theme color */
+    border-top: 1px solid #dee2e6;
 }

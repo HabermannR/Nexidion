@@ -1,48 +1,80 @@
-/* Der Hauptcontainer, den wir im JSX hinzugefügt haben. */
-/* Er verhält sich wie ein Flex-Container in Spaltenrichtung. */
+/*
+STEP 1: Define the element that will act as the container.
+This is the MOST IMPORTANT step. Without it, the @container query below
+will never run. We'll use the main wrapper div for this.
+*/
 .context-panel-container {
+    /* This establishes this element as a container for queries */
+    container-type: inline-size;
+    container-name: context-panel; /* Naming the container is a good practice */
+
+    /* The rest of these styles ensure the Tabs component fills the vertical space */
+    height: 100%;
     display: flex;
     flex-direction: column;
-    height: 100%;
-    overflow: hidden; /* Verhindert Scrollbalken am Container selbst */
-}
-
-/* Die von React-Bootstrap erzeugte Tab-Leiste. */
-/* Sie soll nicht wachsen (flex-shrink: 0). */
-.context-panel-container .nav-tabs {
-    flex-shrink: 0;
-    border-bottom: 1px solid #dee2e6;
-}
-
-/* Optional: Etwas Styling für die Tabs selbst. */
-.context-panel-container .nav-tabs .nav-link {
-    font-size: 0.9rem;
-    color: #6c757d;
-}
-
-.context-panel-container .nav-tabs .nav-link.active {
-    color: #000;
-    font-weight: 500;
 }
 
 /*
- * ========================================================================
- * HIER IST DIE MAGIE: Der Container für den Tab-Inhalt
- * ========================================================================
- */
-
-/* Wir weisen den Inhaltsbereich an, den restlichen Platz einzunehmen. */
+Make the content area of the tabs grow to fill the remaining space.
+The `Tabs` component from react-bootstrap renders a `.tab-content` div.
+*/
 .context-panel-container .tab-content {
     flex-grow: 1;
-    /* Wichtig, damit das Kind (.tab-pane) die Höhe korrekt erben kann. */
-    display: flex;
-    min-height: 0; /* Flexbox-Fix für scrollbare Kinder */
+    overflow-y: auto; /* Add scroll if content is too tall */
 }
 
-/* Der jeweils aktive Tab soll sich ebenfalls ausdehnen. */
-.context-panel-container .tab-pane.active {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
+
+/*
+STEP 2: Define the default (wide-screen) styles.
+This is the standard Bootstrap flexbox layout. No changes needed here,
+as the `fill` prop handles this.
+*/
+
+
+/*
+STEP 3: Define the responsive grid using the CONTAINER query.
+This will now correctly activate when the .context-panel-container
+element's width is 450px or less.
+*/
+@container context-panel (max-width: 350px) {
+
+    /* Rule 1: Set the parent to be a grid container */
+    .nav-tabs.context-panel-grid-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr; /* This creates the 2x2 grid */
+        gap: 4px;
+        border-bottom: none;
+    }
+
+    /*
+    ========================================================================
+    HERE IS THE CRITICAL FIX (Your original code was correct here)
+    ========================================================================
+    Rule 2: We must ALSO override the properties that the "fill" prop
+    places on the child tab items. This neutralizes the flexbox behavior
+    and allows them to behave purely as grid items.
+    */
+    .nav-tabs.context-panel-grid-tabs .nav-item {
+        /* Reset the flex properties that .nav-fill imposes. */
+        flex-basis: auto !important;
+        flex-grow: 0 !important;
+    }
+
+    /* Rule 3: Style the links for the grid view */
+    .nav-tabs.context-panel-grid-tabs .nav-link {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        margin-bottom: 0;
+        text-align: center;
+        white-space: nowrap;
+        /* Ensure the link fills the entire grid cell */
+        height: 100%;
+    }
+
+    /* Rule 4: Style the active link */
+    .nav-tabs.context-panel-grid-tabs .nav-link.active {
+        background-color: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
+    }
 }
