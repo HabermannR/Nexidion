@@ -1,42 +1,51 @@
 import React from 'react';
 import { Tabs, Tab } from 'react-bootstrap';
 import VersionHistoryTab from './VersionHistoryTab.jsx';
-import ChatTab from './ChatTab.jsx';
+import Chat from './Chat/Chat.jsx'; // Pfad ggf. anpassen
 import WorkflowTab from './WorkflowTab.jsx';
 import ToolsTab from './ToolsTab.jsx';
 
-
-// Importiere die CSS-Datei, die wir gleich befüllen werden.
 import './ContextPanel.css';
 
 export default function ContextPanel() {
     return (
-        // 1. DIESER DIV ist jetzt der Flex-Container, der die Höhe kontrolliert.
         <div className="context-panel-container">
             <Tabs
                 defaultActiveKey="chat"
                 id="context-panel-tabs"
-                mountOnEnter
-                unmountOnExit
-                // `fill` sorgt dafür, dass die Tabs die volle Breite einnehmen.
-                // WICHTIG: Keine Flexbox-Klassen mehr hier!
                 fill
                 className="context-panel-grid-tabs"
             >
+                {/*
+                  TABS MIT EIGENEM FLEX-LAYOUT:
+                  Diese Komponenten werden DIREKT platziert, da ihr Wurzel-Element
+                  bereits die Eigenschaft `flex: 1` besitzt und somit das direkte Kind
+                  des `.tab-pane`-Flex-Containers sein kann.
+                */}
                 <Tab eventKey="chat" title="Chat">
-                    <ChatTab />
+                    <Chat />
                 </Tab>
 
                 <Tab eventKey="versions" title="Versionen">
                     <VersionHistoryTab />
                 </Tab>
 
+
+                {/*
+                  TABS MIT EINFACHEM INHALT:
+                  Diese Komponenten haben kein eigenes Layout und benötigen den Wrapper,
+                  der für sie die Rolle des wachsenden Flex-Kindes übernimmt.
+                */}
                 <Tab eventKey="tools" title="Tools">
-                    <ToolsTab />
+                    <div className="tab-pane-content-wrapper">
+                        {/* WICHTIG: Die Komponente selbst hat jetzt keinen .p-3 Wrapper mehr nötig */}
+                        <ToolsTab />
+                    </div>
                 </Tab>
 
                 <Tab eventKey="workflows" title="Workflows">
-                    <div className="p-3">
+                    <div className="tab-pane-content-wrapper">
+                        {/* WICHTIG: Die Komponente selbst hat jetzt keinen .p-3 Wrapper mehr nötig */}
                         <WorkflowTab />
                     </div>
                 </Tab>

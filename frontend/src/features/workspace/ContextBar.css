@@ -32,3 +32,40 @@
 .context-set-item .btn-link {
     line-height: 1;
 }
+
+/* Add a pointer cursor to the bar when it's clickable */
+.context-bar.expandable {
+    cursor: pointer;
+}
+
+.context-bar .context-status-text .bx {
+    vertical-align: middle; /* Align icon better with text */
+    font-size: 1.1em;
+}
+
+/* Container for the expanded list of nodes */
+.context-expanded-content {
+    background-color: #f8f9fa; /* Match the bar color */
+    border-top: 1px solid #e9ecef; /* Softer separator */
+    max-height: 200px; /* Limit height and make it scrollable */
+    overflow-y: auto;
+}
+
+/* Styling for the inner list to add some padding */
+.context-expanded-list {
+    padding: 0.5rem 0.75rem;
+}
+
+/* Styling for each individual node title in the list */
+.context-expanded-item {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 4px;
+}
+
+.context-expanded-item:hover {
+    background-color: #e9ecef; /* Highlight on hover */
+}

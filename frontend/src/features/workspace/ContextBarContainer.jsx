@@ -1,37 +1,40 @@
-// src/features/workspace/left-panel/ContextBarContainer.jsx
+// src/features/workspace/ContextBarContainer.jsx
 
-import React, { useMemo } from 'react';
-import { useWorkspaceStore } from './workspaceStore';
+import React from 'react';
+import { useMemo, useState } from 'react'; // Import useState
+import { useWorkspaceStore } from './workspaceStore'; // Corrected path
 import ContextBarDisplay from './ContextBarDisplay.jsx';
 
 /**
- * A "smart" container component that safely connects to the Zustand store.
+ * A "smart" container that connects to the store and manages UI state.
  *
- * ARCHITECTURAL FIX:
- * This version uses multiple, small, "atomic" selectors. Each hook call returns
- * a single, stable value (a primitive or a direct object/function reference).
- * This respects React's core `useSyncExternalStore` rules and prevents re-render loops.
- *
- * The transformation logic (`Object.entries.map`) is then safely performed
- * inside `useMemo`, ensuring it only runs when its raw dependency (`savedSets`) changes.
+ * It now accepts a `nodes` prop, which should be an array of all available
+ * node objects (e.g., [{id: '...', title: '...'}, ...]).
+ * It uses this prop to look up the titles for the selected IDs.
+ * It also manages the local "isExpanded" state for the detail view.
  */
-export default function ContextBarContainer() {
-    // 1. Use multiple, atomic selectors. Each one is stable.
-    const selectionSize = useWorkspaceStore(state => state.selectedNodeIds.size);
+export default function ContextBarContainer({ nodes = [] }) { // Expect a nodes prop
+    // 1. Local state to manage the expanded/collapsed view
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    // 2. Use multiple, atomic selectors.
+    // We need the full Set of IDs to derive the titles.
+    const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
     const savedSets = useWorkspaceStore(state => state.savedSets);
     const clearSelection = useWorkspaceStore(state => state.clearSelection);
     const setSelection = useWorkspaceStore(state => state.setSelection);
     const saveCurrentSet = useWorkspaceStore(state => state.saveCurrentSet);
     const deleteSet = useWorkspaceStore(state => state.deleteSet);
 
-    // 2. Perform the expensive/unstable transformation outside the selectors, wrapped in useMemo.
-    // This code now ONLY runs if the raw `savedSets` object reference actually changes.
-    const savedSetsForDisplay = useMemo(() => {
-        // Defensive check for bad data
-        if (!savedSets || typeof savedSets !== 'object') return [];
+    // Derive selection size directly from the Set
+    const selectionSize = selectedNodeIds.size;
 
+    // 3. Perform expensive transformations in useMemo.
+
+    // Memoize the list of saved sets for the dropdown
+    const savedSetsForDisplay = useMemo(() => {
+        if (!savedSets || typeof savedSets !== 'object') return [];
         return Object.entries(savedSets).map(([name, ids]) => {
-            // Defensive check for corrupted entries
             if (!Array.isArray(ids)) {
                 console.warn(`Data integrity issue: Saved set "${name}" has a non-array value.`, ids);
                 return { name, count: 0, ids: [] };
@@ -40,7 +43,31 @@ export default function ContextBarContainer() {
         });
     }, [savedSets]);
 
-    // 3. Pass the safe, memoized data and actions down to the display component.
+    // NEW: Memoize the detailed list of selected nodes for the expanded view
+    const selectedNodesWithTitles = useMemo(() => {
+        if (!nodes || nodes.length === 0 || selectedNodeIds.size === 0) {
+            return [];
+        }
+        // Create a Map for efficient ID-based lookups. This is much faster
+        // than using array.find() in a loop for large datasets.
+        const nodeMap = new Map(nodes.map(node => [node.id, node]));
+
+        return Array.from(selectedNodeIds)
+            .map(id => {
+                const node = nodeMap.get(id);
+                // Return a structured object. Gracefully handle if a node isn't found.
+                return {
+                    id,
+                    title: node?.title || 'Unknown Node',
+                };
+            })
+            // Sort alphabetically for a consistent and readable list
+            .sort((a, b) => a.title.localeCompare(b.title));
+
+    }, [selectedNodeIds, nodes]); // This recalculates only when selection or nodes change
+
+
+    // 4. Pass everything down to the display component.
     return (
         <ContextBarDisplay
             selectionSize={selectionSize}
@@ -49,6 +76,10 @@ export default function ContextBarContainer() {
             onSave={saveCurrentSet}
             onLoadSet={setSelection}
             onDeleteSet={deleteSet}
+            // New props for the expandable view
+            isExpanded={isExpanded}
+            onToggleExpand={() => setIsExpanded(prev => !prev)}
+            selectedNodes={selectedNodesWithTitles}
         />
     );
 }

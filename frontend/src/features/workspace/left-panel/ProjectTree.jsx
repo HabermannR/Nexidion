@@ -1,14 +1,9 @@
-// WESENTLICHE ÄNDERUNGEN:
-// - useLoaderData, useRevalidator wurden entfernt.
-// - useNavigate wird nur noch für die tatsächliche Navigation verwendet, nicht zum Neuladen.
-// - NEU: useQuery zum Laden des Baums.
-// - NEU: useMutation für das Hinzufügen und Verschieben von Nodes.
-// - NEU: useQueryClient, um die Daten nach einer Mutation gezielt zu invalidieren.
+// src/features/workspace/left-panel/ProjectTree.jsx
 
 import React, { useCallback, useRef } from "react";
 import { NavLink, useParams, useNavigate } from "react-router-dom";
 import { useDrag, useDrop } from "react-dnd";
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; // NEU
+import { useMutation, useQueryClient } from '@tanstack/react-query'; // NEU
 import apiClient from "../../../api/apiClient.js";
 import { useWorkspaceStore } from '../workspaceStore.js';
 import "./ProjectTree.css";
@@ -19,7 +14,6 @@ const ItemTypes = { NODE: "NODE" };
 // TreeNode Komponente (bleibt unverändert, da sie die Handler als Props erhält)
 // ============================================================================
 const TreeNode = React.memo(({ node, onAddNode, onMoveNode }) => {
-    // ... (keine Änderungen an dieser inneren Komponente erforderlich)
     const wrapperRef = useRef(null);
     const dropRef = useRef(null);
 
@@ -98,17 +92,11 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode }) => {
 // ============================================================================
 // 3. HAUPTKOMPONENTE: ProjectTree (V4-Architektur mit useQuery & useMutation)
 // ============================================================================
-export default function ProjectTree() {
+export default function ProjectTree({ treeData, isLoading }) { // NEU: Receive props
     const { vaultId } = useParams();
     const navigate = useNavigate();
-    const queryClient = useQueryClient(); // NEU: QueryClient für Invalidierung
+    const queryClient = useQueryClient();
 
-    // NEU: Daten mit useQuery laden. Ersetzt useLoaderData.
-    const { data: treeData, isLoading } = useQuery({
-        queryKey: ['vaultTree', vaultId],
-        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes?format=tree&v3=true`).then(res => res.data),
-        enabled: !!vaultId,
-    });
 
     // NEU: Mutation für das Hinzufügen eines Nodes.
     const addNodeMutation = useMutation({

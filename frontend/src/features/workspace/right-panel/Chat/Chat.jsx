@@ -236,56 +236,81 @@ export default function Chat() {
     const isChatLoading = createAndSendMessageMutation.isPending;
 
     return (
-        <div className={`d-flex flex-column h-100 bg-light border rounded-3 overflow-hidden chat-window ${isHistoryPanelOpen ? 'history-open' : ''}`}>
-            <div className="d-flex justify-content-between align-items-center p-2 border-bottom bg-white">
-                <div className="d-flex align-items-center gap-2">
-                    <h4 className="h6 mb-0" title={activeChatTitle || 'Chat'}>
-                        {activeChatTitle ? (activeChatTitle.length > 30 ? `${activeChatTitle.substring(0, 28)}...` : activeChatTitle) : 'Chat'}
-                    </h4>
-                    {activeChatSessionId && (<span className="badge bg-success-subtle text-success-emphasis rounded-pill">Active</span>)}
-                </div>
-                <div className="d-flex gap-2">
-                    <button onClick={() => setIsHistoryPanelOpen(true)} className="btn btn-sm btn-outline-secondary" title="View chat history">History</button>
-                    <button onClick={startNewChat} className="btn btn-sm btn-secondary" title="Start a new conversation">New Chat</button>
-                </div>
-            </div>
+        // <<< KORREKTUR 1: Die Klasse `history-open` kommt hierher.
+        <div className={`chat-feature-wrapper ${isHistoryPanelOpen ? 'history-open' : ''}`}>
+            {/* <<< KORREKTUR 2: Die Klasse wurde von diesem Element entfernt. */}
+            <div className="chat-layout-container">
 
-            <div className="flex-grow-1 p-3 overflow-auto" ref={chatDisplayRef}>
-                {(activeChatMessages?.length || 0) === 0 && !isChatLoading && (
-                    <div className="message assistant"><div className="markdown-content">Select nodes from the tree and ask a question to start a new chat!</div></div>
-                )}
-                {activeChatMessages?.map((message) => (
-                    <ChatMessage
-                        key={message.id}
-                        message={message}
-                        onDelete={handleDeleteMessage}
-                        onResubmitPrompt={handleResubmitPrompt}
-                        isChatLoading={isChatLoading}
-                    />
+                {/* ========================================================== */}
+                {/* 1. DER HEADER: Dieser Bereich schrumpft nicht. */}
+                {/* ========================================================== */}
+                <div className="d-flex justify-content-between align-items-center p-2 border-bottom bg-white" style={{ flexShrink: 0 }}>
+                    <div className="d-flex align-items-center gap-2">
+                        <h4 className="h6 mb-0 text-truncate" title={activeChatTitle || 'Chat'} style={{ maxWidth: '180px' }}>
+                            {activeChatTitle || 'Chat'}
+                        </h4>
+                        {activeChatSessionId && (<span className="badge bg-success-subtle text-success-emphasis rounded-pill">Active</span>)}
+                    </div>
+                    <div className="d-flex gap-2">
+                        <button onClick={() => setIsHistoryPanelOpen(true)} className="btn btn-sm btn-outline-secondary" title="View chat history">History</button>
+                        <button onClick={startNewChat} className="btn btn-sm btn-secondary" title="Start a new conversation">New Chat</button>
+                    </div>
+                </div>
+
+                {/* ========================================================== */}
+                {/* 2. DER NACHRICHTENBEREICH: Dieser Bereich wächst, schrumpft und scrollt. */}
+                {/* ========================================================== */}
+                <div className="chat-messages-wrapper" ref={chatDisplayRef}>
+                    {/* Willkommensnachricht, wenn der Chat leer ist */}
+                    {(activeChatMessages?.length || 0) === 0 && !isChatLoading && (
+                        <div className="message assistant">
+                            <div className="markdown-content">Select nodes from the tree and ask a question to start a new chat!</div>
+                        </div>
+                    )}
+
+                    {/* Alle Nachrichten werden hier gerendert */}
+                    {activeChatMessages?.map((message) => (
+                        <ChatMessage
+                            key={message.id}
+                            message={message}
+                            onDelete={handleDeleteMessage}
+                            onResubmitPrompt={handleResubmitPrompt}
+                            isChatLoading={isChatLoading}
+                        />
                     ))}
+                </div>
+
+                {/* ========================================================== */}
+                {/* 3. DER EINGABEBEREICH: Dieser Bereich schrumpft nicht und bleibt unten. */}
+                {/* ========================================================== */}
+                <div className="chat-input-wrapper">
+                    <form onSubmit={handleChatSubmit} className="d-flex align-items-start w-100 gap-2">
+                    <textarea
+                        value={chatInputValue}
+                        onChange={(e) => setChatInputValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey)) { e.preventDefault(); handleChatSubmit(e); } }}
+                        placeholder={!chatModel ? "Select a model..." : "Ask a question (Shift+Enter or Ctrl+Enter to send)"}
+                        className="form-control"
+                        disabled={isChatLoading || !chatModel}
+                        rows="2"
+                    />
+                        <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={isChatLoading || !chatInputValue.trim() || !chatModel}
+                            title="Send"
+                        >
+                            Send
+                        </button>
+                    </form>
+                </div>
             </div>
 
-            <form onSubmit={handleChatSubmit} className="d-flex align-items-start p-2 border-top bg-white gap-2">
-                <textarea
-                    value={chatInputValue}
-                    onChange={(e) => setChatInputValue(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey)) { e.preventDefault(); handleChatSubmit(e); } }}
-                    placeholder={!chatModel ? "Select a model..." : "Ask a question (Shift+Enter or Ctrl+Enter to send, Enter for new line)"}
-                    className="form-control"
-                    disabled={isChatLoading || !chatModel}
-                    rows="2"
-                />
-                <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={isChatLoading || !chatInputValue.trim() || !chatModel}
-                    title="Send (Enter)"
-                >
-                    Send
-                </button>
-            </form>
-
-            {isHistoryPanelOpen && <ChatHistoryPanel onClose={() => setIsHistoryPanelOpen(false)} />}
+            {/* ========================================================== */}
+            {/* 4. DAS HISTORY-PANEL: Wird über alles andere gelegt, wenn es aktiv ist. */}
+            {/* ========================================================== */}
+            {/* <<< KORREKTUR 3: Die bedingte Logik `isHistoryPanelOpen &&` wird entfernt. */}
+            <ChatHistoryPanel onClose={() => setIsHistoryPanelOpen(false)} />
         </div>
     );
 }

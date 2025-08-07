@@ -3,12 +3,14 @@
 .version-history-container {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1 1 0;
+    width: 100%;
+    min-height: 0;
     padding: 0.5rem;
 }
 
 .version-list-scroll-area {
-    flex-grow: 1;
+    flex: 1 1 auto;
     overflow-y: auto;
     overflow-x: hidden;
 }

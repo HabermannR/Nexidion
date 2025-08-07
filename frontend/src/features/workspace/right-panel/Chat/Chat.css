@@ -1,4 +1,4 @@
-/* In src/components/Chat/Chat.css */
+/* src/components/Chat/Chat.css */
 
 /* ======================================================== */
 /* <<< 1. GRUNDEINSTELLUNGEN & CSS-VARIABLEN >>> */
@@ -6,8 +6,8 @@
 
 :root {
     --chat-bg: #f8f9fa; /* Hintergrund des Chat-Fensters */
-    --user-bubble-bg: #0d6efd;
-    --user-bubble-text: #ffffff;
+    --user-bubble-bg: #cfe2ff;
+    --user-bubble-text: #052c65;
     --assistant-bubble-bg: #e9ecef;
     --assistant-bubble-text: #212529;
     --border-color: #dee2e6;
@@ -25,13 +25,35 @@
 /* <<< 2. CHAT-FENSTER & LAYOUT >>> */
 /* ======================================================== */
 
-.chat-window {
-    position: relative; /* Wichtig für die Positionierung des History-Panels */
-    background-color: var(--chat-bg);
+.chat-feature-wrapper {
+    position: relative; /* Nur noch der Anker für das absolute Panel */
+    flex: 1 1 0;
+    width: 100%;
+    /* overflow: hidden; WIRD HIER ENTFERNT */
 }
 
-.chat-window.history-open {
-    overflow: hidden; /* Verhindert das Scrollen des Hauptinhalts, wenn das Panel offen ist */
+.chat-layout-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background-color: var(--chat-bg);
+    overflow: hidden; /* <<< HIERHER VERSCHOBEN! */
+}
+
+.chat-messages-wrapper {
+    flex: 1 1 0; /* Kurzform für: grow=1, shrink=1, basis=0. Erlaubt wachsen & schrumpfen. */
+    overflow-y: auto; /* Fügt den vertikalen Scrollbalken NUR HIER hinzu */
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-input-wrapper {
+    flex-shrink: 0; /* Verhindert, dass dieser Bereich schrumpft */
+    padding: 1rem;
+    background-color: var(--panel-bg);
+    border-top: 1px solid var(--border-color);
 }
 
 /* ======================================================== */
@@ -105,10 +127,28 @@
 /* Sprechblasen-Stile */
 .user-message-content,
 .markdown-content {
-    padding: 0.75rem 1.25rem;
-    border-radius: var(--bubble-border-radius);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    background-color: var(--assistant-bubble-bg);
+    color: var(--assistant-bubble-text);
+    border-bottom-left-radius: 0.25rem;
     word-break: break-word;
+}
+.markdown-content > *:first-child { margin-top: 0; }
+.markdown-content > *:last-child { margin-bottom: 0; }
+
+
+/*
+========================================================================
+=== HIER IST DER ENTSCHEIDENDE FIX FÜR DIE BREITE ===
+========================================================================
+Wir zwingen Code-Blöcke (`pre`) und Inline-Code (`code`) innerhalb der
+Markdown-Antworten zu einem Zeilenumbruch, damit sie nicht das Layout sprengen.
+*/
+.markdown-content pre,
+.markdown-content code {
+    white-space: pre-wrap !important; /* Erhält die Formatierung, erlaubt aber Zeilenumbrüche */
+    word-break: break-all;           /* Bricht auch extrem lange Wörter/Strings ohne Leerzeichen um */
+    max-width: 100%;                 /* Zusätzliche Absicherung */
+    overflow-x: auto;                /* Falls doch mal was überläuft, gibt es eine Scrollbar statt Layout-Bruch */
 }
 
 .user-message-content {
@@ -135,16 +175,19 @@
     top: 0;
     right: 0;
     width: 320px;
+    max-width: 90%;
     height: 100%;
     z-index: 100;
     background-color: var(--panel-bg);
     border-left: 1px solid var(--border-color);
-    transform: translateX(100%);
+
+    /* Der Trick: Wir steuern die Sichtbarkeit jetzt nur mit `transform` */
+    transform: translateX(100%); /* Standardmäßig versteckt */
     transition: transform 0.3s ease-in-out;
 }
 
-.chat-window.history-open .chat-history-panel {
-    transform: translateX(0);
+.chat-feature-wrapper.history-open .chat-history-panel {
+    transform: translateX(0); /* Wenn der Wrapper die Klasse hat, schiebt sich das Panel rein */
 }
 
 .chat-history-panel .overflow-auto {

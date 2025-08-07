@@ -1,18 +1,16 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { Outlet, Link, useLoaderData } from 'react-router-dom';
+// src/features/workspace/WorkspaceLayout.jsx
+
+import React, { useMemo, useState, useRef } from 'react';
+import { Outlet, useParams, Link } from 'react-router-dom'; // Import useParams
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
+import { Button, ButtonGroup, Offcanvas, Breadcrumb, Spinner } from 'react-bootstrap'; // Import Spinner
+import { useQuery } from '@tanstack/react-query'; // NEU: Import useQuery
+import apiClient from '../../api/apiClient'; // NEU: Import apiClient
+
 import ProjectTree from './left-panel/ProjectTree.jsx';
 import ContextPanel from './right-panel/ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
-
-// Import the new "dumb" presentational component
-import ContextBarDisplay from './ContextBarDisplay.jsx';
-
-// Import Zustand hooks
-import { useWorkspaceStore } from './workspaceStore.js';
-import { shallow } from 'zustand/shallow';
 
 // The BreadcrumbTrail component remains unchanged.
 const BreadcrumbTrail = ({ path }) => {
@@ -33,7 +31,24 @@ const BreadcrumbTrail = ({ path }) => {
     );
 };
 
+// Helper function to flatten the tree (you had this logic already, we'll keep it)
+const flattenTree = (nodes) => {
+    const flatList = [];
+    const recurse = (nodesToFlatten) => {
+        for (const node of nodesToFlatten) {
+            const { children, ...rest } = node;
+            flatList.push(rest);
+            if (children && children.length > 0) {
+                recurse(children);
+            }
+        }
+    };
+    recurse(nodes);
+    return flatList;
+};
+
 export default function WorkspaceLayout() {
+    const { vaultId } = useParams(); // NEU: Get vaultId for the query
     // --- LOCAL UI-ZUSTAND (for panel control, etc.) ---
     const [rightPanelMode, setRightPanelMode] = useState('normal');
     const [showMobileTree, setShowMobileTree] = useState(false);
@@ -43,13 +58,30 @@ export default function WorkspaceLayout() {
     const rightPanelRef = useRef(null);
     const programmaticResizeRef = useRef(false);
 
-    // --- DATA LOGIC (from React Router loader) ---
-    const treeData = useLoaderData();
+    // --- DATA LOGIC  ---
+    const { data: treeData, isLoading: isTreeLoading } = useQuery({
+        queryKey: ['vaultTree', vaultId],
+        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes?format=tree&v3=true`).then(res => res.data),
+        enabled: !!vaultId, // Only run the query if vaultId exists
+    });
+
+
+    // --- Memoized Derived Data (now safe) ---
+    const allNodesFlat = useMemo(() => {
+        if (!treeData) return [];
+        return flattenTree(treeData);
+    }, [treeData]);
+
 
     const outletContext = useMemo(() => ({
         setBreadcrumbPath,
         treeData
-    }), [treeData]); // The dependency array is key!
+    }), [treeData]);
+
+    const treeComponent = useMemo(() => (
+        // Pass data and loading state as props to the now "dumber" ProjectTree
+        <ProjectTree treeData={treeData} isLoading={isTreeLoading} />
+    ), [treeData, isTreeLoading]);
 
     // --- UI-HANDLER ---
     const handleLayout = () => {
@@ -82,11 +114,6 @@ export default function WorkspaceLayout() {
         }
     };
 
-    // --- MEMOIZED COMPONENTS ---
-    const treeComponent = useMemo(() => (
-        <ProjectTree treeData={treeData || []} />
-    ), [treeData]);
-
 
     return (
         <>
@@ -98,7 +125,7 @@ export default function WorkspaceLayout() {
                     <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
                         <div className="left-panel-content-wrapper">
                             <div className="scroll-pane">{treeComponent}</div>
-                            <ContextBarContainer />
+                            <ContextBarContainer nodes={allNodesFlat} />
                         </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
@@ -147,7 +174,7 @@ export default function WorkspaceLayout() {
 
                 {/* The context bar is now wrapped in our fixed footer element */}
                 <footer className="mobile-fixed-footer">
-                    <ContextBarContainer />
+                    <ContextBarContainer nodes={allNodesFlat} />
                 </footer>
             </div>
 
@@ -163,7 +190,7 @@ export default function WorkspaceLayout() {
                         {treeComponent}
                     </div>
                     {/* Add a second, independent instance of the context bar here */}
-                    <ContextBarContainer />
+                    <ContextBarContainer nodes={allNodesFlat} />
                 </Offcanvas.Body>
             </Offcanvas>
 
@@ -175,11 +202,9 @@ export default function WorkspaceLayout() {
                 <Offcanvas.Body className="d-flex flex-column p-0">
                     {/* The existing ContextPanel now becomes the scrollable main content. */}
                     {/* It already handles its own internal padding and scrolling, so we just let it grow. */}
-                    <div className="flex-grow-1 overflow-auto">
                         <ContextPanel />
-                    </div>
                     {/* Add a third, independent instance of the context bar here. */}
-                    <ContextBarContainer />
+                    <ContextBarContainer nodes={allNodesFlat} />
                 </Offcanvas.Body>
             </Offcanvas>
         </>
