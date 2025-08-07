@@ -13,7 +13,7 @@ const ItemTypes = { NODE: "NODE" };
 // ============================================================================
 // TreeNode Komponente (bleibt unverändert, da sie die Handler als Props erhält)
 // ============================================================================
-const TreeNode = React.memo(({ node, onAddNode, onMoveNode }) => {
+const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
     const wrapperRef = useRef(null);
     const dropRef = useRef(null);
 
@@ -70,7 +70,11 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode }) => {
                     <i className="selector-icon-checked bx bxs-checkbox-checked"></i>
                     <i className={`bx ${node.icon} node-icon`}></i>
                 </span>
-                <NavLink to={`/vaults/${node.vault_id}/nodes/${node.id}`} className={getLinkClassName}>
+                <NavLink
+                    to={`/vaults/${node.vault_id}/nodes/${node.id}`}
+                    className={getLinkClassName}
+                    onClick={onNodeClick}
+                >
                     <span className="node-title" title={node.title}>{node.title}</span>
                 </NavLink>
                 <span className="add-node-icon" onClick={handleAddClick} title="Kind-Element hinzufügen">
@@ -80,7 +84,13 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode }) => {
             {hasChildren && isExpanded && (
                 <div className="children-container">
                     {node.children.map((childNode) => (
-                        <TreeNode key={childNode.id} node={childNode} onAddNode={onAddNode} onMoveNode={onMoveNode}/>
+                        <TreeNode
+                            key={childNode.id}
+                            node={childNode}
+                            onAddNode={onAddNode}
+                            onMoveNode={onMoveNode}
+                            onNodeClick={onNodeClick}
+                        />
                     ))}
                 </div>
             )}
@@ -92,7 +102,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode }) => {
 // ============================================================================
 // 3. HAUPTKOMPONENTE: ProjectTree (V4-Architektur mit useQuery & useMutation)
 // ============================================================================
-export default function ProjectTree({ treeData, isLoading }) { // NEU: Receive props
+export default function ProjectTree({ treeData, isLoading, onNodeClick }) { // NEU: Receive props
     const { vaultId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -160,6 +170,7 @@ export default function ProjectTree({ treeData, isLoading }) { // NEU: Receive p
                     node={rootNode}
                     onAddNode={handleAddNode}
                     onMoveNode={handleMoveNode}
+                    onNodeClick={onNodeClick}
                 />
             ))}
         </div>

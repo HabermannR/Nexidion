@@ -38,6 +38,19 @@ export const useWorkspaceStore = create(
             // === ACTIONS ===
             // ===============================================
 
+            // --- Workspace/Vault Actions ---
+            resetWorkspaceContext: () => set({
+                // Reset Tree/Graph state
+                selectedNodeIds: new Set(),
+                collapsedNodes: new Set(),
+                savedSets: {},
+                // Reset Diff state
+                diffSelection: { base: null, compare: null },
+                // Reset Active Chat Session state
+                activeChatSessionId: null,
+                activeChatTitle: 'New Chat',
+                activeChatMessages: [],
+            }),
             // --- LLM Actions ---
 
             setChatModel: (model) => set({ chatModel: model }),

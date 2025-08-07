@@ -1,18 +1,19 @@
 // src/features/workspace/WorkspaceLayout.jsx
 
-import React, { useMemo, useState, useRef } from 'react';
-import { Outlet, useParams, Link } from 'react-router-dom'; // Import useParams
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import { Outlet, useParams, Link } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Button, ButtonGroup, Offcanvas, Breadcrumb, Spinner } from 'react-bootstrap'; // Import Spinner
-import { useQuery } from '@tanstack/react-query'; // NEU: Import useQuery
-import apiClient from '../../api/apiClient'; // NEU: Import apiClient
+import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
+import { useQuery } from '@tanstack/react-query';
+import apiClient from '../../api/apiClient';
+import { useWorkspaceStore } from './workspaceStore';
 
 import ProjectTree from './left-panel/ProjectTree.jsx';
 import ContextPanel from './right-panel/ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
 
-// The BreadcrumbTrail component remains unchanged.
+// The BreadcrumbTrail component
 const BreadcrumbTrail = ({ path }) => {
     if (!path || path.length === 0) return null;
     return (
@@ -31,7 +32,7 @@ const BreadcrumbTrail = ({ path }) => {
     );
 };
 
-// Helper function to flatten the tree (you had this logic already, we'll keep it)
+// Helper function to flatten the tree
 const flattenTree = (nodes) => {
     const flatList = [];
     const recurse = (nodesToFlatten) => {
@@ -48,15 +49,25 @@ const flattenTree = (nodes) => {
 };
 
 export default function WorkspaceLayout() {
-    const { vaultId } = useParams(); // NEU: Get vaultId for the query
+    const { vaultId } = useParams();
+    const resetWorkspaceContext = useWorkspaceStore((state) => state.resetWorkspaceContext);
     // --- LOCAL UI-ZUSTAND (for panel control, etc.) ---
     const [rightPanelMode, setRightPanelMode] = useState('normal');
     const [showMobileTree, setShowMobileTree] = useState(false);
     const [showMobileContext, setShowMobileContext] = useState(false);
     const [breadcrumbPath, setBreadcrumbPath] = useState([]);
+    const [activeContextTab, setActiveContextTab] = useState('chat');
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
     const programmaticResizeRef = useRef(false);
+
+    useEffect(() => {
+        // Wenn sich die vaultId ändert, den Zustand des Arbeitsbereichs zurücksetzen.
+        // Das verhindert, dass alter Kontext (ausgewählte Nodes, Chat etc.)
+        // in den neuen Vault "mitgeschleppt" wird.
+        resetWorkspaceContext();
+        setBreadcrumbPath([]); // Lokalen UI-Zustand wie Breadcrumbs ebenfalls zurücksetzen
+    }, [vaultId, resetWorkspaceContext]);
 
     // --- DATA LOGIC  ---
     const { data: treeData, isLoading: isTreeLoading } = useQuery({
@@ -78,10 +89,18 @@ export default function WorkspaceLayout() {
         treeData
     }), [treeData]);
 
+    const handleMobileNavClose = useCallback(() => {
+        setShowMobileTree(false);
+    }, []);
+
     const treeComponent = useMemo(() => (
-        // Pass data and loading state as props to the now "dumber" ProjectTree
-        <ProjectTree treeData={treeData} isLoading={isTreeLoading} />
-    ), [treeData, isTreeLoading]);
+        // Pass data and loading state as props to the ProjectTree
+        <ProjectTree
+            treeData={treeData}
+            isLoading={isTreeLoading}
+            onNodeClick={handleMobileNavClose} // <-- ADD THIS LINE
+        />
+    ), [treeData, isTreeLoading, handleMobileNavClose]);
 
     // --- UI-HANDLER ---
     const handleLayout = () => {
@@ -150,9 +169,12 @@ export default function WorkspaceLayout() {
                     </Panel>
 
                     {/* Right Panel */}
-                    <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
                     <Panel ref={rightPanelRef} id="right-panel" defaultSize={25} minSize={15} order={3} className="pane-template" collapsible>
-                        <ContextPanel />
+                        {/* 3. Pass the state and handler down as props */}
+                        <ContextPanel
+                            activeKey={activeContextTab}
+                            onTabSelect={setActiveContextTab}
+                        />
                     </Panel>
 
                 </PanelGroup>
@@ -202,8 +224,10 @@ export default function WorkspaceLayout() {
                 <Offcanvas.Body className="d-flex flex-column p-0">
                     {/* The existing ContextPanel now becomes the scrollable main content. */}
                     {/* It already handles its own internal padding and scrolling, so we just let it grow. */}
-                        <ContextPanel />
-                    {/* Add a third, independent instance of the context bar here. */}
+                    <ContextPanel
+                        activeKey={activeContextTab}
+                        onTabSelect={setActiveContextTab}
+                    />
                     <ContextBarContainer nodes={allNodesFlat} />
                 </Offcanvas.Body>
             </Offcanvas>

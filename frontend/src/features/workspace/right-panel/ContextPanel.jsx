@@ -7,11 +7,13 @@ import ToolsTab from './ToolsTab.jsx';
 
 import './ContextPanel.css';
 
-export default function ContextPanel() {
+export default function ContextPanel({ activeKey, onTabSelect }) {
+
     return (
         <div className="context-panel-container">
             <Tabs
-                defaultActiveKey="chat"
+                activeKey={activeKey}
+                onSelect={onTabSelect}
                 id="context-panel-tabs"
                 fill
                 className="context-panel-grid-tabs"
