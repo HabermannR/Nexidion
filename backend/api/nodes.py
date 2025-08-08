@@ -289,35 +289,3 @@ def post_nodes_content(vault_id: int):
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-
-
-@nodes_bp.route('/<string:node_id>/propose-update', methods=['POST'], strict_slashes=False)
-@jwt_required()
-def propose_node_update(vault_id: int, node_id: str):
-    """
-    Generiert einen Update-Vorschlag für einen Node basierend auf einem Chat-Verlauf.
-    """
-    user_id = int(get_jwt_identity())
-    data = request.get_json()
-
-    session_id = data.get('session_id')
-    model = data.get('model')
-    if not session_id or not model:
-        return jsonify({"error": "A 'session_id' and 'model' are required in the request body."}), 400
-
-    try:
-        proposal = chat_service.propose_node_update_from_chat(
-            target_node_id=node_id,
-            session_id=session_id,
-            context_node_ids=data.get('context_node_ids', []),
-            model=model,
-            user_id=user_id
-        )
-        return jsonify(proposal)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 404
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
-    except Exception as e:
-        logging.error(f"Error in propose_node_update for node {node_id}: {e}", exc_info=True)
-        return jsonify({"error": "An internal error occurred while generating the proposal."}), 500

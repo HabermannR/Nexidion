@@ -50,6 +50,7 @@ const flattenTree = (nodes) => {
 
 export default function WorkspaceLayout() {
     const { vaultId } = useParams();
+    const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
     const resetWorkspaceContext = useWorkspaceStore((state) => state.resetWorkspaceContext);
     // --- LOCAL UI-ZUSTAND (for panel control, etc.) ---
     const [rightPanelMode, setRightPanelMode] = useState('normal');
@@ -77,11 +78,24 @@ export default function WorkspaceLayout() {
     });
 
 
-    // --- Memoized Derived Data (now safe) ---
+    // --- Memoized Derived Data  ---
     const allNodesFlat = useMemo(() => {
         if (!treeData) return [];
         return flattenTree(treeData);
     }, [treeData]);
+
+    const selectedNodesWithData = useMemo(() => {
+        if (!allNodesFlat || allNodesFlat.length === 0 || selectedNodeIds.size === 0) {
+            return [];
+        }
+        const nodeMap = new Map(allNodesFlat.map(node => [node.id, node]));
+        return Array.from(selectedNodeIds)
+            .map(id => {
+                const node = nodeMap.get(id);
+                return { id, title: node?.title || 'Unknown Node' };
+            })
+            .sort((a, b) => a.title.localeCompare(b.title));
+    }, [selectedNodeIds, allNodesFlat]);
 
 
     const outletContext = useMemo(() => ({
@@ -144,7 +158,7 @@ export default function WorkspaceLayout() {
                     <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
                         <div className="left-panel-content-wrapper">
                             <div className="scroll-pane">{treeComponent}</div>
-                            <ContextBarContainer nodes={allNodesFlat} />
+                            <ContextBarContainer selectedNodes={selectedNodesWithData} />
                         </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
@@ -167,11 +181,12 @@ export default function WorkspaceLayout() {
                             <Outlet context={outletContext} />
                         </div>
                     </Panel>
-
+                    <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
                     {/* Right Panel */}
                     <Panel ref={rightPanelRef} id="right-panel" defaultSize={25} minSize={15} order={3} className="pane-template" collapsible>
                         {/* 3. Pass the state and handler down as props */}
                         <ContextPanel
+                            selectedNodes={selectedNodesWithData}
                             activeKey={activeContextTab}
                             onTabSelect={setActiveContextTab}
                         />
@@ -196,7 +211,7 @@ export default function WorkspaceLayout() {
 
                 {/* The context bar is now wrapped in our fixed footer element */}
                 <footer className="mobile-fixed-footer">
-                    <ContextBarContainer nodes={allNodesFlat} />
+                    <ContextBarContainer selectedNodes={selectedNodesWithData} />
                 </footer>
             </div>
 
@@ -212,7 +227,7 @@ export default function WorkspaceLayout() {
                         {treeComponent}
                     </div>
                     {/* Add a second, independent instance of the context bar here */}
-                    <ContextBarContainer nodes={allNodesFlat} />
+                    <ContextBarContainer selectedNodes={selectedNodesWithData} />
                 </Offcanvas.Body>
             </Offcanvas>
 
@@ -225,10 +240,11 @@ export default function WorkspaceLayout() {
                     {/* The existing ContextPanel now becomes the scrollable main content. */}
                     {/* It already handles its own internal padding and scrolling, so we just let it grow. */}
                     <ContextPanel
+                        selectedNodes={selectedNodesWithData}
                         activeKey={activeContextTab}
                         onTabSelect={setActiveContextTab}
                     />
-                    <ContextBarContainer nodes={allNodesFlat} />
+                    <ContextBarContainer selectedNodes={selectedNodesWithData} />
                 </Offcanvas.Body>
             </Offcanvas>
         </>

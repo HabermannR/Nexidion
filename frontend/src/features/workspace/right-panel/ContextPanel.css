@@ -74,7 +74,7 @@
    - Wenn der Container schmaler als 350px wird, wechseln die
      Tab-Reiter von einer Reihe in ein 2x2-Grid.
 */
-@container context-panel (max-width: 350px) {
+@container context-panel (max-width: 370px) {
     /* Die Klasse .context-panel-grid-tabs wird auf .nav-tabs angewendet */
     .nav-tabs.context-panel-grid-tabs {
         display: grid;

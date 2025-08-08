@@ -10,9 +10,9 @@ import api from '../../api/axios';
 import './ActionButtons.css'; 
 
 // Service-Imports
-import { copyContextContent, copyTreeStructure } from '../../services/clipboardService';
-import { exportSelectionAsEpub, exportSelectionAsMarkdown } from '../../services/exportService';
-import { getIdsInOrder, generateTocForSelectedNodes } from '../../services/treeService';
+import { copyContextContent, copyTreeStructure } from '../../../services/clipboardService';
+import { exportSelectionAsEpub, exportSelectionAsMarkdown } from '../../../services/exportService';
+import { getIdsInOrder, generateTocForSelectedNodes } from '../../../services/treeService';
 
 // Import des Modals
 const UpdatePreviewModal = lazy(() => import('./UpdatePreviewModal')); 

@@ -14,6 +14,7 @@ import { useWorkspaceStore } from '../workspaceStore';
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
+import { useSaveNodeContent } from '../../../services/useSaveNodeContent';
 
 // Die Hilfsfunktion bleibt unverändert
 const findPathInTree = (nodes, nodeId, currentPath = []) => {
@@ -58,14 +59,10 @@ export default function NodeContent() {
     // --- Mutationen mit useMutation ---
     // ==========================================================
 
-    const saveContentMutation = useMutation({
-        mutationFn: (payload) => apiClient.put(`/api/vaults/${vaultId}/nodes/${nodeId}`, payload),
+    const saveContentMutation = useSaveNodeContent({
         onSuccess: () => {
-            console.log("Inhalt erfolgreich gespeichert.");
-            queryClient.invalidateQueries({ queryKey: ['versions', vaultId, nodeId] });
             setIsEditing(false);
         },
-        onError: (err) => console.error("Fehler beim Speichern:", err),
     });
 
     const deleteNodeMutation = useMutation({
@@ -124,9 +121,11 @@ export default function NodeContent() {
     // ==========================================================
 
     const handleSave = () => {
+        // Der Hook erwartet ein Objekt mit nodeId, title und content
         saveContentMutation.mutate({
+            nodeId: nodeId,
+            title: baseVersionData.title,
             content: localContent,
-            title: baseVersionData.title, // Titel mitsenden, wie es die API erwartet
         });
     };
 

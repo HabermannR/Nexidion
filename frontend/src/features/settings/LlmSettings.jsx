@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '../workspace/workspaceStore';
 // shallow is no longer needed because we are selecting granularly
 import { Container, Card, Button, Form as BootstrapForm, Table, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
+import './LlmSettings.css'; // NEU: Importiere die CSS-Datei
 
 export default function LlmSettings() {
     const { activeVault } = useOutletContext();
@@ -59,7 +60,8 @@ export default function LlmSettings() {
     };
 
     return (
-        <Container className="py-4">
+        // NEU: Die CSS-Klasse wird dem Container hinzugefügt
+        <Container className="py-4 llm-settings-scroll-container">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>LLM-Einstellungen</h2>
                 <Button as={Link} to={activeVault ? `/vaults/${activeVault.id}` : '/'} variant="secondary">

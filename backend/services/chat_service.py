@@ -371,71 +371,68 @@ def soft_delete_message(session_id: str, message_id: str, user_id: int):
 # ADVANCED FEATURES (e.g., Node Update Proposals)
 # ==============================================================================
 
-def propose_node_update_from_chat(
+def propose_node_update(
+        vault_id: int,
         target_node_id: str,
-        session_id: str,
-        context_node_ids: list,
+        user_id: int,
         model: str,
-        user_id: int
+        session_id: str = None,
+        context_node_ids: list = None
 ) -> dict:
     """
-    Generiert einen Update-Vorschlag für einen Node basierend auf einem Chat-Verlauf.
+    Generiert einen Update-Vorschlag für einen Node.
 
     Diese Funktion orchestriert den Prozess:
-    1. Holt die relevanten Daten (Ziel-Node, Kontext-Nodes, Chat-Verlauf).
+    1. Verifiziert den Zugriff und sammelt die relevanten Daten (Ziel-Node, Kontext-Nodes, und optional Chat-Verlauf).
     2. Konstruiert einen detaillierten Prompt für das LLM.
     3. Ruft den LLM-Service auf, um eine strukturierte Antwort zu erhalten.
     4. Gibt den Original- und den vorgeschlagenen Inhalt zurück.
 
     Args:
+        vault_id: Die ID des Vaults (aus der URL).
         target_node_id: Die UUID des zu aktualisierenden Nodes.
-        session_id: Die UUID der Chat-Session, die als Referenz dient.
-        context_node_ids: Eine Liste von Node-UUIDs für zusätzlichen Kontext.
-        model: Das zu verwendende LLM-Modell.
         user_id: Die ID des anfragenden Benutzers zur Autorisierung.
+        model: Das zu verwendende LLM-Modell.
+        session_id (optional): Die UUID der Chat-Session, die als Referenz dient.
+        context_node_ids (optional): Eine Liste von Node-UUIDs für zusätzlichen Kontext.
 
     Returns:
         Ein Dictionary mit {"original_content": "...", "proposed_content": "..."}.
-
-    Raises:
-        ValueError: Wenn ein Node oder eine Session nicht gefunden wird.
-        PermissionError: Wenn der Benutzer keinen Zugriff hat.
     """
-    logger.info(f"User {user_id} started node update proposal for node {target_node_id} from session {session_id}.")
+    context_node_ids = context_node_ids or []
+    logger.info(f"User {user_id} starting node update proposal for node {target_node_id} in vault {vault_id}.")
 
     # --- Schritt 1: Daten sammeln und Berechtigungen prüfen ---
-    # `_verify_session_access` prüft auch den Vault-Zugriff, was für die Nodes ausreicht.
-    session = _verify_session_access(session_id, user_id)
-    vault_id = session.vault_id
 
-    # Hole Ziel-Node-Daten. node_service prüft den Zugriff.
+    chat_history_text = ""
+    # PATH A: Wenn eine session_id vorhanden ist, validieren wir sie und holen den Verlauf.
+    if session_id:
+        logger.info(f"Using session {session_id} for context.")
+        session = _verify_session_access(session_id, user_id)
+        # Sicherheits-Check: Gehört die Session zum richtigen Vault?
+        if session.vault_id != vault_id:
+            raise PermissionError(f"Session {session_id} does not belong to vault {vault_id}.")
+
+        chat_session_data = get_session_history(session_id, user_id)
+        messages_list = chat_session_data.get('messages', [])
+        chat_history_text = "\n".join(
+            [f"{msg.get('role', 'unknown').title()}: {msg.get('content', '')}" for msg in messages_list]
+        )
+
+    # Gemeinsame Logik für beide Pfade: Node-Daten holen.
+    # Dies ist der primäre Berechtigungs-Check, wenn KEINE session_id vorhanden ist.
+    # Der node_service MUSS sicherstellen, dass der user Zugriff auf den vault_id hat.
     target_node_data = node_service.get_node_by_id(target_node_id, vault_id, user_id)
     if not target_node_data:
-        raise ValueError(f"Target node {target_node_id} not found or access denied.")
+        raise ValueError(f"Target node {target_node_id} not found in vault {vault_id} or access denied.")
     original_content = target_node_data['content']
     target_title = target_node_data['title']
 
-    # Hole das gesamte Session-Objekt, das den Verlauf enthält
-    chat_session_data = get_session_history(session_id, user_id)
-
-    # Greife auf die 'messages'-Liste innerhalb des Objekts zu
-    messages_list = chat_session_data.get('messages', [])  # .get() ist sicherer als direkter Zugriff
-
-    # Formatiere den Verlauf für den Prompt
-    # `msg` ist jetzt garantiert ein Dictionary
-    chat_history_text = "\n".join(
-        [f"{msg.get('role', 'unknown').title()}: {msg.get('content', '')}" for msg in messages_list])
-
-    # Hole zusätzlichen Kontext aus anderen Nodes
     context_data = node_service.get_content_for_nodes(context_node_ids, vault_id, user_id)
     context_content = context_data.get('content', '')
     context_titles = context_data.get('titles', [])
 
     # --- Schritt 2: Prompt Engineering ---
-    # Der Prompt bleibt robust und detailliert, da er die Kernanweisung für das LLM ist.
-    # In deiner chat_service.py -> propose_node_update_from_chat
-
-    # --- Schritt 2: Prompt Engineering (NEUE, VERBESSERTE VERSION) ---
     system_prompt = f"""
 You are an expert content editor for a knowledge base. Your primary task is to update a knowledge node.
 
@@ -448,7 +445,6 @@ You are an expert content editor for a knowledge base. Your primary task is to u
 **Analyze all provided information and then perform the update on the node titled '{target_title}'.**
 """
 
-    # Der user_prompt bleibt gleich, er enthält die Daten.
     user_prompt = f"""
 Here is the data for your task:
 ---
@@ -456,34 +452,33 @@ Here is the data for your task:
 ---
 {original_content}
 ---
-**Full Chat History**
+**Full Chat History (if available)**
 ---
-{chat_history_text}
+{chat_history_text if chat_history_text else "No chat history provided."}
 ---
 **Additional Context from Nodes: {', '.join(context_titles)}**
 ---
 {context_content}
 ---
 Now, please analyze all the information, follow all rules, and provide the updated content for the node '{target_title}'. """
-
+    #print(user_prompt)
     # --- Schritt 3: LLM-Service aufrufen ---
-    # Die ganze Komplexität der LLM-Kommunikation ist jetzt im llm_service gekapselt.
     try:
         logger.info(f"Calling llm_service.generate_structured_response with model {model}.")
-        proposed_content = llm_service.generate_structured_response(
+        # Assuming llm_service returns a dict like {'content': '...'}
+        response_data = llm_service.generate_structured_response(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=model
         )
+        proposed_content = response_data.get('content', '') if isinstance(response_data, dict) else str(response_data)
 
-        # Rückgabe des Ergebnisses
         return {
             "original_content": original_content,
             "proposed_content": proposed_content
         }
     except Exception as e:
         logger.error(f"Error calling LLM service for node update proposal: {e}", exc_info=True)
-        # Gib den Fehler weiter, damit die API-Schicht ihn fangen kann.
         raise
 
 def update_session_title(session_id: str, user_id: int, new_title: str) -> ChatSession:

@@ -13,7 +13,7 @@ import ContextBarDisplay from './ContextBarDisplay.jsx';
  * It uses this prop to look up the titles for the selected IDs.
  * It also manages the local "isExpanded" state for the detail view.
  */
-export default function ContextBarContainer({ nodes = [] }) { // Expect a nodes prop
+export default function ContextBarContainer({ selectedNodes = [] }) {
     // 1. Local state to manage the expanded/collapsed view
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -43,28 +43,6 @@ export default function ContextBarContainer({ nodes = [] }) { // Expect a nodes 
         });
     }, [savedSets]);
 
-    // NEW: Memoize the detailed list of selected nodes for the expanded view
-    const selectedNodesWithTitles = useMemo(() => {
-        if (!nodes || nodes.length === 0 || selectedNodeIds.size === 0) {
-            return [];
-        }
-        // Create a Map for efficient ID-based lookups. This is much faster
-        // than using array.find() in a loop for large datasets.
-        const nodeMap = new Map(nodes.map(node => [node.id, node]));
-
-        return Array.from(selectedNodeIds)
-            .map(id => {
-                const node = nodeMap.get(id);
-                // Return a structured object. Gracefully handle if a node isn't found.
-                return {
-                    id,
-                    title: node?.title || 'Unknown Node',
-                };
-            })
-            // Sort alphabetically for a consistent and readable list
-            .sort((a, b) => a.title.localeCompare(b.title));
-
-    }, [selectedNodeIds, nodes]); // This recalculates only when selection or nodes change
 
 
     // 4. Pass everything down to the display component.
@@ -76,10 +54,9 @@ export default function ContextBarContainer({ nodes = [] }) { // Expect a nodes 
             onSave={saveCurrentSet}
             onLoadSet={setSelection}
             onDeleteSet={deleteSet}
-            // New props for the expandable view
             isExpanded={isExpanded}
             onToggleExpand={() => setIsExpanded(prev => !prev)}
-            selectedNodes={selectedNodesWithTitles}
+            selectedNodes={selectedNodes}
         />
     );
 }

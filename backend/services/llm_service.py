@@ -8,6 +8,7 @@ from google.genai import types as genai_types
 import time, random
 import logging
 import json
+import uuid
 from flask import current_app
 
 from backend.models import db, User
@@ -136,9 +137,11 @@ def _generate_json_with_openai_compatible(system_prompt, user_prompt, model, max
 # --- Öffentliche API-Funktionen (Wrapper) ---
 def generate_structured_response(system_prompt: str, user_prompt: str, model: str, max_tokens: int = 4096):
     logger.info(f"Requesting content update with model {model}")
-    if 'mock' in model: return "Mock content"
+    print(model)
+    if 'mock' in model: return f"Mock response ID: {uuid.uuid4()}"
     response_data = generate_json_response(system_prompt, user_prompt, model, get_content_update_schema, max_tokens)
     content = response_data.get("new_content")
+    print(content)
     if not content: raise ValueError("AI response did not contain 'new_content' key.")
     return content
 

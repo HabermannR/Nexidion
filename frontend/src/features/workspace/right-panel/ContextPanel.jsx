@@ -7,7 +7,7 @@ import ToolsTab from './ToolsTab.jsx';
 
 import './ContextPanel.css';
 
-export default function ContextPanel({ activeKey, onTabSelect }) {
+export default function ContextPanel({ selectedNodes, activeKey, onTabSelect }) {
 
     return (
         <div className="context-panel-container">
@@ -40,15 +40,14 @@ export default function ContextPanel({ activeKey, onTabSelect }) {
                 */}
                 <Tab eventKey="tools" title="Tools">
                     <div className="tab-pane-content-wrapper">
-                        {/* WICHTIG: Die Komponente selbst hat jetzt keinen .p-3 Wrapper mehr nötig */}
-                        <ToolsTab />
+                        <ToolsTab selectedNodes={selectedNodes} />
                     </div>
                 </Tab>
 
                 <Tab eventKey="workflows" title="Workflows">
                     <div className="tab-pane-content-wrapper">
                         {/* WICHTIG: Die Komponente selbst hat jetzt keinen .p-3 Wrapper mehr nötig */}
-                        <WorkflowTab />
+                        <WorkflowTab selectedNodes={selectedNodes} />
                     </div>
                 </Tab>
             </Tabs>

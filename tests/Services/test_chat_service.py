@@ -475,12 +475,12 @@ def test_stream_retry_message_inserts_and_shifts(test_user_1_obj, test_vault_1_o
 
 
 # =========================================================================
-# TESTS FÜR propose_node_update_from_chat (mit gemocktem LLM)
+# TESTS FÜR propose_node_update (mit gemocktem LLM)
 # =========================================================================
 
 def test_propose_node_update_happy_path(proposal_setup, mocker):
     """
-    Testet den "Happy Path" von `propose_node_update_from_chat`.
+    Testet den "Happy Path" von `propose_node_update`.
     Stellt sicher, dass der LLM-Service mit dem korrekt zusammengebauten Prompt aufgerufen wird.
     """
     # 1. ARRANGE
@@ -496,7 +496,7 @@ def test_propose_node_update_happy_path(proposal_setup, mocker):
     # 2. ACT
     # ------
     # Wir rufen den Service mit den Daten aus der Fixture auf.
-    result = chat_service.propose_node_update_from_chat(
+    result = chat_service.propose_node_update(
         target_node_id=proposal_setup["target_node_id"],
         session_id=proposal_setup["session_id"],
         context_node_ids=proposal_setup["context_node_ids"],
@@ -536,7 +536,7 @@ def test_propose_node_update_raises_error_if_node_not_found(proposal_setup):
 
     # 2. ACT & 3. ASSERT
     with pytest.raises(ValueError, match="Target node non-existent-id not found or access denied."):
-        chat_service.propose_node_update_from_chat(
+        chat_service.propose_node_update(
             target_node_id="non-existent-id",  # Eine ID, die garantiert nicht existiert
             session_id=proposal_setup["session_id"],
             context_node_ids=proposal_setup["context_node_ids"],
@@ -555,7 +555,7 @@ def test_propose_node_update_raises_error_for_wrong_user(proposal_setup, test_us
     # 2. ACT & 3. ASSERT
     # User 2 versucht, den Vorschlag für die Daten von User 1 zu generieren
     with pytest.raises(PermissionError):
-        chat_service.propose_node_update_from_chat(
+        chat_service.propose_node_update(
             target_node_id=proposal_setup["target_node_id"],
             session_id=proposal_setup["session_id"],
             context_node_ids=proposal_setup["context_node_ids"],

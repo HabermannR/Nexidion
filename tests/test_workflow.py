@@ -137,13 +137,13 @@ def test_full_workflow_v2_apis(client, test_user_1_obj, test_user_2_obj, mocker)
 
     mock_proposal_content = "Based on our discussion, team roles are: Lead, Dev, QA."
     mocker.patch(
-        'backend.services.chat_service.propose_node_update_from_chat',
+        'backend.services.chat_service.propose_node_update',
         return_value={
             "original_content": node_b['content'],
             "proposed_content": mock_proposal_content
         }
     )
-    propose_res = client.post(f'/api/vaults/{vault1_id}/nodes/{node_b_id}/propose-update', json={
+    propose_res = client.post(f'/api/vaults/{vault1_id}/tools/{node_b_id}/propose-update', json={
         'session_id': session_id,
         'context_node_ids': [node_a_id],
         'model': 'mock'
