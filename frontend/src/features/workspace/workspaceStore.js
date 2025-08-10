@@ -17,6 +17,7 @@ export const useWorkspaceStore = create(
             // === STATE PROPERTIES ===
             // ===============================================
 
+            lastValidWorkspacePath: null,
             // --- Tree/Graph State ---
             selectedNodeIds: new Set(),
             collapsedNodes: new Set(),
@@ -38,6 +39,11 @@ export const useWorkspaceStore = create(
             // === ACTIONS ===
             // ===============================================
 
+            setLastValidWorkspacePath: (path) => set({ lastValidWorkspacePath: path }),
+
+            // KORREKTUR 1: Das schließende "})," wurde entfernt. Es muss hier weitergehen!
+            // Es war vorher: setLastValidWorkspacePath: (...) }),
+
             // --- Workspace/Vault Actions ---
             resetWorkspaceContext: () => set({
                 // Reset Tree/Graph state
@@ -51,8 +57,8 @@ export const useWorkspaceStore = create(
                 activeChatTitle: 'New Chat',
                 activeChatMessages: [],
             }),
-            // --- LLM Actions ---
 
+            // --- LLM Actions ---
             setChatModel: (model) => set({ chatModel: model }),
             setTitleModel: (model) => set({ titleModel: model }),
             initializeModels: (availableModels) => {
@@ -69,7 +75,6 @@ export const useWorkspaceStore = create(
                 }
             },
 
-
             // --- Chat Actions (Now simplified) ---
             startNewChat: () => set({
                 activeChatSessionId: null,
@@ -77,26 +82,22 @@ export const useWorkspaceStore = create(
                 activeChatMessages: []
             }),
 
-            // Sets a complete session (e.g., after loading from history)
             setActiveChatSession: (sessionId, title, messages) => set({
                 activeChatSessionId: sessionId,
                 activeChatTitle: title || 'Chat',
                 activeChatMessages: messages || [],
             }),
 
-            // Appends a new message to the live buffer
             appendMessage: (message) => set(state => ({
                 activeChatMessages: [...state.activeChatMessages, message]
             })),
 
-            // Updates an existing message (e.g., from 'pending' to 'confirmed')
             updateMessage: (messageId, updates) => set(state => ({
                 activeChatMessages: state.activeChatMessages.map(msg =>
                     msg.id === messageId ? { ...msg, ...updates } : msg
                 )
             })),
 
-            // Appends a token chunk to a streaming message
             appendChunkToMessage: (messageId, chunk) => set(state => ({
                 activeChatMessages: state.activeChatMessages.map(msg =>
                     msg.id === messageId ? { ...msg, content: msg.content + chunk } : msg
@@ -108,7 +109,6 @@ export const useWorkspaceStore = create(
             // --- Diff Actions ---
             setDiffBase: (version) => set({ diffSelection: { base: version, compare: null } }),
             setDiffCompare: (version) => set(state => {
-                // If the same compare item is clicked, deselect it.
                 if (state.diffSelection.compare?.id === version?.id) {
                     return { diffSelection: { ...state.diffSelection, compare: null } };
                 }
@@ -181,6 +181,7 @@ export const useWorkspaceStore = create(
                     };
                 });
             },
+            // KORREKTUR 2: HIER wird das große Objekt mit allen States und Actions geschlossen.
         }),
         {
             // ===============================================
@@ -188,7 +189,6 @@ export const useWorkspaceStore = create(
             // ===============================================
             name: STORAGE_KEY,
             storage: createJSONStorage(() => localStorage, {
-                // Custom replacer/reviver to handle Set objects, which JSON doesn't support natively.
                 replacer: (key, value) => {
                     if (value instanceof Set) {
                         return { __type: 'Set', value: [...value] };
@@ -202,9 +202,9 @@ export const useWorkspaceStore = create(
                     return value;
                 },
             }),
-            // Selectively persist only the parts of the state that make sense to restore.
             partialize: (state) => ({
                 // UI State
+                lastValidWorkspacePath: state.lastValidWorkspacePath,
                 selectedNodeIds: state.selectedNodeIds,
                 collapsedNodes: state.collapsedNodes,
                 savedSets: state.savedSets,
@@ -213,7 +213,7 @@ export const useWorkspaceStore = create(
                 chatModel: state.chatModel,
                 titleModel: state.titleModel,
 
-                // Active Chat Session (for better UX on refresh)
+                // Active Chat Session
                 activeChatSessionId: state.activeChatSessionId,
                 activeChatTitle: state.activeChatTitle,
                 activeChatMessages: state.activeChatMessages,

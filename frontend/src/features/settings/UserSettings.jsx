@@ -1,14 +1,26 @@
+// src/features/settings/UserSettings.jsx
+
 import React, { useState, useRef } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+// NEU: useNavigate importieren, um programmatisch zu navigieren. Link wird nicht mehr für den Zurück-Button gebraucht.
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Container, Card, Button, Form as BootstrapForm, Row, Col, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
+// NEU: Den Workspace-Store importieren, um den Rückkehr-Pfad zu lesen.
+import { useWorkspaceStore } from '../workspace/workspaceStore';
 
 export default function UserSettings() {
     const { activeVault } = useOutletContext();
-    const [alert, setAlert] = useState(null);
     const formRef = useRef();
 
+    // --- NEU: Zustand und Navigation abrufen ---
+    const navigate = useNavigate();
+    const lastValidWorkspacePath = useWorkspaceStore(state => state.lastValidWorkspacePath);
+
+    // --- LOKALER UI-ZUSTAND ---
+    const [alert, setAlert] = useState(null);
+
+    // --- DATA MUTATION ---
     const changePasswordMutation = useMutation({
         mutationFn: (passwords) => apiClient.post('/api/auth/change-password', passwords),
         onSuccess: () => {
@@ -20,6 +32,7 @@ export default function UserSettings() {
         }
     });
 
+    // --- EVENT HANDLERS ---
     const handleSubmit = (e) => {
         e.preventDefault();
         setAlert(null);
@@ -42,12 +55,19 @@ export default function UserSettings() {
         changePasswordMutation.mutate({ old_password, new_password });
     };
 
+    // NEU: Handler für den Zurück-Button
+    const handleBackClick = () => {
+        // Nutze den gespeicherten Pfad. Wenn keiner da ist, nimm den Fallback.
+        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+    };
+
     return (
         <Container className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>Benutzereinstellungen</h2>
-                <Button as={Link} to={activeVault ? `/vaults/${activeVault.id}` : '/'} variant="secondary">
-                    Zurück
+                {/* --- GEÄNDERT: Der Button nutzt jetzt den onClick-Handler --- */}
+                <Button onClick={handleBackClick} variant="secondary">
+                    Zurück zum Workspace
                 </Button>
             </div>
 
@@ -59,6 +79,7 @@ export default function UserSettings() {
                         <Card.Header as="h5">Passwort ändern</Card.Header>
                         <Card.Body>
                             <BootstrapForm ref={formRef} onSubmit={handleSubmit}>
+                                {/* ... (Formular-Felder bleiben unverändert) ... */}
                                 <BootstrapForm.Group className="mb-3" controlId="old_password">
                                     <BootstrapForm.Label>Aktuelles Passwort</BootstrapForm.Label>
                                     <BootstrapForm.Control type="password" name="old_password" required />

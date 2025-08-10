@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate  } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
-// shallow is no longer needed because we are selecting granularly
 import { Container, Card, Button, Form as BootstrapForm, Table, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
 import './LlmSettings.css'; // NEU: Importiere die CSS-Datei
 
 export default function LlmSettings() {
+    const navigate = useNavigate(); // Hook für die Navigation
+    const lastValidWorkspacePath = useWorkspaceStore(state => state.lastValidWorkspacePath);
     const { activeVault } = useOutletContext();
 
     // --- ZUSTAND INTEGRATION (GLOBAL STATE) - THE FIX ---
@@ -56,16 +57,20 @@ export default function LlmSettings() {
         if (newTitleModel) {
             setTitleModel(newTitleModel);
         }
-        setAlert({ type: 'success', message: 'Einstellungen erfolgreich im Browser gespeichert.' });
+        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
     };
+
+    const handleBackClick = () => {
+        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+    }
 
     return (
         // NEU: Die CSS-Klasse wird dem Container hinzugefügt
         <Container className="py-4 llm-settings-scroll-container">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>LLM-Einstellungen</h2>
-                <Button as={Link} to={activeVault ? `/vaults/${activeVault.id}` : '/'} variant="secondary">
-                    Zurück
+                <Button onClick={handleBackClick} variant="secondary">
+                    Zurück zum Workspace
                 </Button>
             </div>
 

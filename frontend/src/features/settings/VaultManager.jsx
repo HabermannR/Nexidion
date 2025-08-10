@@ -17,6 +17,8 @@ import {
 } from 'react-bootstrap';
 import apiClient from '../../api/apiClient.js';
 
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
+
 // --- VaultRow Component (Refactored) ---
 function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutation }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -110,6 +112,9 @@ export default function VaultManager() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
 
+    const lastValidWorkspacePath = useWorkspaceStore(state => state.lastValidWorkspacePath);
+
+
     const [isBatchMode, setIsBatchMode] = useState(false);
     const [alert, setAlert] = useState(null); // Local alert state for success/error messages
     const formRef = useRef();
@@ -184,14 +189,19 @@ export default function VaultManager() {
         }
     };
 
+    const handleBackClick = () => {
+        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+    };
+
     const isSubmitting = createVaultMutation.isPending || renameVaultMutation.isPending || deleteVaultMutation.isPending;
 
     return (
         <Container className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>Vault-Verwaltung</h2>
-                <Button as={Link} to={activeVault ? `/vaults/${activeVault.id}` : '/'} variant="secondary">
-                    Zurück zu den Nodes
+                {/* GEÄNDERT: Button nutzt jetzt den onClick-Handler */}
+                <Button onClick={handleBackClick} variant="secondary">
+                    Zurück zum Workspace
                 </Button>
             </div>
 
@@ -203,10 +213,11 @@ export default function VaultManager() {
                     <BootstrapForm ref={formRef} onSubmit={handleCreateSubmit}>
                         <Row>
                             <Col md={12}>
-                                <BootstrapForm.Group>
-                                    <BootstrapForm.Label htmlFor="new-vault-name">Vault-Name</BootstrapForm.Label>
+                                {/* --- GEÄNDERT: Formular-Struktur korrigiert --- */}
+                                <BootstrapForm.Group controlId="new-vault-name">
+                                    <BootstrapForm.Label>Vault-Name</BootstrapForm.Label>
                                     <BootstrapForm.Control
-                                        id="new-vault-name" type="text" name="name"
+                                        type="text" name="name"
                                         placeholder="Namen für den neuen Vault eingeben..."
                                         required disabled={createVaultMutation.isPending}
                                         ref={inputRef} autoFocus

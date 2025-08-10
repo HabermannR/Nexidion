@@ -60,15 +60,29 @@ export default function WorkspaceLayout() {
     const [activeContextTab, setActiveContextTab] = useState('chat');
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
+    const previousVaultIdRef = useRef(vaultId);
     const programmaticResizeRef = useRef(false);
 
     useEffect(() => {
-        // Wenn sich die vaultId ändert, den Zustand des Arbeitsbereichs zurücksetzen.
-        // Das verhindert, dass alter Kontext (ausgewählte Nodes, Chat etc.)
-        // in den neuen Vault "mitgeschleppt" wird.
-        resetWorkspaceContext();
-        setBreadcrumbPath([]); // Lokalen UI-Zustand wie Breadcrumbs ebenfalls zurücksetzen
-    }, [vaultId, resetWorkspaceContext]);
+        const currentVaultId = vaultId;
+        const previousVaultId = previousVaultIdRef.current;
+
+        // Die Kernbedingung:
+        // Setze den Kontext NUR zurück, wenn wir von einem Vault (previousVaultId war nicht null)
+        // zu einem ANDEREN Vault wechseln (currentVaultId ist nicht null und ungleich dem alten).
+        //
+        // Dies verhindert den Reset, wenn man zu den Settings navigiert (wo currentVaultId 'undefined' ist)
+        // oder wenn man von den Settings zurückkommt (wo previousVaultId 'undefined' sein könnte).
+        if (currentVaultId && previousVaultId && currentVaultId !== previousVaultId) {
+            console.log(`Vault-Wechsel erkannt: von ${previousVaultId} zu ${currentVaultId}. Workspace-Kontext wird zurückgesetzt.`);
+            resetWorkspaceContext();
+            setBreadcrumbPath([]); // Lokalen UI-Zustand ebenfalls zurücksetzen
+        }
+
+        // Aktualisiere den Ref für den nächsten Render-Zyklus.
+        previousVaultIdRef.current = currentVaultId;
+
+    }, [vaultId, resetWorkspaceContext]); // Dependencies bleiben gleich
 
     // --- DATA LOGIC  ---
     const { data: treeData, isLoading: isTreeLoading } = useQuery({

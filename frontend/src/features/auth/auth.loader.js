@@ -15,7 +15,6 @@ export async function protectedLoader({request}) {
     }
 
     try {
-        console.log("[Auth Loader] Token gefunden. Validiere und lade globale Daten...");
         const [userResponse, vaultsResponse] = await Promise.all([
             apiClient.get('/api/auth/me'),
             apiClient.get('/api/vaults/')
@@ -23,7 +22,6 @@ export async function protectedLoader({request}) {
 
         const user = userResponse.data;
         const vaults = vaultsResponse.data;
-        console.log("[Auth Loader] Token ist gültig. Lade geschützte Route.");
 
         // --- 2. LOTSEN-FUNKTION ---
         // Prüfe, ob wir uns genau auf der Wurzel-URL "/" befinden.

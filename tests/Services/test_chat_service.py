@@ -1,5 +1,6 @@
 import pytest
 import json
+import re
 from backend.services import chat_service, node_service
 from backend.models import User, Vault, ChatSession, ChatMessage, Node
 
@@ -497,6 +498,7 @@ def test_propose_node_update_happy_path(proposal_setup, mocker):
     # ------
     # Wir rufen den Service mit den Daten aus der Fixture auf.
     result = chat_service.propose_node_update(
+        vault_id=proposal_setup["vault_id"],
         target_node_id=proposal_setup["target_node_id"],
         session_id=proposal_setup["session_id"],
         context_node_ids=proposal_setup["context_node_ids"],
@@ -532,12 +534,13 @@ def test_propose_node_update_raises_error_if_node_not_found(proposal_setup):
     """
     Testet, dass ein `ValueError` ausgelöst wird, wenn der Ziel-Node nicht existiert.
     """
-    # 1. ARRANGE (Setup wird durch die 'proposal_setup' Fixture bereitgestellt)
 
-    # 2. ACT & 3. ASSERT
-    with pytest.raises(ValueError, match="Target node non-existent-id not found or access denied."):
+    expected_error_msg = f"Target node non-existent-id not found in vault {proposal_setup['vault_id']} or access denied."
+
+    with pytest.raises(ValueError, match=re.escape(expected_error_msg)):
         chat_service.propose_node_update(
-            target_node_id="non-existent-id",  # Eine ID, die garantiert nicht existiert
+            vault_id=proposal_setup["vault_id"],
+            target_node_id="non-existent-id",
             session_id=proposal_setup["session_id"],
             context_node_ids=proposal_setup["context_node_ids"],
             model="mock_model",
@@ -556,6 +559,7 @@ def test_propose_node_update_raises_error_for_wrong_user(proposal_setup, test_us
     # User 2 versucht, den Vorschlag für die Daten von User 1 zu generieren
     with pytest.raises(PermissionError):
         chat_service.propose_node_update(
+            vault_id=proposal_setup["vault_id"],
             target_node_id=proposal_setup["target_node_id"],
             session_id=proposal_setup["session_id"],
             context_node_ids=proposal_setup["context_node_ids"],

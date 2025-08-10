@@ -1,9 +1,8 @@
-import React, { useEffect, useCallback } from 'react'; // useCallback is not strictly needed but good practice for clarity
-import { Link, useParams, Form, Outlet, useNavigation } from 'react-router-dom';
+import React, { useEffect } from 'react'; // useCallback is not strictly needed but good practice for clarity
+import { Link, useLocation, useParams, Form, Outlet, useNavigation } from 'react-router-dom';
 import { Navbar, Nav, Button, NavDropdown, Container, Spinner } from 'react-bootstrap';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../features/workspace/workspaceStore';
-// shallow is no longer needed for this specific hook call
 import apiClient from '../api/apiClient';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './AppShell.css';
@@ -15,8 +14,10 @@ export default function AppShell() {
         queryFn: () => apiClient.get('/api/vaults/').then(res => res.data),
     });
     const { data: user, isLoading: isLoadingUser } = useUser();
-    const { vaultId } = useParams();
+    const { vaultId, nodeId } = useParams();
     const navigation = useNavigation();
+    const setLastValidWorkspacePath = useWorkspaceStore(state => state.setLastValidWorkspacePath);
+    const location = useLocation();
 
     // --- START: LLM INITIALIZATION LOGIC (FIXED) ---
 
@@ -42,6 +43,14 @@ export default function AppShell() {
 
     const isLoading = navigation.state === 'loading' || isLoadingVaults || isLoadingUser;
     const currentVault = vaults?.find(v => v.id.toString() === vaultId);
+
+    useEffect(() => {
+        // Wir speichern den Pfad nur, wenn er einen gültigen Node enthält.
+        // Pfade wie `/vaults/projekt-x` ohne Node-ID wollen wir nicht speichern.
+        if (vaultId && nodeId) {
+            setLastValidWorkspacePath(location.pathname);
+        }
+    }, [vaultId, nodeId, location.pathname, setLastValidWorkspacePath]);
 
     return (
         <div className={`app-shell-container ${isLoading ? 'is-loading' : ''}`}>

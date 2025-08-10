@@ -315,7 +315,8 @@ def test_propose_node_update_from_chat_happy_path(
     mock_llm_call.return_value = 'Der neue, vorgeschlagene Inhalt.'
 
     # 2. ACT
-    result = chat_service.propose_node_update_from_chat(
+    result = chat_service.propose_node_update(
+        vault_id=1,
         target_node_id='node-123',
         session_id='session-abc',
         context_node_ids=['node-456'],

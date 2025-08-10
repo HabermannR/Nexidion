@@ -72,7 +72,6 @@ export default function ToolsTab({ selectedNodes = [] }) {
     }, [targetNodeId, chatModel, selectedNodes, activeChatSessionId, proposeUpdateMutation]);
 
     const proposedContentForUpdate = proposeUpdateMutation.data?.proposed_content;
-    console.log(proposedContentForUpdate);
 
     const handleAcceptUpdate = useCallback(() => {
         if (proposedContentForUpdate && acceptUpdateMutation.mutate) {

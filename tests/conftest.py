@@ -166,10 +166,6 @@ def proposal_setup(db_session, test_user_1_obj, test_vault_1_obj):
     - Einen Ziel-Node
     - Eine Chat-Session mit Verlauf
     Gibt ein Dictionary mit den relevanten IDs zurück.
-
-    ### KORREKTUR ###
-    Die Argumente 'node_service', 'ChatSession', 'ChatMessage' und 'Node' wurden aus der
-    Signatur entfernt, da sie keine Fixtures sind. Sie werden stattdessen direkt importiert.
     """
     # Hol den Root-Node, der beim Erstellen des Vaults angelegt wurde.
     root_node = db_session.session.query(Node).filter_by(
@@ -203,6 +199,7 @@ def proposal_setup(db_session, test_user_1_obj, test_vault_1_obj):
     # Gib alle nötigen Informationen als Dictionary zurück
     return {
         "user_id": test_user_1_obj.id,
+        "vault_id": test_vault_1_obj.id,
         "session_id": session.id,
         "target_node_id": target_node_dict.id,
         "context_node_ids": [context_node_dict.id]

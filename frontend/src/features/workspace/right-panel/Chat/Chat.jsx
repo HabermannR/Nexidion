@@ -1,4 +1,4 @@
-// IN: src/features/chat/Chat.jsx
+// src/features/chat/Chat.jsx
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -81,14 +81,16 @@ export default function Chat() {
                                     if (data.id && data.token) appendChunkToMessage(data.id, data.token);
                                     break;
                                 case 'assistant_message_end':
-                                case 'message_status_updated':
+                                    updateMessage(data.id, data);
+                                    break;
+                                case 'message_status_updated': // This event is now handled correctly by the filter
                                     updateMessage(data.id, data);
                                     break;
                                 case 'session_updated':
                                     queryClient.invalidateQueries({ queryKey: ['chatSessions', vaultId] });
                                     if (data.title) {
                                         setActiveChatTitle(data.title);
-                                        }
+                                    }
                                     queryClient.invalidateQueries({ queryKey: ['chatSessions', vaultId] });
                                     break;
                                 case 'error':
@@ -110,14 +112,7 @@ export default function Chat() {
     // 4. MUTATIONS FÜR ALLE SCHREIBENDEN AKTIONEN
     // ==========================================================
     const getSseAuthHeaders = () => {
-        // ==========================================================
-        // FINALE, DEFINITIVE KORREKTUR
-        // Stelle sicher, dass der Key mit dem apiClient übereinstimmt
-        // ==========================================================
         const jwtToken = localStorage.getItem('authToken');
-
-        // console.log("[getSseAuthHeaders] Token from localStorage with key 'authToken':", jwtToken);
-
         if (!jwtToken) {
             throw new Error("Authentication token ('authToken') not found. Please log in again.");
         }
@@ -131,23 +126,17 @@ export default function Chat() {
         mutationFn: async (payload) => {
             let sessionId = activeChatSessionId;
 
-            // 1. Session erstellen (falls nötig) MIT DEM apiClient!
             if (!sessionId) {
-                // apiClient fügt den Token automatisch hinzu.
                 const sessionResponse = await apiClient.post(`/api/vaults/${vaultId}/sessions/`);
                 sessionId = sessionResponse.data.id;
-                // Wichtig: Den Store aktualisieren, BEVOR die nächste Anfrage startet
                 setActiveChatSession(sessionId, 'New Chat', [payload.userMessage]);
             }
 
-            // 2. Nachricht senden und Stream öffnen (NUR HIER das native fetch)
             const response = await fetch(
-                // Wir verwenden die volle URL, um sicherzugehen.
-                // Vite's dev-server proxy kümmert sich um die Weiterleitung an Port 5001.
                 `/api/vaults/${vaultId}/sessions/${sessionId}/messages`,
                 {
                     method: 'POST',
-                    headers: getSseAuthHeaders(), // expliziter Auth-Header
+                    headers: getSseAuthHeaders(),
                     body: JSON.stringify(payload.apiPayload)
                 }
             );
@@ -170,7 +159,6 @@ export default function Chat() {
         }
     });
 
-    // Für retry und delete verwenden wir dieselbe Logik.
     const resubmitMessageMutation = useMutation({
         mutationFn: async ({ messageToResubmit }) => {
             const tempAssistantMessage = { id: `temp-${generateUUID()}`, role: 'assistant', content: '', llm_model_source: chatModel.name };
@@ -187,7 +175,6 @@ export default function Chat() {
         onError: (error, variables) => updateMessage(variables.tempAssistantId, { content: `**Error:** ${error.message}` })
     });
 
-    // FÜR DELETE: Wir nutzen den apiClient, da wir keine Stream-Antwort erwarten.
     const deleteMessageMutation = useMutation({
         mutationFn: (messageId) => apiClient.delete(`/api/vaults/${vaultId}/sessions/${activeChatSessionId}/messages/${messageId}`),
         onSuccess: () => {
@@ -235,15 +222,14 @@ export default function Chat() {
     // ==========================================================
     const isChatLoading = createAndSendMessageMutation.isPending;
 
-    return (
-        // <<< KORREKTUR 1: Die Klasse `history-open` kommt hierher.
-        <div className={`chat-feature-wrapper ${isHistoryPanelOpen ? 'history-open' : ''}`}>
-            {/* <<< KORREKTUR 2: Die Klasse wurde von diesem Element entfernt. */}
-            <div className="chat-layout-container">
+    // KORREKTUR: Filtere die Nachrichten, die angezeigt werden sollen, bevor sie gerendert werden.
+    const visibleMessages = activeChatMessages?.filter(
+        (msg) => msg.status !== 'retried' && msg.status !== 'deleted'
+    );
 
-                {/* ========================================================== */}
-                {/* 1. DER HEADER: Dieser Bereich schrumpft nicht. */}
-                {/* ========================================================== */}
+    return (
+        <div className={`chat-feature-wrapper ${isHistoryPanelOpen ? 'history-open' : ''}`}>
+            <div className="chat-layout-container">
                 <div className="d-flex justify-content-between align-items-center p-2 border-bottom bg-white" style={{ flexShrink: 0 }}>
                     <div className="d-flex align-items-center gap-2">
                         <h4 className="h6 mb-0 text-truncate" title={activeChatTitle || 'Chat'} style={{ maxWidth: '180px' }}>
@@ -257,19 +243,16 @@ export default function Chat() {
                     </div>
                 </div>
 
-                {/* ========================================================== */}
-                {/* 2. DER NACHRICHTENBEREICH: Dieser Bereich wächst, schrumpft und scrollt. */}
-                {/* ========================================================== */}
                 <div className="chat-messages-wrapper" ref={chatDisplayRef}>
-                    {/* Willkommensnachricht, wenn der Chat leer ist */}
-                    {(activeChatMessages?.length || 0) === 0 && !isChatLoading && (
+                    {/* KORREKTUR: Prüfe die Länge der gefilterten Nachrichtenliste */}
+                    {(visibleMessages?.length || 0) === 0 && !isChatLoading && (
                         <div className="message assistant">
                             <div className="markdown-content">Select nodes from the tree and ask a question to start a new chat!</div>
                         </div>
                     )}
 
-                    {/* Alle Nachrichten werden hier gerendert */}
-                    {activeChatMessages?.map((message) => (
+                    {/* KORREKTUR: Rendere nur die gefilterten Nachrichten */}
+                    {visibleMessages?.map((message) => (
                         <ChatMessage
                             key={message.id}
                             message={message}
@@ -280,9 +263,6 @@ export default function Chat() {
                     ))}
                 </div>
 
-                {/* ========================================================== */}
-                {/* 3. DER EINGABEBEREICH: Dieser Bereich schrumpft nicht und bleibt unten. */}
-                {/* ========================================================== */}
                 <div className="chat-input-wrapper">
                     <form onSubmit={handleChatSubmit} className="d-flex align-items-start w-100 gap-2">
                     <textarea
@@ -306,10 +286,6 @@ export default function Chat() {
                 </div>
             </div>
 
-            {/* ========================================================== */}
-            {/* 4. DAS HISTORY-PANEL: Wird über alles andere gelegt, wenn es aktiv ist. */}
-            {/* ========================================================== */}
-            {/* <<< KORREKTUR 3: Die bedingte Logik `isHistoryPanelOpen &&` wird entfernt. */}
             <ChatHistoryPanel onClose={() => setIsHistoryPanelOpen(false)} />
         </div>
     );
