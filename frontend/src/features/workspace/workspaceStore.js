@@ -17,7 +17,6 @@ export const useWorkspaceStore = create(
             // === STATE PROPERTIES ===
             // ===============================================
 
-            lastValidWorkspacePath: null,
             // --- Tree/Graph State ---
             selectedNodeIds: new Set(),
             collapsedNodes: new Set(),
@@ -39,20 +38,20 @@ export const useWorkspaceStore = create(
             // === ACTIONS ===
             // ===============================================
 
-            setLastValidWorkspacePath: (path) => set({ lastValidWorkspacePath: path }),
-
-            // KORREKTUR 1: Das schließende "})," wurde entfernt. Es muss hier weitergehen!
-            // Es war vorher: setLastValidWorkspacePath: (...) }),
+            setLastValidPathForVault: (vaultId, path) => set(state => ({
+                lastValidPaths: {
+                    ...state.lastValidPaths,
+                    [vaultId]: path,
+                }
+            })),
 
             // --- Workspace/Vault Actions ---
             resetWorkspaceContext: () => set({
-                // Reset Tree/Graph state
+                lastValidPaths: get().lastValidPaths, // Behalte die Pfade bei
                 selectedNodeIds: new Set(),
                 collapsedNodes: new Set(),
                 savedSets: {},
-                // Reset Diff state
                 diffSelection: { base: null, compare: null },
-                // Reset Active Chat Session state
                 activeChatSessionId: null,
                 activeChatTitle: 'New Chat',
                 activeChatMessages: [],
@@ -107,13 +106,17 @@ export const useWorkspaceStore = create(
             setActiveChatTitle: (title) => set({ activeChatTitle: title }),
 
             // --- Diff Actions ---
-            setDiffBase: (version) => set({ diffSelection: { base: version, compare: null } }),
+            setDiffBase: (version) => set(state => ({
+                diffSelection: { ...state.diffSelection, base: version }
+            })),
+
             setDiffCompare: (version) => set(state => {
                 if (state.diffSelection.compare?.id === version?.id) {
                     return { diffSelection: { ...state.diffSelection, compare: null } };
                 }
                 return { diffSelection: { ...state.diffSelection, compare: version } };
             }),
+
             clearDiff: () => set({ diffSelection: { base: null, compare: null } }),
 
             // --- Tree Actions ---
@@ -204,7 +207,7 @@ export const useWorkspaceStore = create(
             }),
             partialize: (state) => ({
                 // UI State
-                lastValidWorkspacePath: state.lastValidWorkspacePath,
+                lastValidPaths: state.lastValidPaths,
                 selectedNodeIds: state.selectedNodeIds,
                 collapsedNodes: state.collapsedNodes,
                 savedSets: state.savedSets,

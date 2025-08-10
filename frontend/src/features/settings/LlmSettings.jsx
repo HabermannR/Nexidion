@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate  } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { Container, Card, Button, Form as BootstrapForm, Table, Alert, Spinner } from 'react-bootstrap';
-import apiClient from '../../api/apiClient';
+import { useLlmModels } from '../../hooks/useLlmModels';
 import './LlmSettings.css'; // NEU: Importiere die CSS-Datei
 
 export default function LlmSettings() {
@@ -26,11 +25,7 @@ export default function LlmSettings() {
     const [alert, setAlert] = useState(null);
 
     // --- DATA FETCHING ---
-    const { data: availableLlms, isLoading, isError } = useQuery({
-        queryKey: ['llmModels'],
-        queryFn: () => apiClient.get('/api/llm/models').then(res => res.data),
-        staleTime: Infinity,
-    });
+    const { availableModels, isLoading, isError } = useLlmModels();
 
     // --- SYNC GLOBAL STATE TO LOCAL UI STATE ---
     // This is now safe. The effect only depends on `chatModel` and `titleModel`.
@@ -47,8 +42,8 @@ export default function LlmSettings() {
     // --- ACTIONS ---
     const handleSubmit = (e) => {
         e.preventDefault();
-        const newChatModel = availableLlms?.find(m => m.id === selectedChatLlmId);
-        const newTitleModel = availableLlms?.find(m => m.id === selectedTitleLlmId);
+        const newChatModel = availableModels?.find(m => m.id === selectedChatLlmId);
+        const newTitleModel = availableModels?.find(m => m.id === selectedTitleLlmId);
 
         // Use the stable action functions we selected earlier.
         if (newChatModel) {
@@ -94,7 +89,7 @@ export default function LlmSettings() {
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {availableLlms?.map(llm => (
+                                {availableModels?.map(llm => (
                                     <tr key={llm.id}>
                                         <td>
                                             <strong>{llm.name}</strong>

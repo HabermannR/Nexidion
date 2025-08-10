@@ -1,58 +1,58 @@
-/* src/components/VersionHistoryTab.css */
+/* ==================================================================== */
+/*          FINALE, KUGELSICHERE STEUERUNG FÜR DEN BUTTON              */
+/*      (Jetzt mit Unterscheidung zwischen Touch- und Maus-Geräten)   */
+/* ==================================================================== */
 
-.version-history-container {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 0;
-    width: 100%;
-    min-height: 0;
-    padding: 0.5rem;
+/* --- GRUNDSTILE, DIE IMMER GELTEN (Maus & Touch) --- */
+
+/* Standardzustand des Buttons */
+.version-list-item .btn-outline-info {
+    background-color: transparent !important;
+    color: #17a2b8 !important;
+    border-color: #17a2b8 !important;
+    box-shadow: none !important;
+    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
 }
 
-.version-list-scroll-area {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    overflow-x: hidden;
+/* Definitiver Stil, wenn der Button im aktiven Vergleichs-Item ist */
+.version-list-item.diff-compare-active .btn-outline-info {
+    background-color: #17a2b8 !important;
+    color: white !important;
 }
 
-.version-list-item {
+/* Der große klickbare Bereich bekommt den Pointer-Cursor.
+   (Dieser wird bereits durch dein inline-style gesetzt, aber hier als
+   allgemeine Regel ist es sauberer.) */
+.version-list-item .flex-grow-1 {
     cursor: pointer;
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-    /* Übergang für einen sanften Farbwechsel */
-    transition: background-color 0.15s ease-in-out;
 }
 
-/* Hover-Effekt für normale Listeneinträge (nicht die aktive 'base'-Version) */
-.version-list-item:not(.active):hover {
-    background-color: #f8f9fa; /* Standard Bootstrap Hover-Grau */
-}
 
-/* Stil für die zweite, zum Vergleich ausgewählte Version (hellblau) */
-.version-list-item.diff-compare-active {
-    color: #0c5460 !important; /* Dunkler Text für Kontrast */
-    background-color: #d1ecf1 !important; /* Hellblaues Hintergrund */
-    border-color: #bee5eb !important;
-}
+/* --- :hover STILE, NUR FÜR GERÄTE MIT MAUS --- */
 
-/* Verhindert, dass der Hover-Effekt das Hellblau der 'compare'-Version überschreibt */
-.version-list-item.diff-compare-active:hover {
-    background-color: #c1e6ee !important; /* Ein etwas dunkleres Blau beim Hovern */
-}
+@media (hover: hover) and (pointer: fine) {
 
-/*
- * KORREKTUR FÜR BUTTON-HOVER
- * Wir zielen direkt auf den Button innerhalb des Listeneintrags.
-*/
+    /* REGEL 1: HOVER-EFFEKT FÜR DEN GROSSEN BEREICH */
+    /* Fügt dem gesamten Listeneintrag einen dezenten Hintergrund hinzu, wenn man
+       darüberfährt. :not(.active) verhindert, dass der bereits ausgewählte
+       (blaue) Eintrag diesen Effekt bekommt. */
+    .version-list-item:not(.active):hover {
+        background-color: #f8f9fa; /* Ein sehr helles, neutrales Grau */
+    }
 
-/* Hover-Effekt für den "Vergleichen"-Button (outline-info) */
-.version-list-item .btn-outline-info:hover {
-    background-color: #17a2b8; /* Bootstrap 'info' color */
-    color: white;
-}
+    /* REGEL 2: HOVER-EFFEKT NUR FÜR DEN BUTTON */
+    /* Diese Regeln sind wieder direkt an den Button gekoppelt (.btn-outline-info:hover)
+       und funktionieren völlig unabhängig von der obigen Regel. */
 
-/* Hover-Effekt für den "Vergleich aufheben"-Button (info) */
-.version-list-item .btn-info:hover {
-    background-color: #138496; /* Dunklere Variante von 'info' */
-    border-color: #117a8b;
+    /* Hover-Zustand für den normalen, NICHT-AKTIVEN Button */
+    .version-list-item:not(.diff-compare-active) .btn-outline-info:hover {
+        background-color: #17a2b8 !important;
+        color: white !important;
+    }
+
+    /* Hover-Zustand, wenn der Button im aktiven Vergleichs-Item ist */
+    .version-list-item.diff-compare-active .btn-outline-info:hover {
+        background-color: #138496 !important; /* Dunklere Variante */
+        border-color: #117a8b !important;
+    }
 }

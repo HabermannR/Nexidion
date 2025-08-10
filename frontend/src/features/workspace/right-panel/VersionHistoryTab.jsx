@@ -24,7 +24,6 @@ export default function VersionHistoryTab() {
         queryFn: async () => {
             // Die Logik hier war schon korrekt, aber der Key muss passen.
             if (!nodeId) return [];
-            console.log(`[useQuery] Fetching versions for node: ${nodeId} in vault: ${vaultId}`);
             const response = await apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`);
             return response.data || [];
         },
@@ -49,15 +48,20 @@ export default function VersionHistoryTab() {
     };
 
     const handleCompareVersion = (version) => {
-        setDiffCompare(version); // 1. Store aktualisieren
         const newSearchParams = new URLSearchParams(window.location.search);
-        // Logik zum Hinzufügen/Entfernen des compare-Parameters
+
+        // Prüfen, ob diese Version bereits die Vergleichsversion ist.
         if (newSearchParams.get('compare') === String(version.version)) {
+            // Ja -> Vergleich aufheben
             newSearchParams.delete('compare');
+            setDiffCompare(null); // Zustand zurücksetzen!
         } else {
+            // Nein -> Als neue Vergleichsversion setzen
             newSearchParams.set('compare', String(version.version));
+            setDiffCompare(version); // Zustand setzen!
         }
-        updateUrl(newSearchParams); // 2. URL aktualisieren
+
+        updateUrl(newSearchParams); // URL am Ende aktualisieren
     };
 
     const handleShowCurrent = () => {
@@ -122,7 +126,21 @@ export default function VersionHistoryTab() {
                                     <small className="text-muted">{new Date(v.timestamp).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</small>
                                 </div>
                                 {showDiffButton && (
-                                    <Button variant={isCompare ? "info" : "outline-info"} size="sm" onClick={(e) => { e.stopPropagation(); handleCompareVersion(v); }} title={isCompare ? "Vergleich aufheben" : `Vergleiche mit v${base?.version}`}>
+                                    <Button
+                                        // KORREKTUR: Immer 'outline-info' verwenden. Das CSS kümmert sich um den Rest.
+                                        variant="outline-info"
+                                        size="sm"
+                                        // HINWEIS: Die Klasse 'btn-info' wird jetzt nicht mehr hinzugefügt,
+                                        // was das Styling vereinfacht.
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleCompareVersion(v);
+                                            // NEU: Dem Button nach dem Klick den Fokus entziehen.
+                                            // Das ist eine robuste Methode, um "klebende" Hover/Focus-Stile zu verhindern.
+                                            e.currentTarget.blur();
+                                        }}
+                                        title={isCompare ? "Vergleich aufheben" : `Vergleiche mit v${base?.version}`}
+                                    >
                                         <BsArrowLeftRight />
                                     </Button>
                                 )}

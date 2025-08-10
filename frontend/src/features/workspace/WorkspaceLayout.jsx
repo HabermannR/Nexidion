@@ -1,6 +1,6 @@
 // src/features/workspace/WorkspaceLayout.jsx
 
-import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect, useLayoutEffect  } from 'react';
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
@@ -58,39 +58,50 @@ export default function WorkspaceLayout() {
     const [showMobileContext, setShowMobileContext] = useState(false);
     const [breadcrumbPath, setBreadcrumbPath] = useState([]);
     const [activeContextTab, setActiveContextTab] = useState('chat');
+    const [isReadyForQueries, setIsReadyForQueries] = useState(true);
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
     const previousVaultIdRef = useRef(vaultId);
     const programmaticResizeRef = useRef(false);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const currentVaultId = vaultId;
         const previousVaultId = previousVaultIdRef.current;
 
-        // Die Kernbedingung:
-        // Setze den Kontext NUR zurück, wenn wir von einem Vault (previousVaultId war nicht null)
-        // zu einem ANDEREN Vault wechseln (currentVaultId ist nicht null und ungleich dem alten).
-        //
-        // Dies verhindert den Reset, wenn man zu den Settings navigiert (wo currentVaultId 'undefined' ist)
-        // oder wenn man von den Settings zurückkommt (wo previousVaultId 'undefined' sein könnte).
         if (currentVaultId && previousVaultId && currentVaultId !== previousVaultId) {
-            console.log(`Vault-Wechsel erkannt: von ${previousVaultId} zu ${currentVaultId}. Workspace-Kontext wird zurückgesetzt.`);
+            // Diese Aktionen passieren jetzt garantiert synchron, bevor es weitergeht.
+            setIsReadyForQueries(false);
             resetWorkspaceContext();
-            setBreadcrumbPath([]); // Lokalen UI-Zustand ebenfalls zurücksetzen
+            setBreadcrumbPath([]);
         }
 
-        // Aktualisiere den Ref für den nächsten Render-Zyklus.
+        // Diese Ref-Aktualisierung ist jetzt auch synchron und sicher.
         previousVaultIdRef.current = currentVaultId;
 
-    }, [vaultId, resetWorkspaceContext]); // Dependencies bleiben gleich
+    }, [vaultId, resetWorkspaceContext]);
+
+    useEffect(() => {
+        // Wenn die Anfragen deaktiviert wurden...
+        if (!isReadyForQueries) {
+            // ...aktiviere sie im nächsten Render-Zyklus wieder.
+            // Ein setTimeout von 0 schiebt diese Aktion ans Ende der Event-Loop,
+            // sodass der Zustand-Reset von Zustand garantiert vorher verarbeitet wurde.
+            const timer = setTimeout(() => {
+                setIsReadyForQueries(true);
+            }, 0);
+            return () => clearTimeout(timer);
+        }
+    }, [isReadyForQueries]);
 
     // --- DATA LOGIC  ---
     const { data: treeData, isLoading: isTreeLoading } = useQuery({
         queryKey: ['vaultTree', vaultId],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes?format=tree&v3=true`).then(res => res.data),
-        enabled: !!vaultId, // Only run the query if vaultId exists
+        // +++ START DER KORREKTUR +++
+        // 4. Die `enabled`-Option verwenden, um die Anfrage zu steuern.
+        enabled: !!vaultId && isReadyForQueries,
+        // +++ ENDE DER KORREKTUR +++
     });
-
 
     // --- Memoized Derived Data  ---
     const allNodesFlat = useMemo(() => {
@@ -114,8 +125,12 @@ export default function WorkspaceLayout() {
 
     const outletContext = useMemo(() => ({
         setBreadcrumbPath,
-        treeData
-    }), [treeData]);
+        treeData,
+        // +++ START DER KORREKTUR +++
+        // 5. Den Bereitschafts-Status an alle Kind-Routen weitergeben.
+        isReadyForQueries,
+        // +++ ENDE DER KORREKTUR +++
+    }), [treeData, isReadyForQueries]); // Abhängigkeit hinzufügen
 
     const handleMobileNavClose = useCallback(() => {
         setShowMobileTree(false);
@@ -126,7 +141,8 @@ export default function WorkspaceLayout() {
         <ProjectTree
             treeData={treeData}
             isLoading={isTreeLoading}
-            onNodeClick={handleMobileNavClose} // <-- ADD THIS LINE
+            onNodeClick={handleMobileNavClose}
+            isReadyForQueries={isReadyForQueries}
         />
     ), [treeData, isTreeLoading, handleMobileNavClose]);
 
@@ -246,7 +262,9 @@ export default function WorkspaceLayout() {
             </Offcanvas>
 
             <Offcanvas show={showMobileContext} onHide={() => setShowMobileContext(false)} placement="end" className="offcanvas-full-mobile">
-                <Offcanvas.Header closeButton><Offcanvas.Title>Context</Offcanvas.Title></Offcanvas.Header>
+                <Offcanvas.Header closeButton className="p-2">
+                    <Offcanvas.Title>Context</Offcanvas.Title>
+                </Offcanvas.Header>
                 {/*
                   Apply the same flex-column pattern here as we did for the left panel.
                 */}

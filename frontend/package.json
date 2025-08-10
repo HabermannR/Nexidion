@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.84.1",
@@ -20,6 +21,7 @@
     "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
     "marked": "^15.0.12",
+    "patch-package": "^8.0.0",
     "qs": "^6.14.0",
     "react": "^19.1.0",
     "react-bootstrap": "^2.10.10",

@@ -5,6 +5,12 @@
     user-select: none; /* Verhindert das versehentliche Markieren von Text */
 }
 
+.project-tree-container.is-stale {
+    opacity: 0.6;
+    pointer-events: none;
+    transition: opacity 0.2s ease-in-out;
+}
+
 /* 1. DER WRAPPER & DIE LINIE */
 /*----------------------------------------------------------------*/
 .tree-node-wrapper {

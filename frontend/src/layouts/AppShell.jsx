@@ -7,6 +7,7 @@ import apiClient from '../api/apiClient';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './AppShell.css';
 import { useUser } from '../features/auth/useUser';
+import { useLlmModels } from '../hooks/useLlmModels';
 
 export default function AppShell() {
     const { data: vaults, isLoading: isLoadingVaults } = useQuery({
@@ -16,28 +17,17 @@ export default function AppShell() {
     const { data: user, isLoading: isLoadingUser } = useUser();
     const { vaultId, nodeId } = useParams();
     const navigation = useNavigation();
-    const setLastValidWorkspacePath = useWorkspaceStore(state => state.setLastValidWorkspacePath);
+    const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
+
+    // 2. Hook, um die Action-Funktion zu selektieren.
+    const setLastValidPathForVault = useWorkspaceStore(state => state.setLastValidPathForVault);
     const location = useLocation();
 
     // --- START: LLM INITIALIZATION LOGIC (FIXED) ---
 
-    // 1. Select the ACTION and the STATE in two separate, granular hooks.
-    // Actions selected this way have a stable identity.
-
-    const initializeModels = useWorkspaceStore((state) => state.initializeModels);
+    useLlmModels();
+    useLlmModels();
     const chatModel = useWorkspaceStore((state) => state.chatModel);
-
-    const { data: availableLlms } = useQuery({
-        queryKey: ['llmModels'],
-        queryFn: () => apiClient.get('/api/llm/models').then(res => res.data),
-        staleTime: Infinity,
-    });
-
-    useEffect(() => {
-        if (availableLlms) {
-            initializeModels(availableLlms);
-        }
-    }, [availableLlms, initializeModels]);
 
     // --- END: LLM INITIALIZATION LOGIC ---
 
@@ -46,11 +36,19 @@ export default function AppShell() {
 
     useEffect(() => {
         // Wir speichern den Pfad nur, wenn er einen gültigen Node enthält.
-        // Pfade wie `/vaults/projekt-x` ohne Node-ID wollen wir nicht speichern.
         if (vaultId && nodeId) {
-            setLastValidWorkspacePath(location.pathname);
+            setLastValidPathForVault(vaultId, location.pathname); // Nicht mehr setLastValidWorkspacePath
         }
-    }, [vaultId, nodeId, location.pathname, setLastValidWorkspacePath]);
+    }, [vaultId, nodeId, location.pathname, setLastValidPathForVault]);
+
+    // Funktion, um den Link für den Vault-Switcher zu generieren
+    const getVaultLink = (targetVaultId) => {
+        const path = lastValidPaths[targetVaultId];
+        if (path) {
+            return path;
+        }
+        return `/vaults/${targetVaultId}`;
+    };
 
     return (
         <div className={`app-shell-container ${isLoading ? 'is-loading' : ''}`}>
@@ -74,7 +72,7 @@ export default function AppShell() {
                                             <NavDropdown.Item
                                                 key={vault.id}
                                                 as={Link}
-                                                to={`/vaults/${vault.id}`}
+                                                to={getVaultLink(vault.id)}
                                                 active={vault.id.toString() === vaultId}
                                             >
                                                 {vault.name}

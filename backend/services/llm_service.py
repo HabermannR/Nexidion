@@ -55,15 +55,15 @@ def get_llm_user(model_name: str) -> User:
             clean_model_name = model_name.replace('mock-', '').replace('-', ' ').title()
             display_name = f"Mock LLM ({clean_model_name})"
         llm_user = User(username=model_name, display_name=display_name, user_type='llm_assistant')
-        db.session.add(llm_user);
-        db.session.commit();
+        db.session.add(llm_user)
+        db.session.commit()
         db.session.refresh(llm_user)
     _llm_user_cache[model_name] = llm_user
     return llm_user
 
 
 # --- GENERISCHE FUNKTION FÜR STRUKTURIERTE AUSGABEN ---
-def generate_json_response(system_prompt: str, user_prompt: str, model: str, schema_generator: callable,
+def generate_json_response(system_prompt: str, user_prompt: str, model: str, schema_generator,
                            max_tokens: int = 4096):
     logger.info(f"Generating structured JSON with model {model} using schema from {schema_generator.__name__}")
     try:
@@ -202,7 +202,7 @@ def generate_response_stream(messages, system_prompt=None, model='claude-3-sonne
 def _generate_with_openai_streaming(messages, system_prompt, model, max_tokens):
     client_params = {"api_key": current_app.config['OPENAI_API_KEY']}
     if 'local' in model:
-        client_params["base_url"] = current_app.config['LOCAL_LLM_URL'];
+        client_params["base_url"] = current_app.config['LOCAL_LLM_URL']
         client_params["api_key"] = "not-needed"
     client = openai.OpenAI(**client_params)
     final_messages = [{"role": "system", "content": system_prompt}] + messages if system_prompt else messages
@@ -213,11 +213,47 @@ def _generate_with_openai_streaming(messages, system_prompt, model, max_tokens):
 
 
 def _generate_with_claude_streaming(messages, system_prompt, model, max_tokens):
+    """
+    DIAGNOSTIC VERSION: Logs every event from the Anthropic stream to uncover the root cause.
+    """
     client = anthropic.Anthropic(api_key=current_app.config['ANTHROPIC_API_KEY'])
-    with client.messages.stream(model=model, system=system_prompt, messages=messages, max_tokens=max_tokens,
-                                temperature=0.3) as stream:
-        for text_chunk in stream.text_stream:
-            if text_chunk: yield text_chunk
+
+    logger.info("--- ANTHROPIC DIAGNOSTIC START ---")
+    logger.info(f"Model: {model}")
+    logger.info(f"System Prompt: {system_prompt}")
+    logger.info(f"Messages being sent: {messages}")  # Log the exact input
+
+    try:
+        with client.messages.stream(
+                model=model,
+                system=system_prompt,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.7
+        ) as stream:
+            logger.info("Stream context opened. Iterating over all events...")
+            has_yielded_anything = False
+            # We iterate over the raw stream object to see every event
+            for event in stream:
+                # The original logic to yield text, for completeness
+                if event.type == "content_block_delta":
+                    if text_chunk := event.delta.text:
+                        has_yielded_anything = True
+                        yield text_chunk
+
+            if not has_yielded_anything:
+                logger.warning("DIAGNOSTIC: The stream finished, but no text chunks were yielded.")
+
+            # After the loop, let's see the final state of the message
+            final_message = stream.get_final_message()
+            logger.info(f"DIAGNOSTIC FINAL MESSAGE: {final_message.dict()}")
+
+    except Exception as e:
+        logger.error(f"--- ANTHROPIC DIAGNOSTIC ERROR ---: An exception occurred: {e}", exc_info=True)
+        # Yield the error to the frontend so it doesn't just hang
+        yield f"[DIAGNOSTIC ERROR in LLM Service: {str(e)}]"
+    finally:
+        logger.info("--- ANTHROPIC DIAGNOSTIC END ---")
 
 
 def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
@@ -264,5 +300,5 @@ def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
 def _mock_llm_stream_generator(model: str = 'mock'):
     response_text = "Antwort von MOCK-MODELL-ZWEI. 🤖" if model == 'mock2' else "Antwort von MOCK-MODELL-EINS. 🤖"
     for word in response_text.split():
-        yield f"{word} ";
+        yield f"{word} "
         time.sleep(random.uniform(0.05, 0.1))

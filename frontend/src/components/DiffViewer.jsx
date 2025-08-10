@@ -1,46 +1,37 @@
-// src/components/DiffViewer.jsx
-
 import React, { useMemo } from 'react';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer-continued-react19';
+import { useIsMobile } from '../hooks/useIsMobile';
 
-// Die CSS-Imports der alten Komponente sind nicht mehr nötig!
-// react-diff-viewer kümmert sich intern um das Styling.
-
+/**
+ * Eine Wrapper-Komponente für `react-diff-viewer-continued-react19`, die mehrere
+ * Probleme der Bibliothek behebt und eine responsive Darstellung ermöglicht.
+ * (Dokumentation bleibt gleich)
+ */
 const DiffViewer = ({
-                                oldContent,
-                                newContent,
-                                oldTitle = 'Original',
-                                newTitle = 'Vergleich',
-                                splitView = true, // Neue Prop: Standardmäßig Split-View
-                                useDarkTheme = false, // Neue Prop: Dark Mode
-                            }) => {
-    // Sicherstellen, dass wir keine null/undefined Werte haben
-    const safeOldContent = oldContent || '';
-    const safeNewContent = newContent || '';
+                        oldContent,
+                        newContent,
+                        oldTitle = 'Original',
+                        newTitle = 'Vergleich',
+                        splitView = true,
+                        useDarkTheme = false,
+                    }) => {
+    // ====================================================================
+    // KORREKTUR: Alle Hooks an den Anfang der Komponente verschieben,
+    // BEVOR irgendwelche Bedingungen oder 'return'-Anweisungen kommen.
+    // ====================================================================
+    const isMobile = useIsMobile();
 
-    // Nichts tun, wenn beide leer sind
-    if (safeOldContent === '' && safeNewContent === '') {
-        return (
-            <div className="alert alert-info m-3">
-                Keine Inhalte zum Vergleichen vorhanden.
-            </div>
-        );
-    }
-
-    // Wenn Inhalte identisch sind, zeige eine Meldung an.
-    // react-diff-viewer würde dies auch tun, aber eine explizite Meldung ist oft benutzerfreundlicher.
-    if (safeOldContent === safeNewContent) {
-        return (
-            <div className="alert alert-success m-3">
-                Keine Unterschiede zwischen den ausgewählten Versionen gefunden.
-            </div>
-        );
-    }
-
-    // Optional: Definiere benutzerdefinierte Styles, um das Aussehen anzupassen.
-    // Dies ist ein riesiger Vorteil gegenüber der alten Methode!
-    // Wir verwenden useMemo, um zu verhindern, dass das Objekt bei jedem Render neu erstellt wird.
+    // Wir verwenden `useMemo`, um zu verhindern, dass das große Style-Objekt
+    // bei jedem Render neu erstellt wird.
     const customStyles = useMemo(() => ({
+        diffContainer: {
+            minWidth: '0',
+        },
+        contentText: {
+            fontSize: '0.75rem',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+        },
         variables: {
             dark: {
                 diffViewerBackground: '#1e1e1e',
@@ -48,19 +39,21 @@ const DiffViewer = ({
                 removedBackground: '#5c1212',
             },
         },
-        line: {
-            padding: '10px 2px',
-            '&:hover': {
-                background: useDarkTheme ? '#2a2a2a' : '#f0f0f0',
-            },
-        },
-        gutter: {
-            minWidth: '40px',
-        },
-        marker: {
-            width: '20px',
-        }
-    }), [useDarkTheme]);
+    }), []); // Leeres Array, da die Styles nicht von Props abhängen.
+
+
+    // Sicherstellen, dass wir keine null/undefined Werte an die Bibliothek übergeben.
+    const safeOldContent = oldContent || '';
+    const safeNewContent = newContent || '';
+
+    // Guard Clauses können jetzt sicher hier stehen, da alle Hooks bereits aufgerufen wurden.
+    if (safeOldContent === '' && safeNewContent === '') {
+        return <div className="alert alert-info m-3">Keine Inhalte zum Vergleichen vorhanden.</div>;
+    }
+
+    if (safeOldContent === safeNewContent) {
+        return <div className="alert alert-success m-3">Keine Unterschiede zwischen den ausgewählten Versionen gefunden.</div>;
+    }
 
     return (
         <ReactDiffViewer
@@ -68,20 +61,13 @@ const DiffViewer = ({
             newValue={safeNewContent}
             leftTitle={oldTitle}
             rightTitle={newTitle}
-            splitView={splitView}
             useDarkTheme={useDarkTheme}
-            compareMethod={DiffMethod.WORDS} // Bessere Vergleichsmethode für Text
-
-            // === Weitere nützliche "aufgebohrte" Features ===
-
-            // Blendet lange, unveränderte Abschnitte aus und zeigt einen "Expand"-Button.
+            splitView={!isMobile && splitView}
+            hideLineNumbers={isMobile}
+            compareMethod={DiffMethod.WORDS}
             showDiffOnly={true}
-            extraLinesSurroundingDiff={3} // Zeigt 3 Zeilen Kontext um eine Änderung herum
-
-            // Schaltet die Hervorhebung einzelner Wörter an/aus
+            extraLinesSurroundingDiff={3}
             disableWordDiff={false}
-
-            // Wende unsere optionalen Custom-Styles an
             styles={customStyles}
         />
     );

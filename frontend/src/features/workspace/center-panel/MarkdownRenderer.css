@@ -61,7 +61,7 @@
 {
 .markdown-body {
     /* Reduziere die Basis-Schriftgröße für den gesamten Markdown-Text */
-    font-size: 0.9rem; /* Entspricht ca. 14.4px, ein angenehmer Wert für Mobilgeräte */
+    font-size: 0.95rem;
 }
 
 }

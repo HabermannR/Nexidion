@@ -96,6 +96,36 @@
     overflow: hidden; /* Verhindert doppelte Scrollbalken */
 }
 
+/* Styling für den benutzerdefinierten Icon-Selector-Button */
+.icon-selector-toggle {
+    /* 1. Hintergrundfarbe auf deine --secondary-color setzen */
+    background-color: var(--secondary-color);
+
+    /* 2. Den Standard-Rand entfernen für einen nahtlosen Look */
+    border: none;
+
+    /* 3. Sicherstellen, dass die Icon-Farbe stimmt */
+    color: var(--text-color);
+}
+
+/* 4. Den Standard-Pfeil von Bootstrap ausblenden */
+.icon-selector-toggle::after {
+    display: none;
+}
+
+/* 5. Wichtig: Hover- und Fokus-Zustände für gute UX definieren */
+.icon-selector-toggle:hover {
+    background-color: var(--border-color); /* Ein etwas dunkleres Grau beim Hovern */
+    color: var(--text-color);
+}
+
+/* 6. Den blauen Leuchtrahmen beim Fokussieren entfernen */
+.icon-selector-toggle:focus,
+.icon-selector-toggle.focus {
+    box-shadow: none !important;
+    background-color: var(--border-color);
+}
+
 /*
   KORREKTUR 2: OFFCANVAS AUF MOBILGERÄTEN 100% BREIT
   Diese Regel greift nur auf Bildschirmen, die schmaler als das 'lg'-Breakpoint
@@ -127,31 +157,47 @@
 }
 
 
-/* This is the new main wrapper for the entire mobile view */
+/*
+  1. Der Haupt-Wrapper für die mobile Ansicht.
+  - Er wird zum Flex-Container, der seine Kinder (Header, Main, Footer) vertikal anordnet.
+  - `height: 100vh` ist entscheidend: Er füllt IMMER die gesamte Bildschirmhöhe aus.
+*/
 .mobile-layout-wrapper {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    position: relative; /* Establishes a positioning context for the footer */
+    height: 100vh; /* WICHTIG: Volle Viewport-Höhe, nicht 100% */
+    overflow: hidden; /* Verhindert, dass der Wrapper selbst einen Scrollbalken bekommt */
 }
 
-/* This will contain the scrollable Outlet content */
-.mobile-main-content {
-    flex-grow: 1;       /* Allows this area to take up all available vertical space */
-    overflow-y: auto;   /* Makes ONLY this area scrollable */
-    /* IMPORTANT: Add padding to the bottom equal to the footer's approximate height */
-    /* This prevents the last bit of content from being hidden by the footer */
-    padding-bottom: 70px;
-}
-
-/* This will be our fixed context bar at the bottom */
+/*
+  2. Der Header (Action Bar) und der Footer behalten ihre natürliche Höhe bei.
+  `flex-shrink: 0` verhindert, dass sie bei Platzmangel gequetscht werden.
+*/
+.mobile-action-bar,
 .mobile-fixed-footer {
-    position: absolute; /* Positioned relative to mobile-layout-wrapper */
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;      /* Ensures it's above the scrollable content */
-    /* We style the wrapper, not the context-bar directly, for better separation */
-    background-color: #f8f9fa; /* Or your preferred theme color */
-    border-top: 1px solid #dee2e6;
+    flex-shrink: 0;
+}
+
+/*
+  3. Der Hauptinhaltsbereich.
+  - `flex-grow: 1` lässt ihn wachsen, um allen VERBLEIBENDEN Platz auszufüllen.
+  - `overflow-y: auto` macht NUR diesen Bereich scrollbar, wenn der Inhalt überläuft.
+  - `min-height: 0` ist ein wichtiger Flexbox-Fix, der in manchen Browsern nötig ist.
+*/
+.mobile-main-content {
+    flex-grow: 1;
+    overflow-y: auto;
+    min-height: 0;
+    /* KEIN padding-bottom Hack mehr nötig! */
+}
+
+/*
+  4. Der Footer.
+  - Wir entfernen alle `position`, `bottom`, `left`, `right` und `z-index` Regeln.
+  - Er ist jetzt ein normales Block-Element am Ende des Flex-Containers.
+*/
+.mobile-fixed-footer {
+    /* position, bottom, left, right, z-index werden entfernt */
+    background-color: var(--bs-tertiary-bg, #f8f9fa); /* Fallback Farbe hinzugefügt */
+    border-top: 1px solid var(--bs-border-color, #dee2e6);
 }

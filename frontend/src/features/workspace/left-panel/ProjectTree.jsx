@@ -102,7 +102,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
 // ============================================================================
 // 3. HAUPTKOMPONENTE: ProjectTree (V4-Architektur mit useQuery & useMutation)
 // ============================================================================
-export default function ProjectTree({ treeData, isLoading, onNodeClick }) { // NEU: Receive props
+export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyForQueries }) {
     const { vaultId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -142,19 +142,19 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick }) { // N
     });
 
     const handleAddNode = useCallback((parentId) => {
-        if (!vaultId) return;
+        if (!vaultId || !isReadyForQueries) return; // <-- SCHUTZ-KLAUSEL
         const title = prompt("Titel für das neue Element eingeben:");
         if (!title || !title.trim()) return;
         addNodeMutation.mutate({ title, parent_id: parentId });
-    }, [vaultId, addNodeMutation]);
+    }, [vaultId, addNodeMutation, isReadyForQueries]);
 
     const handleMoveNode = useCallback((sourceNode, targetNode) => {
-        if (!vaultId) return;
+        if (!vaultId || !isReadyForQueries) return; // <-- SCHUTZ-KLAUSEL
         moveNodeMutation.mutate({
             nodeIdToMove: sourceNode.id,
             newParentId: targetNode.id
         });
-    }, [vaultId, moveNodeMutation]);
+    }, [vaultId, moveNodeMutation, isReadyForQueries]);
 
 
     if (isLoading) return <div className="p-2 text-muted small">Lade Baum...</div>;
@@ -162,8 +162,13 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick }) { // N
         return <div className="p-2 text-muted small">Dieser Vault ist noch leer.</div>;
     }
 
+    const containerClasses = [
+        "project-tree-container",
+        !isReadyForQueries ? "is-stale" : ""
+    ].filter(Boolean).join(" ");
+
     return (
-        <div className="project-tree-container">
+        <div className={containerClasses}>
             {treeData.map((rootNode) => (
                 <TreeNode
                     key={rootNode.id}

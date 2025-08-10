@@ -1,8 +1,3 @@
-// WESENTLICHE ÄNDERUNGEN:
-// - useLoaderData, useFetcher, useNavigation entfernt.
-// - NEU: useQuery, useMutation, useQueryClient von @tanstack/react-query
-// - Datenladung und Mutationen werden direkt in der Komponente verwaltet.
-
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,7 +11,6 @@ import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
 import { useSaveNodeContent } from '../../../services/useSaveNodeContent';
 
-// Die Hilfsfunktion bleibt unverändert
 const findPathInTree = (nodes, nodeId, currentPath = []) => {
     for (const node of nodes) {
         const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${node.vault_id}/nodes/${node.id}`}];
@@ -30,20 +24,20 @@ const findPathInTree = (nodes, nodeId, currentPath = []) => {
 };
 
 export default function NodeContent() {
-    // --- Hooks (V4-Stil) ---
     const { vaultId, nodeId } = useParams();
-    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const { setBreadcrumbPath, treeData } = useOutletContext();
+    const { setBreadcrumbPath, treeData, isReadyForQueries } = useOutletContext();
 
-    // --- Datenladung mit useQuery ---
-
-    const { data: versions, isLoading: isLoadingVersions, isError } = useQuery({
+    const { data: versions, isLoading: isLoadingVersions, isError, error } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
-        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data),
-        enabled: !!vaultId && !!nodeId, // Query nur ausführen, wenn IDs vorhanden sind
+        queryFn: () => {
+            return apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data);
+        },
+        enabled: !!vaultId && !!nodeId && isReadyForQueries,
     });
+
+
 
     // --- Store Actions & Data  ---
     const { setDiffBase, clearDiff } = useWorkspaceStore();
@@ -68,7 +62,6 @@ export default function NodeContent() {
     const deleteNodeMutation = useMutation({
         mutationFn: () => apiClient.delete(`/api/vaults/${vaultId}/nodes/${nodeId}`),
         onSuccess: () => {
-            console.log("Node erfolgreich gelöscht.");
             // Den Baum invalidieren, damit er sich aktualisiert
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
             // Weg navigieren, z.B. zum Parent oder Vault-Root
@@ -80,7 +73,7 @@ export default function NodeContent() {
 
 
     // ==========================================================
-    // --- DATEN-SYNCHRONISATION & UI-UPDATES (angepasst) ---
+    // --- DATEN-SYNCHRONISATION & UI-UPDATES  ---
     // ==========================================================
 
     useEffect(() => {
@@ -92,21 +85,28 @@ export default function NodeContent() {
         }
     }, [treeData, nodeId]);
 
+    // HOOK 2: Verantwortlich NUR für das SETZEN der Daten.
+    // Dieser Hook reagiert auf neue `versions`-Daten für den aktuellen Node.
     useEffect(() => {
         if (versions && versions.length > 0) {
-            const versionParam = new URL(window.location.href).searchParams.get('version');
+            const href = window.location.href;
+            const versionParam = new URL(href).searchParams.get('version');
             const initialBase = versionParam
                 ? versions.find(v => String(v.version) === versionParam)
                 : versions[0];
 
-            setDiffBase(initialBase || versions[0]);
+            if (initialBase) {
+                setDiffBase(initialBase);
+            } else {
+                // Dieser Block wird jetzt ausgeführt, wenn etwas schiefgeht.
+                console.error('[EFFECT] FEHLER: `initialBase` ist falsy. `setDiffBase` wird NICHT aufgerufen. `versions`-Array zur Analyse:', versions);
+            }
+        } else if (versions) {
+            // Dieser Block fängt den Fall ab, dass die Query ein leeres Array zurückgegeben hat.
+            console.warn('[EFFECT] Bedingung `versions && versions.length > 0` ist NICHT erfüllt, weil das Array leer ist.');
         }
 
-        // The cleanup function also uses a stable action, so it's safe.
-        return () => {
-            clearDiff();
-        };
-    }, [versions, nodeId]);
+    }, [versions, setDiffBase]); // Abhängigkeiten bleiben gleich
 
     useEffect(() => {
         if (baseVersionData) {
@@ -117,7 +117,7 @@ export default function NodeContent() {
 
 
     // ==========================================================
-    // --- HANDLER FÜR UI-AKTIONEN (angepasst) ---
+    // --- HANDLER FÜR UI-AKTIONEN  ---
     // ==========================================================
 
     const handleSave = () => {
@@ -138,7 +138,20 @@ export default function NodeContent() {
         deleteNodeMutation.mutate();
         setShowDeleteModal(false);
     };
+    if (isLoadingVersions) {
+        return <p className="p-4">Lädt Dokument...</p>;
+    }
 
+    if (isError) {
+        console.error("[NodeContent] Render: isError ist true. Fehlerobjekt:", error);
+    }
+
+    if (!baseVersionData) {
+    }
+
+    if (isError || !baseVersionData) {
+        return <p className="p-4">Dokument konnte nicht geladen werden oder ist nicht vorhanden.</p>;
+    }
 
     // ==========================================================
     // --- RENDER-LOGIK & DATENVORBEREITUNG  ---

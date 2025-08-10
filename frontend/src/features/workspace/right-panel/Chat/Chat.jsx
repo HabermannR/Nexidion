@@ -243,7 +243,7 @@ export default function Chat() {
                     </div>
                 </div>
 
-                <div className="chat-messages-wrapper" ref={chatDisplayRef}>
+                <div className="chat-messages-wrapper pt-2" ref={chatDisplayRef}>
                     {/* KORREKTUR: Prüfe die Länge der gefilterten Nachrichtenliste */}
                     {(visibleMessages?.length || 0) === 0 && !isChatLoading && (
                         <div className="message assistant">
