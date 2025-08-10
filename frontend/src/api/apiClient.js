@@ -1,30 +1,40 @@
-// src/api/apiClient.js
+// src/api/apiClient.js (Die finale Version)
 
 import axios from 'axios';
 
+// Wir setzen die baseURL auf einen relativen Pfad.
+// - In der Entwicklung fängt der Vite-Proxy in vite.config.js diesen Pfad ab.
+// - In der Produktion fängt der Nginx-Proxy (den wir einrichten) diesen Pfad ab.
 const apiClient = axios.create({
-    baseURL: 'http://localhost:5001',
+    baseURL: '/'
 });
 
+
 // ===================================================================
-// NEU: Der Request Interceptor
-// Diese Funktion wird VOR JEDER Anfrage ausgeführt, die apiClient sendet.
+// Request Interceptor (bleibt gleich)
 // ===================================================================
 apiClient.interceptors.request.use(
     (config) => {
-        // 1. Hole den Token aus dem Local Storage
         const token = localStorage.getItem('authToken');
-
-        // 2. Wenn ein Token existiert, füge ihn zum Authorization-Header hinzu
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
-
-        // 3. Gib die (möglicherweise modifizierte) Konfiguration zurück
         return config;
     },
+    (error) => Promise.reject(error)
+);
+
+// ===================================================================
+// Response Interceptor (bleibt gleich, wichtig für den 401-Logout)
+// ===================================================================
+apiClient.interceptors.response.use(
+    (response) => response,
     (error) => {
-        // Dies wird nur bei einem Fehler in der Konfiguration ausgelöst
+        if (error.response && error.response.status === 401) {
+            console.log('Token ungültig/abgelaufen. Automatischer Logout.');
+            localStorage.removeItem('authToken');
+            window.location.href = '/';
+        }
         return Promise.reject(error);
     }
 );

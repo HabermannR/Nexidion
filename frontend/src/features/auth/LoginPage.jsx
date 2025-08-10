@@ -13,7 +13,7 @@ export default function LoginPage() {
         <div className="d-flex align-items-center justify-content-center vh-100 bg-light">
             <div className="card shadow-lg p-4 login-card">
                 <div className="card-body">
-                    <h2 className="card-title text-center mb-4">Nexidion v3</h2>
+                    <h2 className="card-title text-center mb-4">Nexidion v4</h2>
 
                     {/* NEU: Wir benutzen die <Form>-Komponente von React Router.
               Sie ruft automatisch die verknüpfte 'action' auf. */}

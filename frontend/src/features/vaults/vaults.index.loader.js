@@ -9,7 +9,6 @@ import { redirect } from 'react-router-dom';
  * Er löst bei Erfolg SOFORT einen redirect aus. Das ist effizient und verhindert Lade-Kaskaden.
  */
 export async function vaultIndexLoader({ params }) {
-    console.log("[VAULT INDEX LOADER] Prüfe auf Umleitungsziel...");
     try {
         // Effizienter API-Aufruf: Wir brauchen nur den ersten Knoten, um zu wissen, ob der Vault leer ist.
         const response = await apiClient.get(`/api/vaults/${params.vaultId}/nodes?format=tree&limit=1`);
@@ -18,14 +17,12 @@ export async function vaultIndexLoader({ params }) {
         // Fall 1: Der Vault hat mindestens einen Knoten.
         if (tree && tree.length > 0) {
             const firstNodeId = tree[0].id;
-            console.log(`[VAULT INDEX LOADER] Ziel gefunden: ${firstNodeId}. Leite um...`);
             // Gib eine Redirect-Response zurück. React Router stoppt den aktuellen
             // Ladevorgang und startet sofort einen neuen zur Ziel-URL.
             return redirect(`nodes/${firstNodeId}`);
         }
 
         // Fall 2: Der Vault ist leer.
-        console.log("[VAULT INDEX LOADER] Kein Knoten zum Umleiten gefunden. Zeige 'VaultIndexRedirector' an.");
         // Wir geben `null` zurück. Dadurch wird die an die Route gebundene Komponente
         // (`<VaultIndexRedirector>`) gerendert, die eine "Bitte wähle"-Nachricht anzeigt.
         return null;
