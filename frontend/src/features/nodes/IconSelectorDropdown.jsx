@@ -3,7 +3,7 @@
 import React from 'react';
 import { Dropdown } from 'react-bootstrap';
 import { useMutation, useQueryClient } from '@tanstack/react-query'; // NEU
-import apiClient from '../../../api/apiClient'; // NEU
+import apiClient from '../../api/apiClient.js'; // NEU
 
 // Datenstruktur für die Icons, gruppiert nach Kategorien
 const iconGroups = [

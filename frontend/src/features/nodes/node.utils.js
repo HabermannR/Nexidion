@@ -1,4 +1,4 @@
-// src/services/treeService.js
+// src/services/node.utils.js
 
 /**
  * Durchläuft den Baum und gibt die IDs der zu findenden Knoten in ihrer

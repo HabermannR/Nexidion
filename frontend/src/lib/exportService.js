@@ -1,7 +1,7 @@
 // src/services/exportService.js
 
 import { marked } from 'marked';
-import { getIdsInOrder, generateTocForSelectedNodes } from './treeService.js'; // Importieren die Helfer
+import { getIdsInOrder, generateTocForSelectedNodes } from '../features/nodes/node.utils.js'; // Importieren die Helfer
 import api from '../_legacy/api/axios.jsx';
 
 // Die komplette, riesige generateEpub Funktion hier einfügen

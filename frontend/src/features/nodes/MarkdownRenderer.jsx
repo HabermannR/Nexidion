@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 
 // NEU: Wir importieren die ResizableImage-Komponente anstelle von SecureImage.
 // Sie enthält bereits die SecureImage-Logik.
-import ResizableImage from '../../../components/ResizableImage'; // Passe den Pfad ggf. an
+import ResizableImage from '../../components/ResizableImage.jsx'; // Passe den Pfad ggf. an
 
 import './MarkdownRenderer.css';
 

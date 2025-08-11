@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonGroup, Dropdown, Form, InputGroup } from 'react-bootstrap';
 import IconSelectorDropdown from './IconSelectorDropdown.jsx';
-import apiClient from '../../../api/apiClient.js'; // API Client importieren
+import apiClient from '../../api/apiClient.js'; // API Client importieren
 import './ContentHeader.css';
 
 export default function ContentHeader({

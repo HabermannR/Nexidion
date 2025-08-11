@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import apiClient from '../api/apiClient';
-import { useWorkspaceStore } from '../features/workspace/workspaceStore';
+import apiClient from '../../api/apiClient.js';
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 
 export function useLlmModels() {
     // Holen Sie sich nur die Initialisierungsfunktion aus dem Store

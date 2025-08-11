@@ -1,11 +1,12 @@
-import React, { useMemo, useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
 import { useWorkspaceStore } from './workspaceStore';
-import { useVaultTreeQuery } from '../../hooks/useVaultTreeQuery';
-import ProjectTree from './left-panel/ProjectTree.jsx';
-import ContextPanel from './right-panel/ContextPanel.jsx';
+
+
+import ProjectTree from '../project-tree/ProjectTree.jsx';
+import ContextPanel from './ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
 
@@ -30,78 +31,38 @@ const BreadcrumbTrail = ({ path }) => {
 
 export default function WorkspaceLayout() {
     const { vaultId } = useParams();
-    const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
     const resetWorkspaceContext = useWorkspaceStore((state) => state.resetWorkspaceContext);
 
-    // --- LOKALER UI-ZUSTAND ---
+    // --- LOKALER UI-ZUSTAND (größtenteils unverändert) ---
     const [rightPanelMode, setRightPanelMode] = useState('normal');
     const [showMobileTree, setShowMobileTree] = useState(false);
     const [showMobileContext, setShowMobileContext] = useState(false);
     const [breadcrumbPath, setBreadcrumbPath] = useState([]);
     const [activeContextTab, setActiveContextTab] = useState('chat');
-    const [isReadyForQueries, setIsReadyForQueries] = useState(true);
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
     const previousVaultIdRef = useRef(vaultId);
     const programmaticResizeRef = useRef(false);
 
-    useLayoutEffect(() => {
-        const currentVaultId = vaultId;
-        const previousVaultId = previousVaultIdRef.current;
-
-        if (currentVaultId && previousVaultId && currentVaultId !== previousVaultId) {
-            setIsReadyForQueries(false);
+    // Der Vault-Wechsel wird jetzt von den Query-Hooks selbst gehandhabt.
+    useEffect(() => {
+        if (vaultId !== previousVaultIdRef.current) {
             resetWorkspaceContext();
             setBreadcrumbPath([]);
+            previousVaultIdRef.current = vaultId;
         }
-        previousVaultIdRef.current = currentVaultId;
     }, [vaultId, resetWorkspaceContext]);
 
-    useEffect(() => {
-        if (!isReadyForQueries) {
-            const timer = setTimeout(() => {
-                setIsReadyForQueries(true);
-            }, 0);
-            return () => clearTimeout(timer);
-        }
-    }, [isReadyForQueries]);
-
-    // --- DATA LOGIC (SERVER-STATE) via Custom Hook ---
-    const {
-        treeData,
-        isLoading: isTreeLoading,
-        allNodesFlat, // allNodesFlat kommt jetzt direkt vom Hook
-    } = useVaultTreeQuery(vaultId, { enabled: isReadyForQueries });
-
-    const selectedNodesWithData = useMemo(() => {
-        if (!allNodesFlat || allNodesFlat.length === 0 || selectedNodeIds.size === 0) {
-            return [];
-        }
-        const nodeMap = new Map(allNodesFlat.map(node => [node.id, node]));
-        return Array.from(selectedNodeIds)
-            .map(id => {
-                const node = nodeMap.get(id);
-                return { id, title: node?.title || 'Unknown Node' };
-            })
-            .sort((a, b) => a.title.localeCompare(b.title));
-    }, [selectedNodeIds, allNodesFlat]);
-
-    // Context-Wert für das React Router <Outlet>, falls direkte Kinder ihn brauchen.
     const outletContext = useMemo(() => ({
         setBreadcrumbPath,
-        isReadyForQueries,
-    }), [isReadyForQueries]);
+    }), [setBreadcrumbPath]); // Abhängigkeit angepasst
 
     // --- UI-HANDLER ---
     const handleMobileNavClose = useCallback(() => setShowMobileTree(false), []);
+
     const treeComponent = useMemo(() => (
-        <ProjectTree
-            treeData={treeData}
-            isLoading={isTreeLoading}
-            onNodeClick={handleMobileNavClose}
-            isReadyForQueries={isReadyForQueries}
-        />
-    ), [treeData, isTreeLoading, handleMobileNavClose, isReadyForQueries]);
+        <ProjectTree onNodeClick={handleMobileNavClose} />
+    ), [handleMobileNavClose]);
 
     const handleLayout = () => {
         if (programmaticResizeRef.current) {
@@ -147,7 +108,7 @@ export default function WorkspaceLayout() {
                                 <h6 className="mb-0 small text-muted text-uppercase">Navigation</h6>
                             </div>
                             <div className="scroll-pane">{treeComponent}</div>
-                            <ContextBarContainer selectedNodes={selectedNodesWithData} />
+                            <ContextBarContainer />
                         </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
@@ -174,9 +135,7 @@ export default function WorkspaceLayout() {
 
                     {/* Right Panel */}
                     <Panel ref={rightPanelRef} id="right-panel" defaultSize={25} minSize={15} order={3} className="pane-template" collapsible>
-                        {/* `treeData` wird NICHT mehr durchgereicht, um Prop-Drilling zu vermeiden */}
                         <ContextPanel
-                            selectedNodes={selectedNodesWithData}
                             activeKey={activeContextTab}
                             onTabSelect={setActiveContextTab}
                         />
@@ -199,7 +158,7 @@ export default function WorkspaceLayout() {
                 </main>
 
                 <footer className="mobile-fixed-footer">
-                    <ContextBarContainer selectedNodes={selectedNodesWithData} />
+                    <ContextBarContainer />
                 </footer>
             </div>
 
@@ -207,7 +166,7 @@ export default function WorkspaceLayout() {
                 <Offcanvas.Header closeButton><Offcanvas.Title>Navigation</Offcanvas.Title></Offcanvas.Header>
                 <Offcanvas.Body className="d-flex flex-column p-0">
                     <div className="flex-grow-1 overflow-auto p-3">{treeComponent}</div>
-                    <ContextBarContainer selectedNodes={selectedNodesWithData} />
+                    <ContextBarContainer />
                 </Offcanvas.Body>
             </Offcanvas>
 
@@ -217,11 +176,10 @@ export default function WorkspaceLayout() {
                 </Offcanvas.Header>
                 <Offcanvas.Body className="d-flex flex-column p-0">
                     <ContextPanel
-                        selectedNodes={selectedNodesWithData}
                         activeKey={activeContextTab}
                         onTabSelect={setActiveContextTab}
                     />
-                    <ContextBarContainer selectedNodes={selectedNodesWithData} />
+                    <ContextBarContainer/>
                 </Offcanvas.Body>
             </Offcanvas>
         </>

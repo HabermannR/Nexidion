@@ -3,12 +3,20 @@
 import React, { useCallback, useRef } from "react";
 import { NavLink, useParams, useNavigate } from "react-router-dom";
 import { useDrag, useDrop } from "react-dnd";
-import { useMutation, useQueryClient } from '@tanstack/react-query'; // NEU
-import apiClient from "../../../api/apiClient.js";
-import { useWorkspaceStore } from '../workspaceStore.js';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'; // NEU
+import apiClient from "../../api/apiClient.js";
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import "./ProjectTree.css";
 
 const ItemTypes = { NODE: "NODE" };
+
+const useVaultTreeQuery = (vaultId) => {
+    return useQuery({
+        queryKey: ['vaultTree', vaultId],
+        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/?format=tree`).then(res => res.data),
+        enabled: !!vaultId,
+    });
+};
 
 // ============================================================================
 // TreeNode Komponente (Wurde wie gewünscht angepasst)
@@ -106,10 +114,18 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
 // ============================================================================
 // 3. HAUPTKOMPONENTE: ProjectTree (V4-Architektur mit useQuery & useMutation)
 // ============================================================================
-export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyForQueries }) {
+export default function ProjectTree({ onNodeClick }) {
     const { vaultId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+
+    const {
+        data: treeData,
+        isLoading,
+        isSuccess,
+        isError,
+        error
+    } = useVaultTreeQuery(vaultId);
 
 
     // NEU: Mutation für das Hinzufügen eines Nodes.
@@ -144,20 +160,19 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyF
     });
 
     const handleAddNode = useCallback((parentId) => {
-        if (!vaultId || !isReadyForQueries) return; // <-- SCHUTZ-KLAUSEL
+        if (!isSuccess) return; // Verhindert Aktionen, während die Daten noch nicht geladen sind.
         const title = prompt("Titel für das neue Element eingeben:");
         if (!title || !title.trim()) return;
         addNodeMutation.mutate({ title, parent_id: parentId });
-    }, [vaultId, addNodeMutation, isReadyForQueries]);
+    }, [isSuccess, addNodeMutation]);
 
     const handleMoveNode = useCallback((sourceNode, targetNode) => {
-        if (!vaultId || !isReadyForQueries) return; // <-- SCHUTZ-KLAUSEL
+        if (!isSuccess) return; // Verhindert Aktionen, während die Daten noch nicht geladen sind.
         moveNodeMutation.mutate({
             nodeIdToMove: sourceNode.id,
             newParentId: targetNode.id
         });
-    }, [vaultId, moveNodeMutation, isReadyForQueries]);
-
+    }, [isSuccess, moveNodeMutation]);
 
     if (isLoading) return <div className="p-2 text-muted small">Lade Baum...</div>;
     if (!treeData || treeData.length === 0) {
@@ -166,7 +181,8 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyF
 
     const containerClasses = [
         "project-tree-container",
-        !isReadyForQueries ? "is-stale" : ""
+        // Wenn die Abfrage NICHT erfolgreich war, ist der Baum "stale".
+        !isSuccess ? "is-stale" : ""
     ].filter(Boolean).join(" ");
 
     return (

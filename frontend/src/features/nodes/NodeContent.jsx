@@ -3,13 +3,13 @@ import { useOutletContext, useParams, useSearchParams, useNavigate } from 'react
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Modal, Form as BootstrapForm, Alert } from 'react-bootstrap';
 
-import apiClient from '../../../api/apiClient';
-import DiffViewer from '../../../components/DiffViewer.jsx';
-import { useWorkspaceStore } from '../workspaceStore';
+import apiClient from '../../api/apiClient.js';
+import DiffViewer from '../../components/DiffViewer.jsx';
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
-import { useSaveNodeContent } from '../../../services/useSaveNodeContent';
+import { useSaveNodeContent } from './hooks/useSaveNodeContent.js';
 
 const findPathInTree = (nodes, nodeId, currentPath = []) => {
     for (const node of nodes) {

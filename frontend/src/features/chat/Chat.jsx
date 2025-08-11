@@ -3,10 +3,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import apiClient from '../../../../api/apiClient'; // Pfad anpassen
-import { useWorkspaceStore } from '../../workspaceStore'; // Pfad anpassen
-import ChatMessage from './ChatMessage';
-import ChatHistoryPanel from './ChatHistoryPanel';
+import apiClient from '../../api/apiClient.js'; // Pfad anpassen
+import { useWorkspaceStore } from '../workspace/workspaceStore.js'; // Pfad anpassen
+import ChatMessage from './ChatMessage.jsx';
+import ChatHistoryPanel from './ChatHistoryPanel.jsx';
+import { useUserQuery } from '../auth/useUserQuery.js';
 import './Chat.css';
 
 // Client-seitige UUID-Generierung
@@ -22,6 +23,8 @@ export default function Chat() {
     // 1. SETUP: HOOKS & ZUSTAND
     const { vaultId } = useParams();
     const queryClient = useQueryClient();
+    const { isSuccess: isUserAuthenticated } = useUserQuery();
+
     const { setActiveChatTitle, chatModel, titleModel, selectedNodeIds } = useWorkspaceStore();
     const {
         activeChatSessionId, activeChatMessages, activeChatTitle,
@@ -35,8 +38,9 @@ export default function Chat() {
     const { data: sessionData } = useQuery({
         queryKey: ['chatHistory', activeChatSessionId],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/sessions/${activeChatSessionId}`).then(res => res.data),
-        enabled: !!vaultId && !!activeChatSessionId,
+        enabled: !!vaultId && !!activeChatSessionId && isUserAuthenticated,
     });
+
     useEffect(() => {
         if (sessionData && Array.isArray(sessionData.messages)) {
             setActiveChatSession(activeChatSessionId, sessionData.title, sessionData.messages);

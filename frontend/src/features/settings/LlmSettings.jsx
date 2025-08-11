@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate  } from 'react-router-dom';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { Container, Card, Button, Form as BootstrapForm, Table, Alert, Spinner } from 'react-bootstrap';
-import { useLlmModels } from '../../hooks/useLlmModels';
+import { useLlmModels } from './useLlmModels.js';
 import './LlmSettings.css'; // NEU: Importiere die CSS-Datei
 
 export default function LlmSettings() {

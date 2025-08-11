@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import apiClient from '../api/apiClient';
+import apiClient from '../../../api/apiClient.js';
 
 /**
  * Ein zentraler, wiederverwendbarer Hook zum Speichern/Aktualisieren

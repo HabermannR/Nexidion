@@ -3,8 +3,8 @@ import { ListGroup, Button, Alert, Spinner } from 'react-bootstrap';
 import { BsArrowLeftRight } from 'react-icons/bs';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import apiClient from '../../../api/apiClient';
-import { useWorkspaceStore } from '../workspaceStore.js';
+import apiClient from '../../api/apiClient.js';
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import './VersionHistoryTab.css'; // Stelle sicher, dass diese CSS-Datei existiert und importiert wird
 
 export default function VersionHistoryTab() {

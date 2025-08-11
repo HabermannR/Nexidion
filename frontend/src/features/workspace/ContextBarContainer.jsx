@@ -4,6 +4,8 @@ import React from 'react';
 import { useMemo, useState } from 'react'; // Import useState
 import { useWorkspaceStore } from './workspaceStore'; // Corrected path
 import ContextBarDisplay from './ContextBarDisplay.jsx';
+import { useParams } from 'react-router-dom';
+import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
 
 /**
  * A "smart" container that connects to the store and manages UI state.
@@ -13,12 +15,10 @@ import ContextBarDisplay from './ContextBarDisplay.jsx';
  * It uses this prop to look up the titles for the selected IDs.
  * It also manages the local "isExpanded" state for the detail view.
  */
-export default function ContextBarContainer({ selectedNodes = [] }) {
-    // 1. Local state to manage the expanded/collapsed view
+export default function ContextBarContainer() {
+    const { vaultId } = useParams();
     const [isExpanded, setIsExpanded] = useState(false);
 
-    // 2. Use multiple, atomic selectors.
-    // We need the full Set of IDs to derive the titles.
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
     const savedSets = useWorkspaceStore(state => state.savedSets);
     const clearSelection = useWorkspaceStore(state => state.clearSelection);
@@ -29,7 +29,7 @@ export default function ContextBarContainer({ selectedNodes = [] }) {
     // Derive selection size directly from the Set
     const selectionSize = selectedNodeIds.size;
 
-    // 3. Perform expensive transformations in useMemo.
+    const { allNodesFlat } = useVaultTreeQuery(vaultId);
 
     // Memoize the list of saved sets for the dropdown
     const savedSetsForDisplay = useMemo(() => {
@@ -43,7 +43,19 @@ export default function ContextBarContainer({ selectedNodes = [] }) {
         });
     }, [savedSets]);
 
-
+    const selectedNodesWithTitles = useMemo(() => {
+        if (!allNodesFlat || allNodesFlat.length === 0 || selectedNodeIds.size === 0) {
+            return [];
+        }
+        const nodeMap = new Map(allNodesFlat.map(node => [node.id, node]));
+        return Array.from(selectedNodeIds)
+            .map(id => {
+                const node = nodeMap.get(id);
+                // Wichtig: Gib ein Objekt zurück, das die Display-Komponente erwartet.
+                return { id, title: node?.title || 'Loading...' };
+            })
+            .sort((a, b) => a.title.localeCompare(b.title));
+    }, [selectedNodeIds, allNodesFlat]);
 
     // 4. Pass everything down to the display component.
     return (
@@ -56,7 +68,7 @@ export default function ContextBarContainer({ selectedNodes = [] }) {
             onDeleteSet={deleteSet}
             isExpanded={isExpanded}
             onToggleExpand={() => setIsExpanded(prev => !prev)}
-            selectedNodes={selectedNodes}
+            selectedNodes={selectedNodesWithTitles}
         />
     );
 }

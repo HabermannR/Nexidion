@@ -4,7 +4,7 @@ import { Modal, Button, Spinner } from 'react-bootstrap';
 // --- CHANGE: Import the new, more powerful DiffViewer component ---
 // The path assumes UpdatePreviewModal is in src/features/workspace/right-panel/
 // and DiffViewer is in src/components/
-import DiffViewer from '../../../components/DiffViewer';
+import DiffViewer from './DiffViewer.jsx';
 
 /**
  * A modal to display a side-by-side comparison of old and new content.

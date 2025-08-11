@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import apiClient from '../../../../api/apiClient';
-import { useWorkspaceStore } from '../../workspaceStore';
+import apiClient from '../../api/apiClient.js';
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import './Chat.css'; // Nutze die alten Styles
 
 // --- Icons als wiederverwendbare Komponenten ---
