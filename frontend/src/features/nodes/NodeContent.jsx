@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useOutletContext, useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect,useMemo  } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Modal, Form as BootstrapForm, Alert } from 'react-bootstrap';
+import { Button, Modal, Alert } from 'react-bootstrap';
 
 import apiClient from '../../api/apiClient.js';
 import DiffViewer from '../../components/DiffViewer.jsx';
+
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
+import { useVaultTreeQuery } from './hooks/useVaultTreeQuery.js'; // The correct V4 way to get shared data
+
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
@@ -27,16 +30,21 @@ export default function NodeContent() {
     const { vaultId, nodeId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const { setBreadcrumbPath, treeData, isReadyForQueries } = useOutletContext();
+    const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
+    const { data: queryData } = useVaultTreeQuery(vaultId);
+
+    // STABILISIERE treeData mit useMemo.
+    // Dieser Code erzeugt nur dann ein neues Array, wenn sich `queryData`
+    // (also die Daten von der API) tatsächlich ändert.
+    const treeData = useMemo(() => queryData?.tree || [], [queryData]);
 
     const { data: versions, isLoading: isLoadingVersions, isError, error } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
         queryFn: () => {
             return apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data);
         },
-        enabled: !!vaultId && !!nodeId && isReadyForQueries,
+        enabled: !!vaultId && !!nodeId,
     });
-
 
 
     // --- Store Actions & Data  ---
@@ -83,7 +91,7 @@ export default function NodeContent() {
         } else {
             setBreadcrumbPath([]);
         }
-    }, [treeData, nodeId]);
+    }, [treeData, nodeId, setBreadcrumbPath]); // Correct dependency array
 
     // HOOK 2: Verantwortlich NUR für das SETZEN der Daten.
     // Dieser Hook reagiert auf neue `versions`-Daten für den aktuellen Node.

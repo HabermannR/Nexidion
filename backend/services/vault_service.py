@@ -25,6 +25,15 @@ def _verify_vault_access(vault_id: int, user_id: int) -> Vault:
         raise PermissionError("You do not have permission to access this vault.")
     return vault
 
+def get_vault_by_id(vault_id: int, user_id: int) -> Vault:
+    """
+    Ruft einen einzelnen Vault anhand seiner ID ab, nachdem der Zugriff überprüft wurde.
+    Dies ist die öffentliche Methode, die von der API-Schicht verwendet wird.
+    """
+    # Die gesamte Logik (Abruf und Berechtigungsprüfung) ist bereits
+    # in der _verify_vault_access-Funktion gekapselt. Wir rufen sie einfach auf.
+    return _verify_vault_access(vault_id, user_id)
+
 
 def get_vaults_for_user(user_id: int) -> list[Vault]:
     """Ruft alle Vaults ab, die einem bestimmten Benutzer gehören."""

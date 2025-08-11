@@ -1,11 +1,18 @@
+.context-bar-wrapper {
+    display: flex;
+    flex-direction: column-reverse; /* Das ist die Magie! Stellt die Liste über die Leiste */
+    flex-shrink: 0; /* Verhindert, dass der Container im Hauptlayout schrumpft */
+}
+
 .context-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0.5rem 0.75rem;
-    background-color: #f8f9fa; /* Passt zum Rest des Layouts */
+    background-color: #f8f9fa;
     border-top: 1px solid #dee2e6;
-    flex-shrink: 0; /* Verhindert, dass die Leiste schrumpft */
+    flex-shrink: 0;
+    z-index: 2; /* Stellt sicher, dass die Leiste über dem Inhalt liegt, falls es Überlappungen gibt */
 }
 
 .context-status-text {
@@ -47,7 +54,7 @@
 .context-expanded-content {
     background-color: #f8f9fa; /* Match the bar color */
     border-top: 1px solid #e9ecef; /* Softer separator */
-    max-height: 200px; /* Limit height and make it scrollable */
+    max-height: 400px; /* Limit height and make it scrollable */
     overflow-y: auto;
 }
 

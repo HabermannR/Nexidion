@@ -1,16 +1,13 @@
-// src/features/chat/Chat.jsx
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import apiClient from '../../api/apiClient.js'; // Pfad anpassen
-import { useWorkspaceStore } from '../workspace/workspaceStore.js'; // Pfad anpassen
+import apiClient from '../../api/apiClient.js';
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import ChatMessage from './ChatMessage.jsx';
 import ChatHistoryPanel from './ChatHistoryPanel.jsx';
 import { useUserQuery } from '../auth/useUserQuery.js';
 import './Chat.css';
 
-// Client-seitige UUID-Generierung
 function generateUUID() {
     if (crypto && crypto.randomUUID) { return crypto.randomUUID(); }
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -27,7 +24,7 @@ export default function Chat() {
 
     const { setActiveChatTitle, chatModel, titleModel, selectedNodeIds } = useWorkspaceStore();
     const {
-        activeChatSessionId, activeChatMessages, activeChatTitle,
+        activeChatSessionId, activeChatMessages,
         startNewChat, setActiveChatSession, appendMessage, updateMessage, appendChunkToMessage
     } = useWorkspaceStore();
     const [chatInputValue, setChatInputValue] = useState(() => sessionStorage.getItem('chatInputDraft') || '');
@@ -35,23 +32,25 @@ export default function Chat() {
     const chatDisplayRef = useRef(null);
 
     // 2. DATENLADUNG & SYNCHRONISATION
-    const { data: sessionData } = useQuery({
+    const { data: sessionData, isSuccess: isSessionDataSuccess } = useQuery({
         queryKey: ['chatHistory', activeChatSessionId],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/sessions/${activeChatSessionId}`).then(res => res.data),
         enabled: !!vaultId && !!activeChatSessionId && isUserAuthenticated,
     });
 
     useEffect(() => {
-        if (sessionData && Array.isArray(sessionData.messages)) {
+        if (isSessionDataSuccess && sessionData && Array.isArray(sessionData.messages)) {
             setActiveChatSession(activeChatSessionId, sessionData.title, sessionData.messages);
         }
-    }, [sessionData, activeChatSessionId, setActiveChatSession]);
-    useEffect(() => { if (chatDisplayRef.current) { chatDisplayRef.current.scrollTop = chatDisplayRef.current.scrollHeight; } }, [activeChatMessages]);
+    }, [isSessionDataSuccess, sessionData, activeChatSessionId, setActiveChatSession]);
+
     useEffect(() => { sessionStorage.setItem('chatInputDraft', chatInputValue); }, [chatInputValue]);
 
-    // ==========================================================
+    const visibleMessages = activeChatMessages?.filter(
+        (msg) => msg.status !== 'retried' && msg.status !== 'deleted'
+    );
+
     // 3. SSE STREAM PROCESSING
-    // ==========================================================
     const processSseStream = useCallback((reader, tempAssistantId) => {
         const decoder = new TextDecoder();
         let buffer = '';
@@ -87,7 +86,7 @@ export default function Chat() {
                                 case 'assistant_message_end':
                                     updateMessage(data.id, data);
                                     break;
-                                case 'message_status_updated': // This event is now handled correctly by the filter
+                                case 'message_status_updated':
                                     updateMessage(data.id, data);
                                     break;
                                 case 'session_updated':
@@ -95,7 +94,6 @@ export default function Chat() {
                                     if (data.title) {
                                         setActiveChatTitle(data.title);
                                     }
-                                    queryClient.invalidateQueries({ queryKey: ['chatSessions', vaultId] });
                                     break;
                                 case 'error':
                                     console.error("SSE Error Event:", data.error);
@@ -112,9 +110,7 @@ export default function Chat() {
     }, [updateMessage, appendChunkToMessage, vaultId, queryClient, setActiveChatTitle]);
 
 
-    // ==========================================================
     // 4. MUTATIONS FÜR ALLE SCHREIBENDEN AKTIONEN
-    // ==========================================================
     const getSseAuthHeaders = () => {
         const jwtToken = localStorage.getItem('authToken');
         if (!jwtToken) {
@@ -221,15 +217,9 @@ export default function Chat() {
         resubmitMessageMutation.mutate({ messageToResubmit: message });
     };
 
-    // ==========================================================
     // 6. RENDER
-    // ==========================================================
     const isChatLoading = createAndSendMessageMutation.isPending;
-
-    // KORREKTUR: Filtere die Nachrichten, die angezeigt werden sollen, bevor sie gerendert werden.
-    const visibleMessages = activeChatMessages?.filter(
-        (msg) => msg.status !== 'retried' && msg.status !== 'deleted'
-    );
+    const { activeChatTitle } = useWorkspaceStore.getState();
 
     return (
         <div className={`chat-feature-wrapper ${isHistoryPanelOpen ? 'history-open' : ''}`}>
@@ -248,14 +238,12 @@ export default function Chat() {
                 </div>
 
                 <div className="chat-messages-wrapper pt-2" ref={chatDisplayRef}>
-                    {/* KORREKTUR: Prüfe die Länge der gefilterten Nachrichtenliste */}
                     {(visibleMessages?.length || 0) === 0 && !isChatLoading && (
                         <div className="message assistant">
-                            <div className="markdown-content">Select nodes from the tree and ask a question to start a new chat!</div>
+                            <div className="message-content-bubble markdown-content">Select nodes from the tree and ask a question to start a new chat!</div>
                         </div>
                     )}
 
-                    {/* KORREKTUR: Rendere nur die gefilterten Nachrichten */}
                     {visibleMessages?.map((message) => (
                         <ChatMessage
                             key={message.id}
@@ -273,7 +261,7 @@ export default function Chat() {
                         value={chatInputValue}
                         onChange={(e) => setChatInputValue(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey)) { e.preventDefault(); handleChatSubmit(e); } }}
-                        placeholder={!chatModel ? "Select a model..." : "Ask a question (Shift+Enter or Ctrl+Enter to send)"}
+                        placeholder={!chatModel ? "Select a model..." : "Ask a question (Shift+Enter to send)"}
                         className="form-control"
                         disabled={isChatLoading || !chatModel}
                         rows="2"
@@ -289,7 +277,6 @@ export default function Chat() {
                     </form>
                 </div>
             </div>
-
             <ChatHistoryPanel onClose={() => setIsHistoryPanelOpen(false)} />
         </div>
     );

@@ -16,6 +16,27 @@ def list_vaults():
     return jsonify([v.to_dict() for v in vaults])
 
 
+# =================================================================
+# === ADD THIS NEW ENDPOINT ===
+# This is the missing piece that your frontend's useVaultQuery(vaultId) hook needs.
+# =================================================================
+@vaults_bp.route('/<int:vault_id>', methods=['GET'])
+@jwt_required()
+def get_vault_details(vault_id):
+    current_user_id = int(get_jwt_identity())
+    try:
+        # We assume a service function exists to get a single vault and check permissions.
+        vault = vault_service.get_vault_by_id(vault_id, user_id=current_user_id)
+        return jsonify(vault.to_dict())
+    except ValueError as e:
+        # This typically means "not found" in your service layer.
+        return jsonify({"error": str(e)}), 404
+    except PermissionError as e:
+        # This means the user is not authorized for this vault.
+        return jsonify({"error": str(e)}), 403
+# =================================================================
+
+
 @vaults_bp.route('/', methods=['POST'], strict_slashes=False)
 @jwt_required()
 def create_vault():

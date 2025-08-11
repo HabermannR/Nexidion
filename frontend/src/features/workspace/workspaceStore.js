@@ -16,7 +16,8 @@ export const useWorkspaceStore = create(
             // ===============================================
             // === STATE PROPERTIES ===
             // ===============================================
-
+            lastValidPaths: {},
+            
             // --- Tree/Graph State ---
             selectedNodeIds: new Set(),
             collapsedNodes: new Set(),
@@ -33,6 +34,10 @@ export const useWorkspaceStore = create(
             activeChatSessionId: null,
             activeChatTitle: 'New Chat',
             activeChatMessages: [], // Always initialize as an array
+
+            // --- UI Layout State ---
+            activeContextTab: 'chat', // Standardwert
+            breadcrumbPath: [],
 
             // ===============================================
             // === ACTIONS ===
@@ -55,6 +60,7 @@ export const useWorkspaceStore = create(
                 activeChatSessionId: null,
                 activeChatTitle: 'New Chat',
                 activeChatMessages: [],
+                breadcrumbPath: [],
             }),
 
             // --- LLM Actions ---
@@ -73,6 +79,10 @@ export const useWorkspaceStore = create(
                     });
                 }
             },
+
+            // --- UI Layout Actions ---
+            setActiveContextTab: (tabKey) => set({ activeContextTab: tabKey }),
+            setBreadcrumbPath: (path) => set({ breadcrumbPath: path }),
 
             // --- Chat Actions (Now simplified) ---
             startNewChat: () => set({
@@ -220,6 +230,9 @@ export const useWorkspaceStore = create(
                 activeChatSessionId: state.activeChatSessionId,
                 activeChatTitle: state.activeChatTitle,
                 activeChatMessages: state.activeChatMessages,
+
+                activeContextTab: state.activeContextTab,
+
             }),
         }
     )

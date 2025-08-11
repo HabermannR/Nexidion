@@ -2,73 +2,71 @@ import React from 'react';
 import { ListGroup, Button, Alert, Spinner } from 'react-bootstrap';
 import { BsArrowLeftRight } from 'react-icons/bs';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import './VersionHistoryTab.css'; // Stelle sicher, dass diese CSS-Datei existiert und importiert wird
 
 export default function VersionHistoryTab() {
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
     const { vaultId, nodeId } = useParams();
     const { setDiffBase, setDiffCompare } = useWorkspaceStore();
     const diffSelection = useWorkspaceStore(state => state.diffSelection);
 
-    // ==========================================================
-    // SÄULE 2: DIE DATEN-ENGINE (TanStack Query)
-    // Dieser Hook ersetzt den alten Loader-Mechanismus und den 'activeNodeVersions' Store.
-    // ==========================================================
     const { data: versions, isLoading, isError, error } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
-
         queryFn: async () => {
-            // Die Logik hier war schon korrekt, aber der Key muss passen.
             if (!nodeId) return [];
             const response = await apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`);
             return response.data || [];
         },
-        // Die enabled-Bedingung muss ebenfalls vaultId prüfen, um konsistent zu sein.
         enabled: !!vaultId && !!nodeId,
     });
-
 
     // ==========================================================
     // HANDLER-FUNKTIONEN
     // ==========================================================
 
     const updateUrl = (params) => {
-        navigate(`?${params.toString()}`, { replace: true });
+        // Use an empty string for the path to only update search params
+        navigate({ search: params.toString() }, { replace: true });
     };
 
     const handleSelectVersion = (version) => {
-        setDiffBase(version); // 1. Store aktualisieren
-        const newSearchParams = new URLSearchParams();
+        setDiffBase(version);
+        const newSearchParams = new URLSearchParams(window.location.search); // Preserve other params
         newSearchParams.set('version', String(version.version));
-        updateUrl(newSearchParams); // 2. URL aktualisieren
+        updateUrl(newSearchParams);
     };
 
-    const handleCompareVersion = (version) => {
+    const handleCompareVersion = (versionToCompare) => {
         const newSearchParams = new URLSearchParams(window.location.search);
+        const isCurrentlyComparing = diffSelection.compare?.id === versionToCompare.id;
 
-        // Prüfen, ob diese Version bereits die Vergleichsversion ist.
-        if (newSearchParams.get('compare') === String(version.version)) {
-            // Ja -> Vergleich aufheben
-            newSearchParams.delete('compare');
-            setDiffCompare(null); // Zustand zurücksetzen!
+        if (isCurrentlyComparing) {
+            // === KORREKTUR: Dies ist die Aktion "Vergleich beenden" ===
+            // 1. Setze den Zustand auf die neueste Version zurück.
+            if (versions && versions.length > 0) {
+                setDiffBase(versions[0]);
+            }
+            // 2. Setze den Vergleichszustand explizit auf null.
+            setDiffCompare(null);
+            // 3. Räume die URL vollständig auf.
+            updateUrl(new URLSearchParams());
         } else {
-            // Nein -> Als neue Vergleichsversion setzen
-            newSearchParams.set('compare', String(version.version));
-            setDiffCompare(version); // Zustand setzen!
+            // Dies ist die Aktion "Vergleich starten"
+            newSearchParams.set('compare', String(versionToCompare.version));
+            setDiffCompare(versionToCompare);
+            updateUrl(newSearchParams);
         }
-
-        updateUrl(newSearchParams); // URL am Ende aktualisieren
     };
 
     const handleShowCurrent = () => {
         if (versions && versions.length > 0) {
-            setDiffBase(versions[0]); // 1. Store auf die neueste Version setzen
-            const newSearchParams = new URLSearchParams();
-            updateUrl(newSearchParams); // 2. URL aufräumen
+            setDiffBase(versions[0]);
+            // Wichtig: Auch den Vergleichszustand zurücksetzen, falls einer aktiv war.
+            setDiffCompare(null);
+            updateUrl(new URLSearchParams());
         }
     };
 
@@ -119,7 +117,11 @@ export default function VersionHistoryTab() {
                         const showDiffButton = base && !isBase;
 
                         return (
-                            <ListGroup.Item key={v.id} active={isBase} className={`d-flex justify-content-between align-items-center version-list-item ${isCompare ? 'diff-compare-active' : ''}`}>
+                            <ListGroup.Item
+                                key={v.id}
+                                active={isBase}
+                                className={`d-flex justify-content-between align-items-center version-list-item ${isCompare ? 'diff-compare-active' : ''}`}
+                            >
                                 <div className="flex-grow-1 me-2" style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => handleSelectVersion(v)}>
                                     <strong className="d-block text-truncate" title={v.title || `Version ${v.version}`}>{v.title || `Version ${v.version}`}</strong>
                                     <small className="text-muted">v{v.version} von {v.author_name || 'N/A'}</small><br/>
@@ -127,19 +129,15 @@ export default function VersionHistoryTab() {
                                 </div>
                                 {showDiffButton && (
                                     <Button
-                                        // KORREKTUR: Immer 'outline-info' verwenden. Das CSS kümmert sich um den Rest.
                                         variant="outline-info"
                                         size="sm"
-                                        // HINWEIS: Die Klasse 'btn-info' wird jetzt nicht mehr hinzugefügt,
-                                        // was das Styling vereinfacht.
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             handleCompareVersion(v);
-                                            // NEU: Dem Button nach dem Klick den Fokus entziehen.
-                                            // Das ist eine robuste Methode, um "klebende" Hover/Focus-Stile zu verhindern.
                                             e.currentTarget.blur();
                                         }}
                                         title={isCompare ? "Vergleich aufheben" : `Vergleiche mit v${base?.version}`}
+                                        // Der 'active' Zustand wird jetzt implizit durch die 'diff-compare-active' Klasse gesteuert.
                                     >
                                         <BsArrowLeftRight />
                                     </Button>

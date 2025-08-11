@@ -1,21 +1,29 @@
 // src/features/settings/UserSettings.jsx
 
 import React, { useState, useRef } from 'react';
-// NEU: useNavigate importieren, um programmatisch zu navigieren. Link wird nicht mehr für den Zurück-Button gebraucht.
-import { useOutletContext, useNavigate } from 'react-router-dom';
+// KORREKTUR: useParams importieren, um den Kontext zu bestimmen, falls outlet-context fehlt.
+import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Container, Card, Button, Form as BootstrapForm, Row, Col, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
-// NEU: Den Workspace-Store importieren, um den Rückkehr-Pfad zu lesen.
+// KORREKTUR: Den Workspace-Store importieren, um das vault-spezifische Pfad-Objekt zu lesen.
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 
 export default function UserSettings() {
-    const { activeVault } = useOutletContext();
+    // KORREKTUR: useOutletContext ist nicht immer zuverlässig, useParams als Fallback nutzen.
+    const { activeVault } = useOutletContext() || {};
+    // Der vaultId aus der URL gibt uns den Kontext, aus dem wir gekommen sind.
+    const { vaultId } = useParams();
     const formRef = useRef();
-
-    // --- NEU: Zustand und Navigation abrufen ---
     const navigate = useNavigate();
-    const lastValidWorkspacePath = useWorkspaceStore(state => state.lastValidWorkspacePath);
+
+    // KORREKTUR: Das vault-spezifische Pfad-Objekt lesen, nicht eine einzelne Variable.
+    const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
+
+    // KORREKTUR: Den korrekten Pfad für den aktuellen Vault-Kontext ermitteln.
+    // Wir priorisieren den `activeVault` aus dem Context, nehmen aber die URL-Param als Fallback.
+    const currentVaultId = activeVault?.id || vaultId;
+    const lastValidPathForThisVault = lastValidPaths ? lastValidPaths[currentVaultId] : null;
 
     // --- LOKALER UI-ZUSTAND ---
     const [alert, setAlert] = useState(null);
@@ -55,17 +63,18 @@ export default function UserSettings() {
         changePasswordMutation.mutate({ old_password, new_password });
     };
 
-    // NEU: Handler für den Zurück-Button
+    // KORREKTUR: Handler für den Zurück-Button, der den vault-spezifischen Pfad nutzt.
     const handleBackClick = () => {
-        // Nutze den gespeicherten Pfad. Wenn keiner da ist, nimm den Fallback.
-        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+        // Nutze den gespeicherten Pfad. Wenn keiner da ist, nimm den Fallback zum Vault-Root.
+        // Der finale Fallback zu '/' fängt den seltenen Fall ab, dass kein Vault-Kontext existiert.
+        navigate(lastValidPathForThisVault || (currentVaultId ? `/vaults/${currentVaultId}` : '/'));
     };
 
     return (
         <Container className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>Benutzereinstellungen</h2>
-                {/* --- GEÄNDERT: Der Button nutzt jetzt den onClick-Handler --- */}
+                {/* KORREKTUR: Der Button nutzt jetzt den korrigierten onClick-Handler */}
                 <Button onClick={handleBackClick} variant="secondary">
                     Zurück zum Workspace
                 </Button>
@@ -79,7 +88,6 @@ export default function UserSettings() {
                         <Card.Header as="h5">Passwort ändern</Card.Header>
                         <Card.Body>
                             <BootstrapForm ref={formRef} onSubmit={handleSubmit}>
-                                {/* ... (Formular-Felder bleiben unverändert) ... */}
                                 <BootstrapForm.Group className="mb-3" controlId="old_password">
                                     <BootstrapForm.Label>Aktuelles Passwort</BootstrapForm.Label>
                                     <BootstrapForm.Control type="password" name="old_password" required />

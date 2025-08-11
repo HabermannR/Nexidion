@@ -1,35 +1,44 @@
+// src/features/settings/LlmSettings.jsx
+
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, useNavigate  } from 'react-router-dom';
+// Import useSearchParams
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { Container, Card, Button, Form as BootstrapForm, Table, Alert, Spinner } from 'react-bootstrap';
 import { useLlmModels } from './useLlmModels.js';
-import './LlmSettings.css'; // NEU: Importiere die CSS-Datei
+import { useVaultQuery } from '../vaults/hooks/useVaultQuery'; // The dedicated V4 hook
+import './LlmSettings.css';
 
 export default function LlmSettings() {
-    const navigate = useNavigate(); // Hook für die Navigation
-    const lastValidWorkspacePath = useWorkspaceStore(state => state.lastValidWorkspacePath);
-    const { activeVault } = useOutletContext();
+    const navigate = useNavigate();
+    // Read the vaultId from the URL query string (e.g., ?vaultId=1)
+    const [searchParams] = useSearchParams();
+    const vaultId = searchParams.get('vaultId');
 
-    // --- ZUSTAND INTEGRATION (GLOBAL STATE) - THE FIX ---
-    // 1. Select actions separately. Zustand guarantees these are stable.
+    const lastValidPathForThisVault = useWorkspaceStore(state =>
+        state.lastValidPaths ? state.lastValidPaths[vaultId] : null
+    );
+
+    // Fetch the vault's data using the ID. This query will only run if vaultId is present.
+    const { data: activeVault, isLoading: isVaultLoading, isError: isVaultError } = useVaultQuery(vaultId);
+
     const setChatModel = useWorkspaceStore(state => state.setChatModel);
     const setTitleModel = useWorkspaceStore(state => state.setTitleModel);
-
-    // 2. Select data separately. The component will only re-render if this data changes.
     const chatModel = useWorkspaceStore(state => state.chatModel);
     const titleModel = useWorkspaceStore(state => state.titleModel);
+
+    const {
+        availableModels,
+        isLoading: areModelsLoading,
+        isError: areModelsError
+    } = useLlmModels();
 
     // --- LOCAL UI STATE ---
     const [selectedChatLlmId, setSelectedChatLlmId] = useState('');
     const [selectedTitleLlmId, setSelectedTitleLlmId] = useState('');
     const [alert, setAlert] = useState(null);
 
-    // --- DATA FETCHING ---
-    const { availableModels, isLoading, isError } = useLlmModels();
-
     // --- SYNC GLOBAL STATE TO LOCAL UI STATE ---
-    // This is now safe. The effect only depends on `chatModel` and `titleModel`.
-    // It will not run again just because the component re-rendered.
     useEffect(() => {
         if (chatModel) {
             setSelectedChatLlmId(chatModel.id);
@@ -37,7 +46,7 @@ export default function LlmSettings() {
         if (titleModel) {
             setSelectedTitleLlmId(titleModel.id);
         }
-    }, [chatModel, titleModel]); // Correct, stable dependencies
+    }, [chatModel, titleModel]);
 
     // --- ACTIONS ---
     const handleSubmit = (e) => {
@@ -45,25 +54,61 @@ export default function LlmSettings() {
         const newChatModel = availableModels?.find(m => m.id === selectedChatLlmId);
         const newTitleModel = availableModels?.find(m => m.id === selectedTitleLlmId);
 
-        // Use the stable action functions we selected earlier.
-        if (newChatModel) {
-            setChatModel(newChatModel);
-        }
-        if (newTitleModel) {
-            setTitleModel(newTitleModel);
-        }
-        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+        if (newChatModel) setChatModel(newChatModel);
+        if (newTitleModel) setTitleModel(newTitleModel);
+
+        // This navigation is safe because the component would not have rendered
+        // this part of the code if activeVault was not available.
+        // KORREKTUR: Die Variable `lastValidWorkspacePath` existierte nicht. Es muss `lastValidPathForThisVault` sein.
+        navigate(lastValidPathForThisVault || `/vaults/${activeVault.id}`);
     };
 
     const handleBackClick = () => {
-        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+        // KORREKTUR: Die Variable `lastValidWorkspacePath` existierte nicht. Es muss `lastValidPathForThisVault` sein.
+        navigate(lastValidPathForThisVault || `/vaults/${activeVault.id}`);
+    };
+
+    // --- RENDER LOGIC WITH ROBUST GUARD CLAUSES ---
+
+    // 1. Handle initial loading state for the primary data (the vault itself)
+    if (isVaultLoading) {
+        return (
+            <Container className="py-4 text-center">
+                <Spinner animation="border" />
+                <p className="mt-2">Lade Vault-Informationen...</p>
+            </Container>
+        );
     }
 
+    // 2. Handle any network/server errors for the primary data
+    if (isVaultError) {
+        return (
+            <Container className="py-4">
+                <Alert variant="danger">
+                    Fehler: Die Informationen für diese Vault konnten nicht geladen werden. Bitte versuchen Sie es später erneut.
+                </Alert>
+            </Container>
+        );
+    }
+
+    // 3. Handle the case where the API call was successful but returned no data (e.g., vault not found)
+    if (!activeVault) {
+        return (
+            <Container className="py-4">
+                <Alert variant="warning">
+                    Vault mit der ID "{vaultId}" konnte nicht gefunden werden.
+                </Alert>
+            </Container>
+        );
+    }
+
+    // --- FULL COMPONENT RENDER ---
+    // If we reach this point, `activeVault` is guaranteed to be a valid object.
     return (
-        // NEU: Die CSS-Klasse wird dem Container hinzugefügt
         <Container className="py-4 llm-settings-scroll-container">
             <div className="d-flex justify-content-between align-items-center mb-4">
-                <h2>LLM-Einstellungen</h2>
+                {/* This line is now completely safe */}
+                <h2>LLM-Einstellungen für "{activeVault.name}"</h2>
                 <Button onClick={handleBackClick} variant="secondary">
                     Zurück zum Workspace
                 </Button>
@@ -75,9 +120,9 @@ export default function LlmSettings() {
                 <Card.Header as="h5">Standard-LLMs auswählen</Card.Header>
                 <BootstrapForm onSubmit={handleSubmit}>
                     <Card.Body>
-                        {isLoading ? (
+                        {areModelsLoading ? (
                             <div className="text-center p-4"><Spinner animation="border" /> Lade Modelle...</div>
-                        ) : isError ? (
+                        ) : areModelsError ? (
                             <Alert variant="danger">Fehler: Die Liste der verfügbaren LLMs konnte nicht geladen werden.</Alert>
                         ) : (
                             <Table responsive hover className="align-middle">
@@ -125,7 +170,7 @@ export default function LlmSettings() {
                         <Button
                             type="submit"
                             variant="primary"
-                            disabled={isLoading}
+                            disabled={areModelsLoading || !selectedChatLlmId || !selectedTitleLlmId}
                         >
                             Einstellungen speichern
                         </Button>

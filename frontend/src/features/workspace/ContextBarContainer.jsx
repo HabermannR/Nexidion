@@ -1,63 +1,60 @@
 // src/features/workspace/ContextBarContainer.jsx
 
-import React from 'react';
-import { useMemo, useState } from 'react'; // Import useState
-import { useWorkspaceStore } from './workspaceStore'; // Corrected path
-import ContextBarDisplay from './ContextBarDisplay.jsx';
+import React, { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useWorkspaceStore } from './workspaceStore';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
+import ContextBarDisplay from './ContextBarDisplay.jsx';
 
-/**
- * A "smart" container that connects to the store and manages UI state.
- *
- * It now accepts a `nodes` prop, which should be an array of all available
- * node objects (e.g., [{id: '...', title: '...'}, ...]).
- * It uses this prop to look up the titles for the selected IDs.
- * It also manages the local "isExpanded" state for the detail view.
- */
 export default function ContextBarContainer() {
     const { vaultId } = useParams();
     const [isExpanded, setIsExpanded] = useState(false);
 
+    // 1. Daten vom Hook holen
+    const { data: queryData } = useVaultTreeQuery(vaultId);
+
+    // 2. Wichtige Daten stabil extrahieren
+    const allNodesFlat = useMemo(() => queryData?.allNodesFlat || [], [queryData]);
+
+    // 3. Daten aus dem Zustandsspeicher (zustand) holen
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
+
     const savedSets = useWorkspaceStore(state => state.savedSets);
     const clearSelection = useWorkspaceStore(state => state.clearSelection);
     const setSelection = useWorkspaceStore(state => state.setSelection);
     const saveCurrentSet = useWorkspaceStore(state => state.saveCurrentSet);
     const deleteSet = useWorkspaceStore(state => state.deleteSet);
-
-    // Derive selection size directly from the Set
     const selectionSize = selectedNodeIds.size;
 
-    const { allNodesFlat } = useVaultTreeQuery(vaultId);
-
-    // Memoize the list of saved sets for the dropdown
+    // Memoize die Liste der gespeicherten Sets für das Dropdown
     const savedSetsForDisplay = useMemo(() => {
         if (!savedSets || typeof savedSets !== 'object') return [];
         return Object.entries(savedSets).map(([name, ids]) => {
             if (!Array.isArray(ids)) {
-                console.warn(`Data integrity issue: Saved set "${name}" has a non-array value.`, ids);
                 return { name, count: 0, ids: [] };
             }
             return { name, count: ids.length, ids };
         });
     }, [savedSets]);
 
+    // 4. Titel für die ausgewählten IDs berechnen
     const selectedNodesWithTitles = useMemo(() => {
-        if (!allNodesFlat || allNodesFlat.length === 0 || selectedNodeIds.size === 0) {
+        if (allNodesFlat.length === 0 || selectedNodeIds.size === 0) {
             return [];
         }
         const nodeMap = new Map(allNodesFlat.map(node => [node.id, node]));
-        return Array.from(selectedNodeIds)
+        const result = Array.from(selectedNodeIds)
             .map(id => {
                 const node = nodeMap.get(id);
-                // Wichtig: Gib ein Objekt zurück, das die Display-Komponente erwartet.
-                return { id, title: node?.title || 'Loading...' };
-            })
+                return { id, title: node?.title || `ID ${id} nicht gefunden` };
+                })
             .sort((a, b) => a.title.localeCompare(b.title));
+
+        return result;
+
     }, [selectedNodeIds, allNodesFlat]);
 
-    // 4. Pass everything down to the display component.
+    // 5. Alles an die "dumme" Anzeige-Komponente übergeben
     return (
         <ContextBarDisplay
             selectionSize={selectionSize}

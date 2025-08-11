@@ -40,11 +40,13 @@ export default function ToolsTab() {
     // --- DATEN AUS GLOBALEN STORES & CONTEXT ---
     const { vaultId } = useParams();
     const {
-        data: treeData,
-        allNodesFlat,
+        data,
         isLoading: isTreeLoading,
         isSuccess: isTreeReady,
     } = useVaultTreeQuery(vaultId);
+
+    const treeData = data?.tree || [];
+    const allNodesFlat = data?.allNodesFlat || [];
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
     const activeChatSessionId = useWorkspaceStore(state => state.activeChatSessionId);

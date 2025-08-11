@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo  } from 'react'; // KORREKTUR: useState und useCallback wieder hinzugefügt
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
@@ -10,7 +10,7 @@ import ContextPanel from './ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
 
-// The BreadcrumbTrail component
+// The BreadcrumbTrail component (KEINE ÄNDERUNG)
 const BreadcrumbTrail = ({ path }) => {
     if (!path || path.length === 0) return null;
     return (
@@ -31,33 +31,33 @@ const BreadcrumbTrail = ({ path }) => {
 
 export default function WorkspaceLayout() {
     const { vaultId } = useParams();
-    const resetWorkspaceContext = useWorkspaceStore((state) => state.resetWorkspaceContext);
 
-    // --- LOKALER UI-ZUSTAND (größtenteils unverändert) ---
+    // --- ZUSTAND AUS DEM GLOBALEN STORE ---
+    const resetWorkspaceContext = useWorkspaceStore((state) => state.resetWorkspaceContext);
+    const breadcrumbPath = useWorkspaceStore((state) => state.breadcrumbPath);
+    const activeContextTab = useWorkspaceStore((state) => state.activeContextTab);
+    const setActiveContextTab = useWorkspaceStore((state) => state.setActiveContextTab);
+
+    // --- LOKALER UI-ZUSTAND (nur für dieses Layout relevant) ---
+    // KORREKTUR: Die fehlenden State-Variablen und Handler wurden wiederhergestellt
     const [rightPanelMode, setRightPanelMode] = useState('normal');
     const [showMobileTree, setShowMobileTree] = useState(false);
     const [showMobileContext, setShowMobileContext] = useState(false);
-    const [breadcrumbPath, setBreadcrumbPath] = useState([]);
-    const [activeContextTab, setActiveContextTab] = useState('chat');
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
     const previousVaultIdRef = useRef(vaultId);
     const programmaticResizeRef = useRef(false);
 
-    // Der Vault-Wechsel wird jetzt von den Query-Hooks selbst gehandhabt.
+    // Vault-Wechsel-Effekt
     useEffect(() => {
         if (vaultId !== previousVaultIdRef.current) {
             resetWorkspaceContext();
-            setBreadcrumbPath([]);
             previousVaultIdRef.current = vaultId;
         }
     }, [vaultId, resetWorkspaceContext]);
 
-    const outletContext = useMemo(() => ({
-        setBreadcrumbPath,
-    }), [setBreadcrumbPath]); // Abhängigkeit angepasst
-
     // --- UI-HANDLER ---
+    // KORREKTUR: Fehlende Handler wiederhergestellt
     const handleMobileNavClose = useCallback(() => setShowMobileTree(false), []);
 
     const treeComponent = useMemo(() => (
@@ -96,7 +96,7 @@ export default function WorkspaceLayout() {
 
 
     return (
-            <>
+        <>
             {/* --- Desktop Layout --- */}
             <div className="main-content-area d-none d-lg-flex">
                 <PanelGroup direction="horizontal" onLayout={handleLayout}>
@@ -122,13 +122,14 @@ export default function WorkspaceLayout() {
                                 <BreadcrumbTrail path={breadcrumbPath} />
                             </div>
                             <ButtonGroup size="sm">
+                                {/* KORREKTUR: Fehlende onClick-Handler wiederhergestellt */}
                                 <Button variant={rightPanelMode === 'expanded' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('expanded')} title="Context Breit">{'<'}</Button>
                                 <Button variant={rightPanelMode === 'normal' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('normal')} title="Context Normal">{'|'}</Button>
                                 <Button variant={rightPanelMode === 'collapsed' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('collapsed')} title="Context Aus">{'>'}</Button>
                             </ButtonGroup>
                         </div>
                         <div className="scroll-pane px-4 pb-4">
-                            <Outlet context={outletContext} />
+                            <Outlet />
                         </div>
                     </Panel>
                     <PanelResizeHandle className="resize-handle-outer"><div className="resize-handle-inner" /></PanelResizeHandle>
@@ -148,13 +149,14 @@ export default function WorkspaceLayout() {
             <div className="d-lg-none mobile-layout-wrapper">
                 <div className="mobile-action-bar p-2 border-bottom bg-light">
                     <div className="mobile-action-bar-buttons w-100">
+                        {/* KORREKTUR: Fehlende onClick-Handler wiederhergestellt */}
                         <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileTree(true)}>☰ Navigation</Button>
                         <Button variant="outline-secondary" className="flex-fill" onClick={() => setShowMobileContext(true)}>⚙️ Context</Button>
                     </div>
                 </div>
 
                 <main className="mobile-main-content p-3 pt-0">
-                    <Outlet context={outletContext} />
+                    <Outlet />
                 </main>
 
                 <footer className="mobile-fixed-footer">
@@ -163,7 +165,9 @@ export default function WorkspaceLayout() {
             </div>
 
             <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start" className="offcanvas-full-mobile">
-                <Offcanvas.Header closeButton><Offcanvas.Title>Navigation</Offcanvas.Title></Offcanvas.Header>
+                <Offcanvas.Header closeButton>
+                    <Offcanvas.Title>Navigation</Offcanvas.Title>
+                </Offcanvas.Header>
                 <Offcanvas.Body className="d-flex flex-column p-0">
                     <div className="flex-grow-1 overflow-auto p-3">{treeComponent}</div>
                     <ContextBarContainer />

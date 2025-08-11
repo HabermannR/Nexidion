@@ -1,7 +1,8 @@
 // src/features/vaults/VaultManager.jsx
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useOutletContext, useNavigate } from 'react-router-dom';
+// HINZUGEFÜGT: useParams, um die vaultId aus der URL zu lesen, falls activeVault nicht da ist
+import { Link, useOutletContext, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Container,
@@ -19,7 +20,7 @@ import apiClient from '../../api/apiClient.js';
 
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 
-// --- VaultRow Component (Refactored) ---
+// --- VaultRow Component (Refactored - KEINE ÄNDERUNGEN) ---
 function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutation }) {
     const [isEditing, setIsEditing] = useState(false);
 
@@ -108,11 +109,18 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
 
 // --- Main VaultManager Component (Refactored) ---
 export default function VaultManager() {
-    const { activeVault } = useOutletContext();
+    // KORREKTUR: useOutletContext ist nicht robust genug, wir nutzen useParams als Fallback
+    const { activeVault } = useOutletContext() || {};
+    const { vaultId } = useParams(); // Holen der vaultId aus der URL
     const navigate = useNavigate();
     const queryClient = useQueryClient();
 
-    const lastValidWorkspacePath = useWorkspaceStore(state => state.lastValidWorkspacePath);
+    // KORREKTUR: Wir lesen das vault-spezifische Pfad-Objekt
+    const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
+
+    // KORREKTUR: Wir ermitteln den korrekten Pfad für den aktuellen Kontext
+    const currentVaultId = activeVault?.id || vaultId;
+    const lastValidPathForThisVault = lastValidPaths ? lastValidPaths[currentVaultId] : null;
 
 
     const [isBatchMode, setIsBatchMode] = useState(false);
@@ -120,30 +128,24 @@ export default function VaultManager() {
     const formRef = useRef();
     const inputRef = useRef();
 
-    // --- DATA FETCHING with useQuery ---
+    // --- DATA FETCHING with useQuery (KEINE ÄNDERUNG) ---
     const { data: vaults, isLoading, isError, error: loaderError } = useQuery({
         queryKey: ['vaults'],
         queryFn: () => apiClient.get('/api/vaults/').then(res => res.data)
     });
 
-    // --- MUTATIONS ---
+    // --- MUTATIONS (KEINE ÄNDERUNGEN) ---
     const createVaultMutation = useMutation({
         mutationFn: (name) => apiClient.post('/api/vaults/', { name }),
         onSuccess: (response) => {
-            // The actual created vault object is in response.data
             const newVault = response.data;
-
             queryClient.invalidateQueries({ queryKey: ['vaults'] });
-            // Also invalidate the 'allVaults' query used in AppShell
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
-
             setAlert({ type: 'success', message: `Vault "${newVault.name}" wurde erfolgreich erstellt.` });
-
             if (isBatchMode) {
                 formRef.current?.reset();
                 inputRef.current?.focus();
             } else {
-                // Navigate to the correct ID
                 navigate(`/vaults/${newVault.id}`);
             }
         },
@@ -154,9 +156,9 @@ export default function VaultManager() {
 
     const renameVaultMutation = useMutation({
         mutationFn: ({ vaultId, newName }) => apiClient.put(`/api/vaults/${vaultId}`, { name: newName }),
-        onSuccess: (updatedVault) => {
+        onSuccess: (response) => {
+            const updatedVault = response.data;
             queryClient.invalidateQueries({ queryKey: ['vaults'] });
-            // Invalidate AppShell's query too, so the name updates in the header.
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
             setAlert({ type: 'success', message: `Vault erfolgreich in "${updatedVault.name}" umbenannt.` });
         },
@@ -166,21 +168,16 @@ export default function VaultManager() {
     const deleteVaultMutation = useMutation({
         mutationFn: (vaultId) => apiClient.delete(`/api/vaults/${vaultId}`),
         onSuccess: (data, vaultIdToDelete) => {
-            // After successful deletion, refetch the vaults list
             queryClient.invalidateQueries({ queryKey: ['vaults']}).then(() => {
-                // This logic runs AFTER the query is refetched
                 const remainingVaults = queryClient.getQueryData(['vaults']);
-
-                // If the deleted vault was the active one, navigate away
                 if (activeVault?.id === vaultIdToDelete) {
                     if (remainingVaults && remainingVaults.length > 0) {
                         navigate(`/vaults/${remainingVaults[0].id}`);
                     } else {
-                        navigate('/settings/vaults'); // Navigate to the manager if no vaults are left
+                        navigate('/settings/vaults');
                     }
                 }
             });
-            // Invalidate AppShell's query too
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
             setAlert({ type: 'success', message: 'Vault wurde erfolgreich gelöscht.' });
         },
@@ -197,7 +194,8 @@ export default function VaultManager() {
     };
 
     const handleBackClick = () => {
-        navigate(lastValidWorkspacePath || (activeVault ? `/vaults/${activeVault.id}` : '/'));
+        // KORREKTUR: Wir nutzen den vault-spezifischen Pfad
+        navigate(lastValidPathForThisVault || (currentVaultId ? `/vaults/${currentVaultId}` : '/'));
     };
 
     const isSubmitting = createVaultMutation.isPending || renameVaultMutation.isPending || deleteVaultMutation.isPending;
@@ -206,7 +204,6 @@ export default function VaultManager() {
         <Container className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>Vault-Verwaltung</h2>
-                {/* GEÄNDERT: Button nutzt jetzt den onClick-Handler */}
                 <Button onClick={handleBackClick} variant="secondary">
                     Zurück zum Workspace
                 </Button>
@@ -214,13 +211,13 @@ export default function VaultManager() {
 
             {alert && <Alert variant={alert.type} onClose={() => setAlert(null)} dismissible>{alert.message}</Alert>}
 
+            {/* Der Rest der Komponente bleibt unverändert... */}
             <Card className="mb-4">
                 <Card.Header as="h5">Neuen Vault erstellen</Card.Header>
                 <Card.Body>
                     <BootstrapForm ref={formRef} onSubmit={handleCreateSubmit}>
                         <Row>
                             <Col md={12}>
-                                {/* --- GEÄNDERT: Formular-Struktur korrigiert --- */}
                                 <BootstrapForm.Group controlId="new-vault-name">
                                     <BootstrapForm.Label>Vault-Name</BootstrapForm.Label>
                                     <BootstrapForm.Control

@@ -53,8 +53,7 @@ export default function ContextBarDisplay({
     const chevronIcon = isExpanded ? 'bxs-chevron-down' : 'bxs-chevron-right';
 
     return (
-        // Use a React Fragment to wrap the bar and its expandable content
-        <>
+        <div className="context-bar-wrapper">
             <div
                 className={`context-bar ${selectionSize > 0 ? 'expandable' : ''}`}
                 onClick={handleBarClick}
@@ -140,6 +139,6 @@ export default function ContextBarDisplay({
                     </div>
                 </div>
             )}
-        </>
+        </div>
     );
 }

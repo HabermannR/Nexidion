@@ -31,10 +31,10 @@ export default function VaultIndexRedirector() {
 
     // --- STUFE 3: Führe die Umleitung durch, SOBALD der Baum geladen ist ---
     useEffect(() => {
-        // Diese Bedingung ist nur wahr, wenn BEIDE Abfragen erfolgreich waren.
-        if (vaultsLoaded && treeLoaded && treeData) {
-            // Finde den Wurzelknoten (den Node, der keine 'parent_id' hat).
-            const rootNode = treeData.find(node => node.parent_id === null);
+        // Diese Bedingung ist nur wahr, wenn BEIDE Abfragen erfolgreich waren UND die Daten da sind.
+        if (vaultsLoaded && treeLoaded && treeData && treeData.allNodesFlat) { // <-- Zusätzliche Prüfung
+            // Finde den Wurzelknoten (den Node, der keine 'parent_id' hat) in der flachen Liste.
+            const rootNode = treeData.allNodesFlat.find(node => node.parent_id === null); // <-- KORRIGIERT
 
             if (rootNode) {
                 // Ziel gefunden! Navigiere dorthin.
