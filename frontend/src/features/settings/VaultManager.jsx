@@ -129,14 +129,21 @@ export default function VaultManager() {
     // --- MUTATIONS ---
     const createVaultMutation = useMutation({
         mutationFn: (name) => apiClient.post('/api/vaults/', { name }),
-        onSuccess: (newVault) => {
+        onSuccess: (response) => {
+            // The actual created vault object is in response.data
+            const newVault = response.data;
+
             queryClient.invalidateQueries({ queryKey: ['vaults'] });
+            // Also invalidate the 'allVaults' query used in AppShell
+            queryClient.invalidateQueries({ queryKey: ['allVaults'] });
+
             setAlert({ type: 'success', message: `Vault "${newVault.name}" wurde erfolgreich erstellt.` });
 
             if (isBatchMode) {
                 formRef.current?.reset();
                 inputRef.current?.focus();
             } else {
+                // Navigate to the correct ID
                 navigate(`/vaults/${newVault.id}`);
             }
         },

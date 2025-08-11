@@ -115,7 +115,7 @@ def _generate_json_with_gemini(system_prompt, user_prompt, model, max_tokens, re
 
 def _generate_json_with_openai_compatible(system_prompt, user_prompt, model, max_tokens, tool_schema):
     if 'local' in model:
-        client = openai.OpenAI(base_url=current_app.config['LOCAL_LLM_URL'], api_key="not-needed")
+        client = openai.OpenAI(base_url=current_app.config['LOCAL_LLM_URL'], api_key=current_app.config['LOCAL_LLM_API_KEY'])
         tool_choice = "required"
     else:
         client = openai.OpenAI(api_key=current_app.config.get('OPENAI_API_KEY'))
@@ -137,11 +137,9 @@ def _generate_json_with_openai_compatible(system_prompt, user_prompt, model, max
 # --- Öffentliche API-Funktionen (Wrapper) ---
 def generate_structured_response(system_prompt: str, user_prompt: str, model: str, max_tokens: int = 4096):
     logger.info(f"Requesting content update with model {model}")
-    print(model)
     if 'mock' in model: return f"Mock response ID: {uuid.uuid4()}"
     response_data = generate_json_response(system_prompt, user_prompt, model, get_content_update_schema, max_tokens)
     content = response_data.get("new_content")
-    print(content)
     if not content: raise ValueError("AI response did not contain 'new_content' key.")
     return content
 
@@ -203,7 +201,7 @@ def _generate_with_openai_streaming(messages, system_prompt, model, max_tokens):
     client_params = {"api_key": current_app.config['OPENAI_API_KEY']}
     if 'local' in model:
         client_params["base_url"] = current_app.config['LOCAL_LLM_URL']
-        client_params["api_key"] = "not-needed"
+        client_params["api_key"] = current_app.config['LOCAL_LLM_API_KEY']
     client = openai.OpenAI(**client_params)
     final_messages = [{"role": "system", "content": system_prompt}] + messages if system_prompt else messages
     stream = client.chat.completions.create(model=model, messages=final_messages, max_tokens=max_tokens,

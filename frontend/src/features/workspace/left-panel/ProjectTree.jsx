@@ -129,8 +129,8 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyF
 
     // NEU: Mutation für das Verschieben eines Nodes.
     const moveNodeMutation = useMutation({
-        mutationFn: ({ nodeIdToMove, newParentId }) =>
-            apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}`, { parent_id: newParentId }),
+    mutationFn: ({ nodeIdToMove, newParentId }) =>
+        apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}/move`, { parent_id: newParentId }),
         onSuccess: () => {
             // Baum-Daten invalidieren, um die UI zu aktualisieren. Keine Navigation nötig.
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });

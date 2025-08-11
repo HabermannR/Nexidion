@@ -56,7 +56,12 @@ def create_vault(name: str, owner_id: int) -> Vault:
         db.session.add(new_vault)
         db.session.flush()
 
-        root_node = Node(vault_id=new_vault.id, parent_id=None, current_version=1)
+        root_node = Node(
+            vault_id=new_vault.id,
+            parent_id=None,
+            current_version=1,
+            icon='bxs-folder'
+        )
         db.session.add(root_node)
         db.session.flush()
 
