@@ -1,35 +1,34 @@
-# =============================================================================
-# 1. Python & PyCharm Artefakte
-# =============================================================================
+# ===================================
+# 1. Python & Virtual Environments
+# ===================================
 __pycache__/
 *.py[cod]
 *.so
-*.egg-info/
-
-# Virtual Environments
 .venv/
 venv/
 ENV/
 env/
 
-# IDE & Editor Konfiguration
+# ===================================
+# 2. IDE, Editor & OS Files
+# ===================================
 .idea/
 .vscode/
+.DS_Store
 
-# Test & Coverage Reports
+# ===================================
+# 3. Test & Coverage Reports
+# ===================================
 .coverage
 .coverage.*
 htmlcov/
 .pytest_cache/
 nosetests.xml
 coverage.xml
-*.lprof
-pytest.ini
 
-
-# =============================================================================
-# 2. Frontend (React/Node.js) - Annahme: alles ist in 'frontend/'
-# =============================================================================
+# ===================================
+# 4. Frontend (Node.js)
+# ===================================
 frontend/node_modules/
 frontend/build/
 frontend/dist/
@@ -38,46 +37,33 @@ frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
 
-# =============================================================================
-# 3. Lokale Konfiguration & Geheimnisse (NIE in Git speichern!)
-# =============================================================================
-# Lokale Umgebungs-Dateien
+# ===================================
+# 5. Secrets & Local Config (NEVER COMMIT)
+# ===================================
+# Local environment variables
 .env
 .env.*
 !.env.example
 
-# Datenbankdateien
+# Local databases and instance folder
+instance/
 *.db
 *.sqlite
 *.sqlite3
 
-# Sensible Daten
+# Credentials
 secrets.json
 credentials.txt
 
-# =============================================================================
-# 4. Projektspezifische Ignorierungen (Generierte Dateien & Backups)
-# =============================================================================
-# Exportierte Dokumente und Bilder
-/exports/
-/Knowledge Base export/
-/secure_images/
-*.epub
-
-
-# Deine spezifischen, privaten Dateien
+# ===================================
+# 6. Project-Specific Ignores
+# ===================================
+# Ignore specific, one-off scripts you don't want in the repo
 create_hash.py
 converter.py
 Rename_Summary.py
 migrate_drop_author.py
 vacuum.py
-secrets.json     # Falls du so etwas hast
-credentials.txt  # Generell alle Dateien mit sensiblen Daten
-backup/
-Knowledge*Base*export/ 
-Knowledge Base export/ 
-secure_images/
-backend/migrations/
 testgitignore.py
 backend/scripts/sync_docs.py
 backend/scripts/benchmark.py
@@ -87,12 +73,7 @@ backend/scripts/import_old_db.py
 backend/scripts/wsgi.py
 kerntest.py
 
-
-
-*_
-*.pdf
-*.md
-*.jpg
-*.png
-*.svg
-*.log
+# Generated outputs
+/exports/
+/secure_images/
+backup/
