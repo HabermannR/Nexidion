@@ -7,7 +7,7 @@ import apiClient from '../../../api/apiClient';
 import { useWorkspaceStore } from '../workspaceStore';
 import { useSaveNodeContent } from '../../../services/useSaveNodeContent';
 import { copyContextContent, copyTreeStructure } from '../../../services/clipboardService.js';
-import { useWorkspaceData } from '../WorkspaceDataContext.js';
+import { useVaultTreeQuery } from '../../../hooks/useVaultTreeQuery';
 import UpdatePreviewModal from './UpdatePreviewModal';
 
 /**
@@ -39,7 +39,7 @@ export default function ToolsTab({ selectedNodes = [] }) {
 
     // --- DATEN AUS GLOBALEN STORES & CONTEXT ---
     const { vaultId } = useParams();
-    const { treeData, isTreeLoading } = useWorkspaceData(); // Holt Baumdaten via Context
+    const { treeData, isLoading: isTreeLoading } = useVaultTreeQuery(vaultId);
     const activeChatSessionId = useWorkspaceStore(state => state.activeChatSessionId);
     const chatModel = useWorkspaceStore(state => state.chatModel);
 

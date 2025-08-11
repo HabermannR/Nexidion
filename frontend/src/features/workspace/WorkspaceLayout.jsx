@@ -2,11 +2,8 @@ import React, { useMemo, useState, useRef, useCallback, useEffect, useLayoutEffe
 import { Outlet, useParams, Link } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
-import { useQuery } from '@tanstack/react-query';
-import apiClient from '../../api/apiClient';
 import { useWorkspaceStore } from './workspaceStore';
-import { WorkspaceDataProvider } from './WorkspaceDataContext';
-
+import { useVaultTreeQuery } from '../../hooks/useVaultTreeQuery';
 import ProjectTree from './left-panel/ProjectTree.jsx';
 import ContextPanel from './right-panel/ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
@@ -29,22 +26,6 @@ const BreadcrumbTrail = ({ path }) => {
             ))}
         </Breadcrumb>
     );
-};
-
-// Helper function to flatten the tree
-const flattenTree = (nodes) => {
-    const flatList = [];
-    const recurse = (nodesToFlatten) => {
-        for (const node of nodesToFlatten) {
-            const { children, ...rest } = node;
-            flatList.push(rest);
-            if (children && children.length > 0) {
-                recurse(children);
-            }
-        }
-    };
-    recurse(nodes);
-    return flatList;
 };
 
 export default function WorkspaceLayout() {
@@ -85,20 +66,12 @@ export default function WorkspaceLayout() {
         }
     }, [isReadyForQueries]);
 
-    // --- DATA LOGIC (SERVER-STATE) ---
-    // Holt die Baumdaten für den aktuellen Vault.
-    // TanStack Query managed Caching, Lade- & Fehlerzustände.
-    const { data: treeData, isLoading: isTreeLoading } = useQuery({
-        queryKey: ['vaultTree', vaultId],
-        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes?format=tree`).then(res => res.data),
-        enabled: !!vaultId && isReadyForQueries,
-    });
-
-    // --- ABGELEITETE DATEN & CONTEXT-WERTE ---
-    const allNodesFlat = useMemo(() => {
-        if (!treeData) return [];
-        return flattenTree(treeData);
-    }, [treeData]);
+    // --- DATA LOGIC (SERVER-STATE) via Custom Hook ---
+    const {
+        treeData,
+        isLoading: isTreeLoading,
+        allNodesFlat, // allNodesFlat kommt jetzt direkt vom Hook
+    } = useVaultTreeQuery(vaultId, { enabled: isReadyForQueries });
 
     const selectedNodesWithData = useMemo(() => {
         if (!allNodesFlat || allNodesFlat.length === 0 || selectedNodeIds.size === 0) {
@@ -116,16 +89,8 @@ export default function WorkspaceLayout() {
     // Context-Wert für das React Router <Outlet>, falls direkte Kinder ihn brauchen.
     const outletContext = useMemo(() => ({
         setBreadcrumbPath,
-        treeData,
         isReadyForQueries,
-    }), [treeData, isReadyForQueries]);
-
-    // Context-Wert für unseren WorkspaceDataProvider.
-    // Stellt die Baumdaten allen verschachtelten Komponenten zur Verfügung.
-    const workspaceDataContextValue = useMemo(() => ({
-        treeData: treeData ?? [], // Stellt sicher, dass immer ein Array übergeben wird
-        isTreeLoading,
-    }), [treeData, isTreeLoading]);
+    }), [isReadyForQueries]);
 
     // --- UI-HANDLER ---
     const handleMobileNavClose = useCallback(() => setShowMobileTree(false), []);
@@ -170,7 +135,7 @@ export default function WorkspaceLayout() {
 
 
     return (
-        <WorkspaceDataProvider value={workspaceDataContextValue}>
+            <>
             {/* --- Desktop Layout --- */}
             <div className="main-content-area d-none d-lg-flex">
                 <PanelGroup direction="horizontal" onLayout={handleLayout}>
@@ -259,6 +224,6 @@ export default function WorkspaceLayout() {
                     <ContextBarContainer selectedNodes={selectedNodesWithData} />
                 </Offcanvas.Body>
             </Offcanvas>
-        </WorkspaceDataProvider>
+        </>
     );
 }
