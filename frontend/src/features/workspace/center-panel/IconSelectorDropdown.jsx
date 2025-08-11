@@ -170,7 +170,22 @@ export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId }
             </Dropdown.Toggle>
 
             <Dropdown.Menu align="end" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                {/* ... (Dropdown-Menü bleibt unverändert) ... */}
+                {iconGroups.map((group, groupIndex) => (
+                    <React.Fragment key={group.title}>
+                        {groupIndex > 0 && <Dropdown.Divider />}
+                        <Dropdown.Header>{group.title}</Dropdown.Header>
+                        {group.icons.map((icon) => (
+                            <Dropdown.Item
+                                key={icon.id}
+                                onClick={() => handleIconSelect(icon.id)}
+                                active={currentVersion.icon === icon.id}
+                            >
+                                <i className={`bx ${icon.id} me-2`}></i>
+                                {icon.name}
+                            </Dropdown.Item>
+                        ))}
+                    </React.Fragment>
+                ))}
             </Dropdown.Menu>
         </Dropdown>
     );

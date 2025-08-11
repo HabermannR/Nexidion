@@ -11,7 +11,7 @@ import "./ProjectTree.css";
 const ItemTypes = { NODE: "NODE" };
 
 // ============================================================================
-// TreeNode Komponente (bleibt unverändert, da sie die Handler als Props erhält)
+// TreeNode Komponente (Wurde wie gewünscht angepasst)
 // ============================================================================
 const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
     const wrapperRef = useRef(null);
@@ -58,17 +58,20 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
     const getLinkClassName = ({isActive}) => `node-link-content ${isActive ? "is-active" : ""}`;
     const wrapperClasses = `tree-node-wrapper ${isSelected ? "is-selected" : ""}`;
     const lineClasses = ["tree-node-line", isOver && canDrop && "is-drop-target", isOver && !canDrop && "is-drop-invalid"].filter(Boolean).join(" ");
-
+    const selectionAreaClasses = `selection-area ${!node.icon ? "no-icon-mode" : ""}`;
     return (
         <div ref={wrapperRef} className={wrapperClasses} style={{ opacity: isDragging ? 0.4 : 1 }}>
             <div ref={dropRef} className={lineClasses}>
                 <span className="collapse-icon" onClick={handleToggleExpand}>
                     {hasChildren && <i className={`bx ${isExpanded ? "bx-chevron-down" : "bx-chevron-right"}`}></i>}
                 </span>
-                <span className="selection-area" onClick={handleSelectNode}>
+                {/* NEU: Verwendet die dynamische Klasse */}
+                <span className={selectionAreaClasses} onClick={handleSelectNode}>
+                    {/* Checkboxen sind immer im DOM */}
                     <i className="selector-icon bx bx-checkbox"></i>
                     <i className="selector-icon-checked bx bxs-checkbox-checked"></i>
-                    <i className={`bx ${node.icon} node-icon`}></i>
+                    {/* Das Node-Icon wird nur gerendert, wenn es existiert */}
+                    {node.icon && <i className={`bx ${node.icon} node-icon`}></i>}
                 </span>
                 <NavLink
                     to={`/vaults/${node.vault_id}/nodes/${node.id}`}
@@ -99,6 +102,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
 });
 
 
+
 // ============================================================================
 // 3. HAUPTKOMPONENTE: ProjectTree (V4-Architektur mit useQuery & useMutation)
 // ============================================================================
@@ -112,7 +116,6 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyF
     const addNodeMutation = useMutation({
         mutationFn: (payload) => apiClient.post(`/api/vaults/${vaultId}/nodes/`, payload),
         onSuccess: (response) => {
-            console.log("Element erfolgreich erstellt!");
             // 1. Baum-Daten invalidieren, um die UI zu aktualisieren
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
             // 2. Zum neuen Element navigieren (ohne Reload-Tricks)
@@ -129,7 +132,6 @@ export default function ProjectTree({ treeData, isLoading, onNodeClick, isReadyF
         mutationFn: ({ nodeIdToMove, newParentId }) =>
             apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}`, { parent_id: newParentId }),
         onSuccess: () => {
-            console.log("Element erfolgreich verschoben!");
             // Baum-Daten invalidieren, um die UI zu aktualisieren. Keine Navigation nötig.
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
         },

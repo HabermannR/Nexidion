@@ -11,39 +11,35 @@
     transition: opacity 0.2s ease-in-out;
 }
 
-/* 1. DER WRAPPER & DIE LINIE */
+/* 1. DER WRAPPER & DIE LINIE (Unverändert) */
 /*----------------------------------------------------------------*/
 .tree-node-wrapper {
     /* Der Wrapper hat keine eigenen visuellen Stile mehr, um Vererbung zu vermeiden */
 }
 
-/* Die eigentliche Zeile, die alle interaktiven Elemente enthält */
 .tree-node-line {
     display: flex;
     align-items: center;
     padding: 2px 8px;
     border-radius: 4px;
     transition: background-color 0.15s ease-in-out;
-    cursor: grab; /* Zeigt an, dass das Element greifbar ist */
+    cursor: grab;
 }
 
-/* Der Hover-Effekt wird NUR auf die Zeile angewendet, über der die Maus schwebt. */
 .tree-node-line:hover {
     background-color: #eef5ff;
 }
 
-/* Der Selected-Zustand wird vom Wrapper-Zustand gesteuert, aber auf die Zeile angewendet. */
 .tree-node-wrapper.is-selected > .tree-node-line {
     background-color: #ddeaff;
 }
 
-/* Kombination: Wenn eine ausgewählte Zeile gehovert wird. */
 .tree-node-wrapper.is-selected > .tree-node-line:hover {
     background-color: #d0e2ff;
 }
 
 
-/* 2. DIE ICONS: NEUE LOGIK FÜR DAS GEWÜNSCHTE VERHALTEN */
+/* 2. DIE ICONS: LOGISCH RESTRUKTURIERT & KORRIGIERT */
 /*----------------------------------------------------------------*/
 .collapse-icon, .selection-area {
     display: flex;
@@ -69,64 +65,71 @@
     margin-right: 4px;
 }
 
-/* Basis-Stile für alle 3 Icons im Stapel */
+/* 2.1 Basis-Stile für alle Icons im Stapel */
 .selection-area .node-icon,
 .selection-area .selector-icon,
 .selection-area .selector-icon-checked {
     position: absolute;
     font-size: 1.2rem;
     color: #495057;
-    /* Wichtig: "color" zur Transition hinzufügen für den sanften Farbwechsel */
     transition: opacity 0.15s ease, color 0.15s ease;
-}
-
-/* Grundzustand: Nur das Standard-Icon ist sichtbar. */
-.selection-area .node-icon {
-    opacity: 1;
-}
-
-.selection-area .selector-icon,
-.selection-area .selector-icon-checked {
+    /* Grundzustand: Alle Icons sind erstmal unsichtbar */
     opacity: 0;
 }
 
-/* Zustand 1: Hover über eine NICHT ausgewählte Zeile. */
-/* Zeige die leere Checkbox als Interaktionshinweis. */
-.tree-node-wrapper:not(.is-selected) > .tree-node-line:hover .selection-area .node-icon {
-    opacity: 0;
-}
-
-.tree-node-wrapper:not(.is-selected) > .tree-node-line:hover .selection-area .selector-icon {
+/* 2.2 Regeln für Nodes MIT Icon (Standardfall) */
+/* Grundzustand: Nur das Node-Icon ist sichtbar */
+.selection-area:not(.no-icon-mode) .node-icon {
     opacity: 1;
 }
 
-/* Zustand 2: Eine Zeile ist ausgewählt, aber NICHT gehovert. (IHR WUNSCH) */
-/* Zeige das Standard-Icon, aber färbe es ein. */
-.tree-node-wrapper.is-selected > .tree-node-line .selection-area .node-icon {
-    opacity: 1;
-    color: #0d6efd; /* Das "eingefärbte" Icon */
-}
-
-/* Zustand 3: Hover über eine BEREITS ausgewählte Zeile. */
-/* Verstecke das gefärbte Icon und zeige stattdessen die volle Checkbox. */
-.tree-node-wrapper.is-selected > .tree-node-line:hover .selection-area .node-icon {
+/* Hover auf NICHT-ausgewähltem Node: Zeige leere Checkbox */
+.tree-node-wrapper:not(.is-selected) > .tree-node-line:hover .selection-area:not(.no-icon-mode) .node-icon {
     opacity: 0;
 }
+.tree-node-wrapper:not(.is-selected) > .tree-node-line:hover .selection-area:not(.no-icon-mode) .selector-icon {
+    opacity: 1;
+}
 
-.tree-node-wrapper.is-selected > .tree-node-line:hover .selection-area .selector-icon-checked {
+/* Ausgewählter Node (kein Hover): Zeige gefärbtes Node-Icon */
+.tree-node-wrapper.is-selected > .tree-node-line .selection-area:not(.no-icon-mode) .node-icon {
+    opacity: 1;
+    color: #0d6efd;
+}
+
+/* Hover auf BEREITS-ausgewähltem Node: Zeige volle Checkbox */
+.tree-node-wrapper.is-selected > .tree-node-line:hover .selection-area:not(.no-icon-mode) .node-icon {
+    opacity: 0;
+}
+.tree-node-wrapper.is-selected > .tree-node-line:hover .selection-area:not(.no-icon-mode) .selector-icon-checked {
+    opacity: 1;
+    color: #0d6efd;
+}
+
+/* 2.3 Regeln für Nodes OHNE Icon (Sonderfall .no-icon-mode) */
+/* Grundzustand: Leere Checkbox ist immer sichtbar */
+.selection-area.no-icon-mode .selector-icon {
+    opacity: 1;
+}
+
+/* Ausgewählter Node: Verstecke leere und zeige volle Checkbox */
+.tree-node-wrapper.is-selected > .tree-node-line .selection-area.no-icon-mode .selector-icon {
+    opacity: 0;
+}
+.tree-node-wrapper.is-selected > .tree-node-line .selection-area.no-icon-mode .selector-icon-checked {
     opacity: 1;
     color: #0d6efd;
 }
 
 
-/* 3. DER NAVLINK & DIE KIND-ELEMENTE */
+/* 3. DER NAVLINK & DIE KIND-ELEMENTE (Unverändert) */
 /*----------------------------------------------------------------*/
 .node-link-content {
     flex-grow: 1;
     text-decoration: none;
     color: #343a40;
     padding: 2px 6px;
-    min-width: 0; /* Wichtig für Flexbox, damit text-overflow funktioniert */
+    min-width: 0;
 }
 
 .node-title {
@@ -147,91 +150,44 @@
 }
 
 
-/* 4. NEU: DAS PLUS-ICON (DEZENTE VERSION) */
+/* 4. DAS PLUS-ICON (Unverändert) */
 /*----------------------------------------------------------------*/
 .add-node-icon {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-
-    /* Wieder klein, wie das Original */
     width: 20px;
     height: 20px;
     margin-left: 4px;
-
-    font-size: 1.3rem; /* Etwas größer für gute Sichtbarkeit */
-
-    /* Ein dezenter, moderner Grünton, nicht zu knallig */
+    font-size: 1.3rem;
     color: #2a9d8f;
-
     border-radius: 4px;
-
-    /* Standardmäßig unsichtbar */
     opacity: 0;
     transform: scale(0.8);
     transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.1s ease, color 0.1s ease;
 }
 
-/* Wird sichtbar, wenn über die GESAMTE Zeile gehovert wird */
 .tree-node-line:hover .add-node-icon {
     opacity: 1;
     transform: scale(1);
 }
 
-/* Interaktives Feedback: Leichter Hintergrund und dunklere Farbe beim Hover */
 .add-node-icon:hover {
-    /* Ein sehr heller, passender Hintergrund als Klick-Feedback */
     background-color: #eaf6f4;
-    /* Das Icon wird etwas dunkler, um den Hover-Zustand zu betonen */
     color: #268d80;
 }
 
-/* 5. NEU: STILE FÜR DRAG-AND-DROP */
+/* 5. STILE FÜR DRAG-AND-DROP (Unverändert) */
 /*----------------------------------------------------------------*/
-
-/* Visuelles Feedback für ein GÜLTIGES Ablageziel, über dem geschwebt wird */
 .tree-node-line.is-drop-target {
-    background-color: #e6f7ff; /* Helles Blau */
-    outline: 2px dashed #1890ff; /* Blauer gestrichelter Rahmen */
+    background-color: #e6f7ff;
+    outline: 2px dashed #1890ff;
     outline-offset: -2px;
 }
 
-/* Visuelles Feedback für ein UNGÜLTIGES Ablageziel */
 .tree-node-line.is-drop-invalid {
-    background-color: #fff1f0; /* Sehr helles Rot */
-    outline: 2px dashed #f5222d; /* Roter gestrichelter Rahmen */
+    background-color: #fff1f0;
+    outline: 2px dashed #f5222d;
     outline-offset: -2px;
-}
-
-/* Die folgenden Klassen werden nicht mehr genutzt, können aber hier verbleiben */
-.drag-preview-container {
-    position: fixed;
-    pointer-events: none;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-}
-
-.drag-preview-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background-color: white;
-    padding: 6px 12px;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    font-size: 0.9rem;
-    color: #333;
-}
-
-.drag-preview-child-count {
-    display: inline-block;
-    background-color: #e9ecef;
-    color: #495057;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 10px;
-    margin-left: 4px;
 }
