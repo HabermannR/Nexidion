@@ -1,4 +1,6 @@
-import React, { useState, useEffect,useMemo  } from 'react';
+// src/features/nodes/NodeContent.jsx
+
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Modal, Alert } from 'react-bootstrap';
@@ -7,13 +9,15 @@ import apiClient from '../../api/apiClient.js';
 import DiffViewer from '../../components/DiffViewer.jsx';
 
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
-import { useVaultTreeQuery } from './hooks/useVaultTreeQuery.js'; // The correct V4 way to get shared data
+import { useVaultTreeQuery } from './hooks/useVaultTreeQuery.js';
+import { useSaveNodeContent } from './hooks/useSaveNodeContent.js';
 
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
-import { useSaveNodeContent } from './hooks/useSaveNodeContent.js';
+import AppLoading from '../../components/AppLoading.jsx';
 
+// Hilfsfunktion bleibt unverändert.
 const findPathInTree = (nodes, nodeId, currentPath = []) => {
     for (const node of nodes) {
         const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${node.vault_id}/nodes/${node.id}`}];
@@ -26,75 +30,63 @@ const findPathInTree = (nodes, nodeId, currentPath = []) => {
     return null;
 };
 
+
 export default function NodeContent() {
+    // ==========================================================
+    // --- PHASE 1: ALLE HOOKS AUFRUFEN ---
+    // ==========================================================
     const { vaultId, nodeId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
-    const { data: queryData } = useVaultTreeQuery(vaultId);
 
-    // STABILISIERE treeData mit useMemo.
-    // Dieser Code erzeugt nur dann ein neues Array, wenn sich `queryData`
-    // (also die Daten von der API) tatsächlich ändert.
-    const treeData = useMemo(() => queryData?.tree || [], [queryData]);
-
-    const { data: versions, isLoading: isLoadingVersions, isError, error } = useQuery({
+    // DATENQUELLEN
+    const { data: vaultTreeData, isLoading: isTreeLoading, isError: isTreeError } = useVaultTreeQuery(vaultId);
+    const { data: versions, isLoading: isLoadingVersions, isError: isVersionsError } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
-        queryFn: () => {
-            return apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data);
-        },
-        enabled: !!vaultId && !!nodeId,
+        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data),
+        enabled: !!nodeId,
     });
 
+    // ZUSTAND
+    const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
+    // KORREKTUR: Wir nennen die Setter um, um Verwechslungen zu vermeiden
+    const setStoreDiffBase = useWorkspaceStore((state) => state.setDiffBase);
+    const clearStoreDiff = useWorkspaceStore((state) => state.clearDiff); // Eine dedizierte "Aufräum"-Aktion ist sauberer
+    const { base: selectedBaseVersion, compare: selectedCompareVersion } = useWorkspaceStore(state => state.diffSelection);
 
-    // --- Store Actions & Data  ---
-    const { setDiffBase, clearDiff } = useWorkspaceStore();
-    const { base: baseVersionData, compare: compareVersionData } = useWorkspaceStore(state => state.diffSelection);
-
-    // --- Lokaler UI Zustand  ---
     const [isEditing, setIsEditing] = useState(false);
     const [localContent, setLocalContent] = useState('');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
-
-
-    // ==========================================================
-    // --- Mutationen mit useMutation ---
-    // ==========================================================
-
-    const saveContentMutation = useSaveNodeContent({
-        onSuccess: () => {
-            setIsEditing(false);
-        },
-    });
-
+    const saveContentMutation = useSaveNodeContent({ onSuccess: () => setIsEditing(false) });
     const deleteNodeMutation = useMutation({
-        mutationFn: () => apiClient.delete(`/api/vaults/${vaultId}/nodes/${nodeId}`),
-        onSuccess: () => {
-            // Den Baum invalidieren, damit er sich aktualisiert
-            queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
-            // Weg navigieren, z.B. zum Parent oder Vault-Root
-            const parentId = baseVersionData?.parent_id;
-            navigate(parentId ? `/vaults/${vaultId}/nodes/${parentId}` : `/vaults/${vaultId}`);
+        mutationFn: (payload) => apiClient.delete(`/api/vaults/${payload.vaultId}/nodes/${payload.nodeId}`),
+        onSuccess: (data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['vaultTree', variables.vaultId] });
+            navigate(variables.parentId ? `/vaults/${variables.vaultId}/nodes/${variables.parentId}` : `/vaults/${variables.vaultId}`);
         },
-        onError: (err) => console.error("Fehler beim Löschen:", err),
     });
 
-
     // ==========================================================
-    // --- DATEN-SYNCHRONISATION & UI-UPDATES  ---
+    // --- PHASE 2: DATEN-SYNCHRONISATION & EFFEKTE ---
     // ==========================================================
-
     useEffect(() => {
-        if (treeData && nodeId) {
-            const path = findPathInTree(treeData, nodeId);
+        // Wenn sich die nodeId ändert, MÜSSEN wir den alten Zustand verwerfen.
+        // `clearDiff` sollte im Store `diffSelection: { base: null, compare: null }` setzen.
+        clearStoreDiff();
+    }, [nodeId, clearStoreDiff]);
+    // =======================================
+
+    // Dieser Effekt berechnet nur noch den Breadcrumb.
+    useEffect(() => {
+        if (vaultTreeData?.tree && nodeId) {
+            const path = findPathInTree(vaultTreeData.tree, nodeId);
             setBreadcrumbPath(path || []);
         } else {
             setBreadcrumbPath([]);
         }
-    }, [treeData, nodeId, setBreadcrumbPath]); // Correct dependency array
+    }, [vaultTreeData, nodeId, setBreadcrumbPath]);
 
-    // HOOK 2: Verantwortlich NUR für das SETZEN der Daten.
-    // Dieser Hook reagiert auf neue `versions`-Daten für den aktuellen Node.
+    // Dieser Effekt setzt den initialen Zustand, NACHDEM er zurückgesetzt wurde.
     useEffect(() => {
         if (versions && versions.length > 0) {
             const href = window.location.href;
@@ -103,124 +95,108 @@ export default function NodeContent() {
                 ? versions.find(v => String(v.version) === versionParam)
                 : versions[0];
 
+            // Die fehlerhafte Bedingung `!selectedBaseVersion` ist entfernt.
             if (initialBase) {
-                setDiffBase(initialBase);
-            } else {
-                // Dieser Block wird jetzt ausgeführt, wenn etwas schiefgeht.
-                console.error('[EFFECT] FEHLER: `initialBase` ist falsy. `setDiffBase` wird NICHT aufgerufen. `versions`-Array zur Analyse:', versions);
+                setStoreDiffBase(initialBase);
             }
-        } else if (versions) {
-            // Dieser Block fängt den Fall ab, dass die Query ein leeres Array zurückgegeben hat.
-            console.warn('[EFFECT] Bedingung `versions && versions.length > 0` ist NICHT erfüllt, weil das Array leer ist.');
         }
+    }, [versions, setStoreDiffBase]);
 
-    }, [versions, setDiffBase]); // Abhängigkeiten bleiben gleich
-
+    // Dieser Effekt reagiert auf jede Änderung der anzuzeigenden Version.
     useEffect(() => {
-        if (baseVersionData) {
-            setLocalContent(baseVersionData.content || '');
+        if (selectedBaseVersion) {
+            setLocalContent(selectedBaseVersion.content || '');
             setIsEditing(false);
         }
-    }, [baseVersionData]);
-
+    }, [selectedBaseVersion]);
 
     // ==========================================================
-    // --- HANDLER FÜR UI-AKTIONEN  ---
+    // --- PHASE 3: GUARD CLAUSES & BEDINGTE RETURNS ---
     // ==========================================================
-
-    const handleSave = () => {
-        // Der Hook erwartet ein Objekt mit nodeId, title und content
-        saveContentMutation.mutate({
-            nodeId: nodeId,
-            title: baseVersionData.title,
-            content: localContent,
-        });
-    };
-
-    const handleCancel = () => {
-        setLocalContent(baseVersionData?.content || '');
-        setIsEditing(false);
-    };
-
-    const handleDeleteConfirm = () => {
-        deleteNodeMutation.mutate();
-        setShowDeleteModal(false);
-    };
-    if (isLoadingVersions) {
-        return <p className="p-4">Lädt Dokument...</p>;
+    if (!nodeId) {
+        return <div className="p-4 text-center text-muted"><h4>Dokument auswählen</h4><p>Wähle ein Dokument aus der Navigation, um es hier anzuzeigen.</p></div>;
     }
 
-    if (isError) {
-        console.error("[NodeContent] Render: isError ist true. Fehlerobjekt:", error);
+    if (isTreeLoading || isLoadingVersions) {
+        return <AppLoading message="Lade Dokument..." />;
     }
 
-    if (!baseVersionData) {
-    }
-
-    if (isError || !baseVersionData) {
-        return <p className="p-4">Dokument konnte nicht geladen werden oder ist nicht vorhanden.</p>;
+    if (isTreeError || isVersionsError) {
+        return <Alert variant="danger" className="m-4"><h4>Fehler</h4><p>Das Dokument konnte nicht geladen werden.</p></Alert>;
     }
 
     // ==========================================================
-    // --- RENDER-LOGIK & DATENVORBEREITUNG  ---
+    // --- PHASE 4: VARIABLEN & DATEN FÜR RENDER-LOGIK ---
     // ==========================================================
+    const initialVersion = (versions && versions.length > 0) ? versions[0] : null;
 
-    // Ersetzt den navigation.state check
-    if (isLoadingVersions) {
-        return <p className="p-4">Lädt Dokument...</p>;
-    }
+    // Wir bestimmen, welche Version angezeigt wird: die vom User ausgewählte oder die initiale.
+    const currentBaseVersion = selectedBaseVersion || initialVersion;
 
-    if (isError || !baseVersionData) {
-        return <p className="p-4">Dokument konnte nicht geladen werden oder ist nicht vorhanden.</p>;
+    // Prüfe, ob wir nach allen Lade- und Fehlerprüfungen immer noch nichts zum Anzeigen haben.
+    if (!currentBaseVersion) {
+        return (
+            <Alert variant="warning" className="m-4">
+                <h4>Kein Inhalt</h4>
+                <p>Für dieses Dokument wurde noch kein Inhalt gefunden. Beginne mit dem Bearbeiten, um die erste Version zu erstellen.</p>
+            </Alert>
+        );
     }
 
     const isSaving = saveContentMutation.isPending;
-    const latestVersionId = versions?.[0]?.id;
-    const isViewingOldVersion = baseVersionData.id !== latestVersionId;
+    const isViewingOldVersion = currentBaseVersion.id !== versions[0]?.id;
 
-    let sortedOldVersion = baseVersionData;
-    let sortedNewVersion = compareVersionData;
-    if (compareVersionData && baseVersionData) {
-        if ((baseVersionData.version || 0) > (compareVersionData.version || 0)) {
-            sortedOldVersion = compareVersionData;
-            sortedNewVersion = baseVersionData;
+    let sortedOldVersion = currentBaseVersion;
+    let sortedNewVersion = selectedCompareVersion;
+    if (sortedNewVersion && currentBaseVersion) {
+        if ((currentBaseVersion.version || 0) > (sortedNewVersion.version || 0)) {
+            sortedOldVersion = sortedNewVersion;
+            sortedNewVersion = currentBaseVersion;
         }
     }
 
+    const handleDeleteConfirm = () => {
+        deleteNodeMutation.mutate({
+            vaultId: vaultId,
+            nodeId: nodeId,
+            parentId: currentBaseVersion.parent_id
+        });
+        setShowDeleteModal(false);
+    };
+
+    // ==========================================================
+    // --- PHASE 5: FINALES RETURN MIT JSX ---
+    // ==========================================================
     return (
         <>
             {isEditing ? (
                 <Alert variant="info">
                     {isViewingOldVersion
-                        ? `Sie bearbeiten Inhalt basierend auf Version ${baseVersionData.version}.`
+                        ? `Sie bearbeiten Inhalt basierend auf Version ${currentBaseVersion.version}.`
                         : 'Sie bearbeiten den aktuellen Inhalt.'}
-                    <br/>Beim Speichern wird eine neue, aktuelle Version erstellt.
+                    <br />Beim Speichern wird eine neue, aktuelle Version erstellt.
                 </Alert>
             ) : (
                 <ContentHeader
-                    currentVersion={baseVersionData}
+                    currentVersion={currentBaseVersion}
                     vaultId={vaultId}
                     isEditing={isEditing}
                     onEditClick={() => setIsEditing(true)}
                     onDeleteClick={() => setShowDeleteModal(true)}
                 />
             )}
-
             <hr />
-
             {isEditing ? (
                 <>
                     <NodeEditor content={localContent} onContentChange={setLocalContent} />
                     <div className="d-flex justify-content-end mt-3">
-                        <Button variant="secondary" onClick={handleCancel} className="me-2" disabled={isSaving}>
-                            Abbrechen
-                        </Button>
-                        <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+                        <Button variant="secondary" onClick={() => setIsEditing(false)} className="me-2" disabled={isSaving}>Abbrechen</Button>
+                        <Button variant="primary" onClick={() => saveContentMutation.mutate({ nodeId, title: currentBaseVersion.title, content: localContent })} disabled={isSaving}>
                             {isSaving ? 'Speichert...' : 'Als neue Version speichern'}
                         </Button>
                     </div>
                 </>
-            ) : compareVersionData ? (
+            ) : sortedNewVersion ? (
                 <DiffViewer
                     oldContent={sortedOldVersion?.content || ''}
                     newContent={sortedNewVersion?.content || ''}
@@ -228,15 +204,14 @@ export default function NodeContent() {
                     newTitle={`v${sortedNewVersion?.version}: ${new Date(sortedNewVersion.timestamp).toLocaleString('de-DE')}`}
                 />
             ) : (
-                <MarkdownRenderer content={baseVersionData.content || ''} />
+                <MarkdownRenderer content={currentBaseVersion.content || ''} />
             )}
-
             <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
                 <Modal.Header closeButton>
                     <Modal.Title>Dokument löschen</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    Sind Sie sicher, dass Sie "<strong>{baseVersionData?.title}</strong>" endgültig löschen möchten?
+                    Sind Sie sicher, dass Sie "<strong>{currentBaseVersion.title}</strong>" endgültig löschen möchten?
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowDeleteModal(false)} disabled={deleteNodeMutation.isPending}>Abbrechen</Button>

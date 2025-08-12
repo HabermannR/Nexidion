@@ -41,9 +41,10 @@ def login():
 @jwt_required()
 def get_current_user_profile():
     current_user_id = int(get_jwt_identity())
-    user = auth_service.get_user_by_id(current_user_id) # Ruft den Service auf
+    user = auth_service.get_user_by_id(current_user_id)
     if user:
-        return jsonify(user=user.to_dict()), 200
+        # GEÄNDERT: Gib das User-Objekt direkt zurück, nicht verschachtelt.
+        return jsonify(user.to_dict()), 200
     return jsonify({"error": "User not found"}), 404
 
 @auth_bp.route('/change-password', methods=['POST'], strict_slashes=False)

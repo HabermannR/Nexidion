@@ -1,5 +1,40 @@
 /* ==================================================================== */
-/*          FINALE, KUGELSICHERE STEUERUNG FÜR DEN BUTTON              */
+/*          1. DAS WICHTIGSTE: DAS SCROLL-LAYOUT                      */
+/* ==================================================================== */
+
+/* Der Haupt-Wrapper.
+   - Er wird zu einem Flex-Container, der seine Kinder (Button, Liste)
+     vertikal anordnet.
+   - height: 100% ist entscheidend, damit er den verfügbaren Platz in
+     seinem Elternelement (z.B. der Tab-Pane) einnimmt.
+*/
+.version-history-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* <-- Das ist der Schlüssel! */
+    max-height: 100%;
+}
+
+/* Der Bereich, der scrollen soll.
+   - flex-grow: 1; sagt ihm: "Nimm allen verbleibenden Platz ein".
+   - overflow-y: auto; zeigt die Scrollleiste nur bei Bedarf an.
+   - min-height: 0; ist ein wichtiger Flexbox-Fix, der verhindert,
+     dass das Element größer wird als sein zugewiesener Platz.
+*/
+.version-list-scroll-area {
+    flex-grow: 1;          /* <-- Extrem wichtig */
+    overflow-y: auto;      /* <-- Scrollen aktivieren */
+    min-height: 0;         /* <-- Flexbox "Magic Fix" */
+}
+
+/* Der "Zurück zur aktuellen Version"-Button soll nicht wachsen oder schrumpfen */
+.version-history-container > .px-1.pb-2.flex-shrink-0 {
+    flex-shrink: 0;
+}
+
+
+/* ==================================================================== */
+/*          2. DEIN BUTTON-STYLING (FUNKTIONIERT GUT!)                 */
 /*      (Jetzt mit Unterscheidung zwischen Touch- und Maus-Geräten)   */
 /* ==================================================================== */
 
@@ -20,9 +55,7 @@
     color: white !important;
 }
 
-/* Der große klickbare Bereich bekommt den Pointer-Cursor.
-   (Dieser wird bereits durch dein inline-style gesetzt, aber hier als
-   allgemeine Regel ist es sauberer.) */
+/* Der große klickbare Bereich bekommt den Pointer-Cursor. */
 .version-list-item .flex-grow-1 {
     cursor: pointer;
 }
@@ -33,16 +66,11 @@
 @media (hover: hover) and (pointer: fine) {
 
     /* REGEL 1: HOVER-EFFEKT FÜR DEN GROSSEN BEREICH */
-    /* Fügt dem gesamten Listeneintrag einen dezenten Hintergrund hinzu, wenn man
-       darüberfährt. :not(.active) verhindert, dass der bereits ausgewählte
-       (blaue) Eintrag diesen Effekt bekommt. */
-    .version-list-item:not(.active):hover {
+    .version-list-item:not(.active):not(.diff-compare-active):hover {
         background-color: #f8f9fa; /* Ein sehr helles, neutrales Grau */
     }
 
     /* REGEL 2: HOVER-EFFEKT NUR FÜR DEN BUTTON */
-    /* Diese Regeln sind wieder direkt an den Button gekoppelt (.btn-outline-info:hover)
-       und funktionieren völlig unabhängig von der obigen Regel. */
 
     /* Hover-Zustand für den normalen, NICHT-AKTIVEN Button */
     .version-list-item:not(.diff-compare-active) .btn-outline-info:hover {
