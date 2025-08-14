@@ -445,18 +445,35 @@ def test_generate_with_claude_streaming_calls_api_correctly(mock_anthropic_clien
     und den Stream korrekt verarbeitet.
     """
     # 1. ARRANGE
-    # Mocke die Konfiguration, die von der Funktion verwendet wird
     mocker.patch('backend.services.llm_service.current_app.config', {
         'ANTHROPIC_API_KEY': 'fake-api-key'
     })
 
-    # Erstelle einen Mock für den Stream-Kontextmanager und den Text-Stream
-    mock_stream_context = MagicMock()
-    mock_stream_context.text_stream = iter(["Hello", ", ", "Claude!"])
+    # --- KORREKTUR START ---
 
-    # Der Aufruf von client.messages.stream soll unseren Mock-Kontextmanager zurückgeben
+    # Erstelle eine Liste von Mock-Events, die die echte API-Antwort nachahmen.
+    # Jedes Event braucht die Attribute, die dein Code erwartet (.type, .delta.text).
+    mock_events = []
+    text_chunks = ["Hello", ", ", "Claude!"]
+    for chunk in text_chunks:
+        # Erstelle ein Mock-Event für jeden Text-Chunk
+        mock_event = MagicMock()
+        mock_event.type = "content_block_delta"
+        mock_event.delta.text = chunk
+        mock_events.append(mock_event)
+
+    # Erstelle einen Mock für das Stream-Objekt selbst.
+    mock_stream = MagicMock()
+    # Sorge dafür, dass der Mock iterierbar ist und unsere Mock-Events zurückgibt.
+    # Die __iter__ Methode wird aufgerufen, wenn die for-Schleife beginnt.
+    mock_stream.__iter__.return_value = iter(mock_events)
+
+    # Der Aufruf von client.messages.stream(...) gibt einen Kontextmanager zurück.
+    # Wenn dieser mit 'with' betreten wird, soll er unser iterierbares mock_stream-Objekt liefern.
     mock_anthropic_instance = mock_anthropic_client.return_value
-    mock_anthropic_instance.messages.stream.return_value.__enter__.return_value = mock_stream_context
+    mock_anthropic_instance.messages.stream.return_value.__enter__.return_value = mock_stream
+
+    # --- KORREKTUR ENDE ---
 
     # Testdaten
     messages = [{"role": "user", "content": "Hi there"}]
@@ -464,22 +481,19 @@ def test_generate_with_claude_streaming_calls_api_correctly(mock_anthropic_clien
     model = "claude-3-haiku-20240307"
 
     # 2. ACT
-    # Rufe die Funktion auf und konsumiere den Generator
     result_chunks = list(llm_service._generate_with_claude_streaming(messages, system_prompt, model, 1024))
     full_result = "".join(result_chunks)
 
     # 3. ASSERT
-    # Wurde der Anthropic-Client mit dem API-Key initialisiert?
     mock_anthropic_client.assert_called_once_with(api_key='fake-api-key')
 
-    # Wurde die stream-Methode mit den korrekten Parametern aufgerufen?
     mock_anthropic_instance.messages.stream.assert_called_once_with(
         model=model,
         system=system_prompt,
         messages=messages,
         max_tokens=1024,
-        temperature=ANY  # Wir kümmern uns nicht um den exakten Temperaturwert
+        temperature=ANY
     )
 
-    # Ist das Ergebnis korrekt zusammengesetzt?
+    # Dieser Assert sollte jetzt erfolgreich sein!
     assert full_result == "Hello, Claude!"

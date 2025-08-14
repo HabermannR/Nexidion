@@ -69,6 +69,64 @@ def get_nodes(vault_id: int):
         return jsonify({"error": f"An internal error occurred: {e}"}), 500
 
 
+@nodes_bp.route('/search', methods=['GET'], strict_slashes=False)
+@jwt_required()
+def search_nodes_by_title(vault_id: int):
+    """
+    Sucht nach Nodes basierend auf einem Titel-Fragment für eine Autocomplete-UI.
+    Gibt eine schlanke Liste von bis zu 10 passenden Nodes zurück.
+
+    Query-Parameter:
+        q (str): Der Suchbegriff, nach dem im Titel gesucht wird.
+    """
+    user_id = int(get_jwt_identity())
+    # Hole den Suchbegriff aus den Query-Parametern. 'q' ist eine gängige Konvention.
+    query = request.args.get('q', '').strip()
+
+    # Optional: Eine Suche erst starten, wenn der Nutzer mindestens 2 Zeichen getippt hat.
+    # Das schont die Datenbank und verhindert zu viele unspezifische Ergebnisse.
+    if len(query) < 2:
+        return jsonify([])
+
+    try:
+        # Rufe die dedizierte Service-Funktion auf, die die Logik enthält.
+        nodes = node_service.search_nodes_for_autocomplete(query, vault_id, user_id)
+        # Die Service-Funktion gibt bereits das korrekte Format zurück.
+        return jsonify(nodes)
+
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        # Logge den eigentlichen Fehler für die Fehlersuche.
+        logging.error(f"Error during node search in vault {vault_id}: {e}", exc_info=True)
+        # Gib eine generische Fehlermeldung an den Client zurück.
+        return jsonify({"error": "An internal server error occurred during search"}), 500
+
+@nodes_bp.route('/resolve-links', methods=['POST'], strict_slashes=False)
+@jwt_required()
+def resolve_internal_links(vault_id: int):
+    """
+    Nimmt eine Liste von Link-Zielen (UUIDs oder Titel) entgegen und versucht,
+    sie aufzulösen. Gibt den Status für jedes Ziel zurück.
+    """
+    user_id = int(get_jwt_identity())
+    data = request.json
+    targets = data.get('targets')
+
+    if not isinstance(targets, list):
+        return jsonify({"error": "Request body must contain a list of 'targets'."}), 400
+
+    try:
+        # Hier rufen wir eine neue Service-Funktion auf, die die ganze Logik kapselt.
+        results = node_service.resolve_link_targets(targets, vault_id, user_id)
+        return jsonify({"results": results})
+
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        logging.error(f"Error resolving links in vault {vault_id}: {e}", exc_info=True)
+        return jsonify({"error": "An internal server error occurred"}), 500
+
 @nodes_bp.route('/bulk-get', methods=['POST'], strict_slashes=False)
 @jwt_required()
 def get_multiple_nodes(vault_id: int):

@@ -449,3 +449,143 @@ def test_api_update_node_icon_with_missing_key_returns_400(client, auth_headers_
     # ASSERT
     assert response.status_code == 400
     assert "Request body must contain 'icon'" in response.get_json()['error']
+
+
+class TestInternalLinkingAPI:
+    """Eine Klasse, um alle Tests für interne Links zu gruppieren."""
+
+    def test_search_for_autocomplete_success(self, client, auth_headers_1, test_vault_1_obj):
+        """Testet den /search Endpunkt für Autocomplete."""
+        # ARRANGE
+        vault_id = test_vault_1_obj.id
+        create_test_node(client, auth_headers_1, vault_id, "Apfelkuchen Rezept")
+        create_test_node(client, auth_headers_1, vault_id, "Apfelstrudel Anleitung")
+        create_test_node(client, auth_headers_1, vault_id, "Bananenbrot")
+
+        # ACT
+        response = client.get(f'/api/vaults/{vault_id}/nodes/search?q=Apfel', headers=auth_headers_1)
+
+        # ASSERT
+        assert response.status_code == 200
+        data = response.get_json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+        titles = {item['title'] for item in data}
+        assert "Apfelkuchen Rezept" in titles
+        assert "Apfelstrudel Anleitung" in titles
+
+    def test_search_case_insensitive(self, client, auth_headers_1, test_vault_1_obj):
+        """Stellt sicher, dass die Suche nicht auf Groß-/Kleinschreibung achtet."""
+        vault_id = test_vault_1_obj.id
+        create_test_node(client, auth_headers_1, vault_id, "Grossbuchstabe")
+
+        response = client.get(f'/api/vaults/{vault_id}/nodes/search?q=gross', headers=auth_headers_1)
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert len(data) == 1
+        assert data[0]['title'] == "Grossbuchstabe"
+
+    def test_search_no_results(self, client, auth_headers_1, test_vault_1_obj):
+        """Testet eine Suche, die keine Ergebnisse liefert."""
+        vault_id = test_vault_1_obj.id
+        response = client.get(f'/api/vaults/{vault_id}/nodes/search?q=NichtExistent', headers=auth_headers_1)
+        assert response.status_code == 200
+        assert response.get_json() == []
+
+    def test_search_requires_min_length(self, client, auth_headers_1, test_vault_1_obj):
+        """Testet, dass die Suche bei zu kurzen Anfragen eine leere Liste zurückgibt."""
+        vault_id = test_vault_1_obj.id
+        response = client.get(f'/api/vaults/{vault_id}/nodes/search?q=A', headers=auth_headers_1)
+        assert response.status_code == 200
+        assert response.get_json() == []
+
+    def test_search_permission_denied(self, client, auth_headers_2, test_vault_1_obj):
+        """User 2 darf nicht im Vault von User 1 suchen."""
+        vault_id = test_vault_1_obj.id
+        response = client.get(f'/api/vaults/{vault_id}/nodes/search?q=test', headers=auth_headers_2)
+        assert response.status_code == 403
+
+    def test_resolve_links_mixed_scenarios(self, client, auth_headers_1, test_vault_1_obj):
+        """
+        Ein umfassender Test für /resolve-links mit allen denkbaren Szenarien in einem Aufruf.
+        """
+        # ARRANGE
+        vault_id = test_vault_1_obj.id
+        # 1. Eindeutiger starker Link
+        strong_link_node = create_test_node(client, auth_headers_1, vault_id, "Starker Link Node")
+        # 2. Eindeutiger schwacher Link
+        weak_link_node = create_test_node(client, auth_headers_1, vault_id, "Schwacher Link Eindeutig")
+        # 3. Mehrdeutiger schwacher Link
+        create_test_node(client, auth_headers_1, vault_id, "Mehrdeutiger Titel")
+        create_test_node(client, auth_headers_1, vault_id, "Mehrdeutiger Titel")
+        # 4. Nicht existierende Ziele
+        unresolved_uuid = "11111111-1111-1111-1111-111111111111"
+        unresolved_title = "Diesen Titel gibt es nicht"
+
+        payload = {
+            "targets": [
+                strong_link_node['id'],
+                "Schwacher Link Eindeutig",
+                "Mehrdeutiger Titel",
+                unresolved_uuid,
+                unresolved_title
+            ]
+        }
+
+        # ACT
+        response = client.post(f'/api/vaults/{vault_id}/nodes/resolve-links', headers=auth_headers_1, json=payload)
+
+        # ASSERT
+        assert response.status_code == 200
+        data = response.get_json()
+        results = data['results']
+
+        # Überprüfe jeden Fall
+        # 1. Starker Link -> resolved
+        assert results[strong_link_node['id']]['status'] == 'resolved'
+        assert results[strong_link_node['id']]['node']['id'] == strong_link_node['id']
+        assert results[strong_link_node['id']]['node']['title'] == "Starker Link Node"
+
+        # 2. Schwacher Link -> resolved
+        assert results["Schwacher Link Eindeutig"]['status'] == 'resolved'
+        assert results["Schwacher Link Eindeutig"]['node']['id'] == weak_link_node['id']
+
+        # 3. Mehrdeutiger Link -> ambiguous
+        assert results["Mehrdeutiger Titel"]['status'] == 'ambiguous'
+        assert results["Mehrdeutiger Titel"]['matchCount'] == 2
+
+        # 4. Nicht gefundene Links -> unresolved
+        assert results[unresolved_uuid]['status'] == 'unresolved'
+        assert results[unresolved_title]['status'] == 'unresolved'
+
+    def test_resolve_links_permission_denied(self, client, auth_headers_1, auth_headers_2, test_vault_1_obj):
+        """User 2 darf keine Links im Vault von User 1 auflösen."""
+        vault_id = test_vault_1_obj.id
+        node = create_test_node(client, auth_headers_1, vault_id, "Ein Test-Node")
+
+        payload = {"targets": [node['id']]}
+        response = client.post(f'/api/vaults/{vault_id}/nodes/resolve-links', headers=auth_headers_2, json=payload)
+
+        assert response.status_code == 403
+
+    def test_resolve_links_with_empty_targets_list(self, client, auth_headers_1, test_vault_1_obj):
+        """Testet, dass eine leere `targets`-Liste ein leeres Ergebnis-Objekt zurückgibt."""
+        vault_id = test_vault_1_obj.id
+        payload = {"targets": []}
+        response = client.post(f'/api/vaults/{vault_id}/nodes/resolve-links', headers=auth_headers_1, json=payload)
+
+        assert response.status_code == 200
+        assert response.get_json() == {"results": {}}
+
+    @pytest.mark.parametrize("invalid_payload", [
+        ({"foo": "bar"}),  # Falscher Key
+        ({"targets": "not a list"}),  # Falscher Datentyp
+    ])
+    def test_resolve_links_invalid_payload(self, client, auth_headers_1, test_vault_1_obj, invalid_payload):
+        """Testet, dass ein ungültiger Payload zu einem 400 Bad Request führt."""
+        vault_id = test_vault_1_obj.id
+        response = client.post(f'/api/vaults/{vault_id}/nodes/resolve-links', headers=auth_headers_1,
+                               json=invalid_payload)
+        assert response.status_code == 400

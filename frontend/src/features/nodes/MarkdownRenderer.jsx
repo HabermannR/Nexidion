@@ -1,50 +1,44 @@
-// IN: src/features/workspace/center-panel/MarkdownRenderer.jsx
-
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw'; // WICHTIG: Neues Plugin importieren
 
-// NEU: Wir importieren die ResizableImage-Komponente anstelle von SecureImage.
-// Sie enthält bereits die SecureImage-Logik.
-import ResizableImage from '../../components/ResizableImage.jsx'; // Passe den Pfad ggf. an
-
+import wikiLinkPlugin from '@nexidion/remark-internal-links';
+import InternalLink from './InternalLink';
+import ResizableImage from '../../components/ResizableImage.jsx';
 import './MarkdownRenderer.css';
 
-/**
- * Eine Wrapper-Komponente, die einen Markdown-String entgegennimmt
- * und ihn als formatiertes HTML rendert.
- *
- * NEU: Sie fängt alle `<img>`-Tags ab und rendert sie über die
- * `ResizableImage`-Komponente, die sowohl sicheres Laden als auch
- * interaktive Größenanpassung ermöglicht.
- */
 export default function MarkdownRenderer({ content }) {
-    if (!content) {
-        return (
-            <div className="p-4 bg-light rounded text-muted">
-                Dieses Dokument hat keinen Inhalt.
-            </div>
-        );
-    }
-
     const markdownComponents = {
-        // Jedes Mal, wenn ReactMarkdown auf ein Bild stößt, wird diese Funktion aufgerufen.
-        img: ({ node, ...props }) => {
-            // ==========================================================
-            // DIE EINZIGE ÄNDERUNG: Wir verwenden jetzt den Wrapper.
-            // ==========================================================
-            // Wir geben die Props einfach an unsere neue ResizableImage-Komponente weiter.
-            return <ResizableImage {...props} />;
-        }
+        // Wir fangen alle <span>-Tags ab.
+        span: ({ node, children, ...props }) => {
+            // Wir prüfen, ob es einer unserer speziellen Links ist.
+            if (props['data-target']) {
+                const target = decodeURIComponent(props['data-target']);
+                const displayText = decodeURIComponent(props['data-display-text']);
+
+                // Wir rendern unsere intelligente React-Komponente.
+                return <InternalLink target={target} displayText={displayText} />;
+            }
+
+            // Ansonsten ist es ein normaler Span, den wir einfach durchreichen.
+            return <span {...props}>{children}</span>;
+        },
+
+        // Die anderen Renderer bleiben wie gewohnt.
+        img: ({ node, ...props }) => <ResizableImage {...props} />,
+        a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
     };
 
     return (
         <div className="markdown-body">
             <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, wikiLinkPlugin]}
+                // WICHTIG: Erlaube das Rendern von rohem HTML, das unser Plugin erzeugt.
+                rehypePlugins={[rehypeRaw]}
                 components={markdownComponents}
             >
-                {content}
+                {content || ''}
             </ReactMarkdown>
         </div>
     );

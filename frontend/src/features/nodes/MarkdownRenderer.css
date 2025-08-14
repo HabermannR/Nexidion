@@ -131,3 +131,33 @@
         font-size: 16px;
     }
 }
+
+/* Basis-Styling für alle internen Links */
+.internal-link {
+    color: #0969da; /* Ein Standard-Blau, ähnlich wie bei GitHub */
+    text-decoration: none;
+    background-color: transparent;
+    cursor: pointer;
+}
+
+.internal-link:hover {
+    text-decoration: underline;
+}
+
+/* Styling für den Zustand, während der Link aufgelöst wird */
+.internal-link.resolving {
+    color: #6a737d; /* Ein neutrales Grau */
+    cursor: wait;
+}
+
+/* Styling für erfolgreich aufgelöste Links (kann gleich bleiben wie der Basis-Style) */
+.internal-link.resolved {
+    /* Standard-Link-Farbe ist hier meistens ausreichend */
+}
+
+/* WICHTIG: Styling für kaputte/nicht gefundene Links */
+.internal-link.broken {
+    color: #cf222e; /* Ein deutliches Rot */
+    text-decoration: line-through;
+    cursor: not-allowed;
+}

@@ -549,3 +549,137 @@ def test_update_node_icon_does_not_create_new_version(db_session, test_user_1_ob
     # 3. Es existiert nur EINE Version in der Datenbank. Das ist der entscheidende Test.
     version_count = db_session.session.query(Version).filter_by(node_id=node_id).count()
     assert version_count == 1
+
+
+class TestInternalLinkingService:
+    """Eine Klasse, um alle Service-Tests für interne Links zu gruppieren."""
+
+    def test_search_for_autocomplete_service(self, db_session, test_user_1_obj):
+        """Testet die Kernlogik der Autocomplete-Suche im Service."""
+        # ARRANGE
+        user_id = test_user_1_obj.id
+        vault = vault_service.create_vault("Search-Test Vault", user_id)
+        vault_id = vault.id
+
+        node_service.create_node("Final Fantasy VII", "", None, vault_id, user_id)
+        node_service.create_node("Final Fantasy X", "", None, vault_id, user_id)
+        node_service.create_node("Chrono Trigger", "", None, vault_id, user_id)
+
+        # ACT
+        results = node_service.search_nodes_for_autocomplete("Final", vault_id, user_id)
+
+        # ASSERT
+        assert len(results) == 2
+        titles = {item['title'] for item in results}
+        assert "Final Fantasy VII" in titles
+        assert "Final Fantasy X" in titles
+        assert "id" in results[0]  # Stelle sicher, dass das Format stimmt
+
+    def test_search_for_autocomplete_is_case_insensitive(self, db_session, test_user_1_obj):
+        """Stellt sicher, dass die Service-Suche case-insensitive ist."""
+        user_id = test_user_1_obj.id
+        vault = vault_service.create_vault("Case-Test Vault", user_id)
+        vault_id = vault.id
+
+        node_service.create_node("Ein Test mit GROSSBUCHSTABEN", "", None, vault_id, user_id)
+
+        results = node_service.search_nodes_for_autocomplete("grossbuchstaben", vault_id, user_id)
+
+        assert len(results) == 1
+        assert results[0]['title'] == "Ein Test mit GROSSBUCHSTABEN"
+
+    def test_search_for_autocomplete_respects_vault_boundaries(self, db_session, test_user_1_obj, test_user_2_obj):
+        """Stellt sicher, dass die Suche nur im angegebenen Vault sucht."""
+        user1_id, user2_id = test_user_1_obj.id, test_user_2_obj.id
+        vault1 = vault_service.create_vault("Vault 1", user1_id)
+        vault2 = vault_service.create_vault("Vault 2", user2_id)
+
+        # Beide User erstellen einen Node mit ähnlichem Titel in ihrem jeweiligen Vault
+        node_service.create_node("Gemeinsamer Titel", "", None, vault1.id, user1_id)
+        node_service.create_node("Gemeinsamer Titel", "", None, vault2.id, user2_id)
+
+        # ACT: Suche als User 1 im Vault 1
+        results = node_service.search_nodes_for_autocomplete("Gemeinsamer", vault1.id, user1_id)
+
+        # ASSERT: Es sollte nur ein Ergebnis aus Vault 1 gefunden werden
+        assert len(results) == 1
+
+        # Überprüfe den Node, um sicherzugehen, dass es der richtige ist (optional, aber gut)
+        node_id = results[0]['id']
+        node_from_db = db_session.session.get(Node, node_id)
+        assert node_from_db.vault_id == vault1.id
+
+    def test_resolve_link_targets_service_mixed_scenarios(self, db_session, test_user_1_obj):
+        """
+        Ein umfassender Service-Test für `resolve_link_targets` mit allen Szenarien.
+        """
+        # ARRANGE
+        user_id = test_user_1_obj.id
+        vault = vault_service.create_vault("Resolve-Test Vault", user_id)
+        vault_id = vault.id
+
+        # 1. Eindeutiger starker Link
+        strong_node = node_service.create_node("Starker Link", "", None, vault_id, user_id)
+        # 2. Eindeutiger schwacher Link
+        weak_node = node_service.create_node("Schwacher Link", "", None, vault_id, user_id)
+        # 3. Mehrdeutiger schwacher Link
+        node_service.create_node("Mehrdeutig", "", None, vault_id, user_id)
+        node_service.create_node("Mehrdeutig", "", None, vault_id, user_id)
+        # 4. Nicht existierende Ziele
+        unresolved_uuid = "00000000-1111-2222-3333-444444444444"
+        unresolved_title = "Diesen Titel gibt es nicht"
+
+        targets = [
+            strong_node.id,
+            "Schwacher Link",
+            "Mehrdeutig",
+            unresolved_uuid,
+            unresolved_title
+        ]
+
+        # ACT
+        results = node_service.resolve_link_targets(targets, vault_id, user_id)
+
+        # ASSERT
+        assert isinstance(results, dict)
+
+        # 1. Starker Link -> resolved
+        assert results[strong_node.id]['status'] == 'resolved'
+        assert results[strong_node.id]['node']['id'] == strong_node.id
+
+        # 2. Schwacher Link -> resolved
+        assert results["Schwacher Link"]['status'] == 'resolved'
+        assert results["Schwacher Link"]['node']['id'] == weak_node.id
+
+        # 3. Mehrdeutiger Link -> ambiguous
+        assert results["Mehrdeutig"]['status'] == 'ambiguous'
+        assert results["Mehrdeutig"]['matchCount'] == 2
+
+        # 4. Nicht gefundene Links -> unresolved
+        assert results[unresolved_uuid]['status'] == 'unresolved'
+        assert results[unresolved_title]['status'] == 'unresolved'
+
+    def test_resolve_link_targets_permission_error(self, db_session, test_user_1_obj, test_user_2_obj):
+        """Testet, dass die Funktion eine PermissionError auslöst, wenn der falsche User anfragt."""
+        user1_id, user2_id = test_user_1_obj.id, test_user_2_obj.id
+        vault1 = vault_service.create_vault("Permission Test Vault", user1_id)
+
+        node = node_service.create_node("Geheimer Node", "", None, vault1.id, user1_id)
+
+        with pytest.raises(PermissionError):
+            node_service.resolve_link_targets([node.id], vault1.id, user2_id)
+
+    def test_resolve_link_targets_handles_case_insensitivity(self, db_session, test_user_1_obj):
+        """Stellt sicher, dass die Titelauflösung case-insensitive ist."""
+        user_id = test_user_1_obj.id
+        vault = vault_service.create_vault("Case-Insensitive-Resolve Vault", user_id)
+        vault_id = vault.id
+
+        node = node_service.create_node("Ein Titel mit Case", "", None, vault_id, user_id)
+
+        # ACT: Suche mit kleingeschriebenem Titel
+        results = node_service.resolve_link_targets(["ein titel mit case"], vault_id, user_id)
+
+        # ASSERT
+        assert results["ein titel mit case"]['status'] == 'resolved'
+        assert results["ein titel mit case"]['node']['id'] == node.id

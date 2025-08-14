@@ -3,6 +3,7 @@
 from typing import List, Dict, Any, Optional, Set
 from sqlalchemy.orm import joinedload, subqueryload, contains_eager, with_parent
 from sqlalchemy import case, func, select
+import re
 
 # Importiere die Services und Modelle
 from .vault_service import _verify_vault_access
@@ -347,6 +348,129 @@ def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int) -> D
     full_content = "\n\n".join(ordered_contents)
     return {"titles": ordered_titles, "content": full_content}
 
+
+# Ein kompilierter Regex zur schnellen Unterscheidung von UUIDs und Titeln.
+# Er wird außerhalb der Funktion definiert, damit er nicht bei jedem Aufruf neu kompiliert wird.
+UUID_REGEX = re.compile(r'^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$', re.IGNORECASE)
+
+
+def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dict:
+    """
+    Löst eine Liste von Link-Zielen (UUIDs oder Titel) auf und gibt deren Status zurück.
+    Dies ist eine hocheffiziente "Batch"-Operation.
+    """
+    _verify_vault_access(vault_id, user_id)
+    if not targets:
+        return {}
+
+    # Trenne die Ziele in potenzielle UUIDs und Titel für separate Abfragen.
+    # Wir verwenden Sets für eine effiziente Verarbeitung und zur Vermeidung von Duplikaten.
+    potential_uuids = {t for t in targets if UUID_REGEX.match(t)}
+    potential_titles = {t for t in targets if t not in potential_uuids}
+
+    results = {}
+
+    # 1. Verarbeite starke Links (UUIDs)
+    if potential_uuids:
+        # Führe eine "sanfte" Abfrage durch: Gib mir alle Nodes, die du mit diesen UUIDs
+        # im richtigen Vault finden kannst. Ignoriere die, die nicht existieren.
+        found_nodes = (
+            Node.query
+            .filter(
+                Node.id.in_(potential_uuids),
+                Node.vault_id == vault_id
+            ).all()
+        )
+        found_ids_map = {node.id: node for node in found_nodes}
+
+        for uuid in potential_uuids:
+            if uuid in found_ids_map:
+                node = found_ids_map[uuid]
+                results[uuid] = {
+                    "status": "resolved",
+                    "node": {"id": node.id, "title": node.title}
+                }
+            else:
+                results[uuid] = {"status": "unresolved"}
+
+    # 2. Verarbeite schwache Links (Titel)
+    if potential_titles:
+        # Finde alle Nodes im Vault, deren aktueller Versionstitel (case-insensitive)
+        # einem der gesuchten Titel entspricht.
+        # SQLAlchemy's `ilike` ist perfekt für case-insensitive exakte Treffer.
+        found_nodes_by_title = (
+            db.session.query(Node)
+            .join(Node.current_version_object)
+            .filter(
+                Node.vault_id == vault_id,
+                # Wir konvertieren sowohl den Spaltenwert als auch die Suchbegriffe
+                # in Kleinbuchstaben, um einen case-insensitive Vergleich zu erzwingen.
+                func.lower(Version.title).in_([t.lower() for t in potential_titles])
+            ).all()
+        )
+        # Für eine garantierte Case-Insensitive-Suche:
+        # .filter(
+        #     Node.vault_id == vault_id,
+        #     func.lower(Version.title).in_([t.lower() for t in potential_titles])
+        # ).all()
+
+        # Gruppiere die gefundenen Nodes nach ihrem Titel (lower-case zur Normalisierung)
+        matches_by_title = {}
+        for node in found_nodes_by_title:
+            title_lower = node.title.lower()
+            if title_lower not in matches_by_title:
+                matches_by_title[title_lower] = []
+            matches_by_title[title_lower].append(node)
+
+        for title in potential_titles:
+            # Suche nach den normalisierten Matches
+            matches = matches_by_title.get(title.lower(), [])
+
+            if len(matches) == 1:
+                node = matches[0]
+                results[title] = {
+                    "status": "resolved",
+                    "node": {"id": node.id, "title": node.title}
+                }
+            elif len(matches) > 1:
+                results[title] = {
+                    "status": "ambiguous",
+                    "matchCount": len(matches)
+                }
+            else:
+                # Wenn kein Match gefunden wurde, ist der Status "unresolved"
+                results[title] = {"status": "unresolved"}
+
+    return results
+
+
+def search_nodes_for_autocomplete(query: str, vault_id: int, user_id: int) -> list[dict]:
+    """
+    Sucht nach Nodes für die Autocomplete-Funktion im Editor.
+    Gibt eine vereinfachte Liste von Nodes (ID und Titel) zurück.
+    """
+    _verify_vault_access(vault_id, user_id)
+    search_pattern = f"%{query}%"
+
+    # Suche nach Titeln in der `versions`-Tabelle, die zum `current_version` des Nodes gehören
+    # und dem Suchmuster entsprechen. Limitiere die Ergebnisse für gute Performance.
+    nodes = (
+        db.session.query(Node)
+        .join(Node.current_version_object)
+        .filter(
+            Node.vault_id == vault_id,
+            Version.title.ilike(search_pattern)  # case-insensitive "contains"
+        )
+        .order_by(Version.title)  # Sortiere alphabetisch
+        .limit(10)  # Sehr wichtig für die UI-Performance!
+        .all()
+    )
+
+    # Formatiere die Antwort in ein schlankes Format für die UI
+    return [
+        {"id": node.id, "title": node.title}
+        for node in nodes
+    ]
 
 # ========================================================================
 # WRITE OPERATIONS

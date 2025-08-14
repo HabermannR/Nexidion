@@ -1,7 +1,11 @@
 // src/components/AppLoading.jsx
 import React from 'react';
+import Spinner from 'react-bootstrap/Spinner';
 
-// Dies könnte später ein schöner Spinner von Bootstrap sein.
+/**
+ * A full-screen loading indicator component that displays a centered Bootstrap spinner
+ * and a "loading" message.
+ */
 export default function AppLoading() {
     return (
         <div style={{
@@ -10,9 +14,13 @@ export default function AppLoading() {
             alignItems: 'center',
             height: '100vh',
             fontSize: '1.5rem',
-            color: '#6c757d'
+            color: '#6c757d',
+            gap: '1rem' // Adds space between the spinner and the text
         }}>
-            Anwendung wird geladen...
+            <Spinner animation="border" role="status">
+                <span className="visually-hidden">Wird geladen...</span>
+            </Spinner>
+            <span>Anwendung wird geladen...</span>
         </div>
     );
 }

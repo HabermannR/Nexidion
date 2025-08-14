@@ -204,7 +204,9 @@ export default function NodeContent() {
                     newTitle={`v${sortedNewVersion?.version}: ${new Date(sortedNewVersion.timestamp).toLocaleString('de-DE')}`}
                 />
             ) : (
-                <MarkdownRenderer content={currentBaseVersion.content || ''} />
+                <div className="markdown-body">
+                    <MarkdownRenderer content={currentBaseVersion.content || ''} />
+                </div>
             )}
             <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
                 <Modal.Header closeButton>

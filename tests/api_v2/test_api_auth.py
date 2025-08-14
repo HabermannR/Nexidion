@@ -33,9 +33,16 @@ def test_get_me_success(client, auth_headers_1, test_user_1_obj):
     response = client.get('/api/auth/me', headers=auth_headers_1)
     assert response.status_code == 200
     data = response.get_json()
-    assert 'user' in data
-    assert data['user']['id'] == test_user_1_obj.id
-    assert 'password_hash' not in data['user']
+
+    assert 'id' in data
+    assert 'display_name' in data
+    assert 'user_type' in data
+
+    # Du kannst auch die Werte direkt mit deinem Test-Objekt vergleichen,
+    # um sicherzustellen, dass der richtige Benutzer zurückgegeben wird.
+    assert data['id'] == test_user_1_obj.id
+    assert data['display_name'] == test_user_1_obj.display_name
+    assert data['is_admin'] == test_user_1_obj.is_admin
 
 def test_get_me_no_token(client):
     """Test: Versuchter Abruf ohne Token -> 401 Unauthorized."""
