@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import ChatMessage from './ChatMessage.jsx';
@@ -237,45 +239,57 @@ export default function Chat() {
                     </div>
                 </div>
 
-                <div className="chat-messages-wrapper pt-2" ref={chatDisplayRef}>
-                    {(visibleMessages?.length || 0) === 0 && !isChatLoading && (
-                        <div className="message assistant">
-                            <div className="message-content-bubble markdown-content">Select nodes from the tree and ask a question to start a new chat!</div>
+                <PanelGroup direction="vertical">
+                    {/* --- PANEL 1: MESSAGES --- */}
+                    <Panel minSize={30}>
+                        <div className="chat-messages-wrapper pt-2" ref={chatDisplayRef}>
+                            {(visibleMessages?.length || 0) === 0 && !isChatLoading && (
+                                <div className="message assistant">
+                                    <div className="message-content-bubble markdown-content">Select nodes from the tree and ask a question to start a new chat!</div>
+                                </div>
+                            )}
+
+                            {visibleMessages?.map((message) => (
+                                <ChatMessage
+                                    key={message.id}
+                                    message={message}
+                                    onDelete={handleDeleteMessage}
+                                    onResubmitPrompt={handleResubmitPrompt}
+                                    isChatLoading={isChatLoading}
+                                />
+                            ))}
                         </div>
-                    )}
+                    </Panel>
 
-                    {visibleMessages?.map((message) => (
-                        <ChatMessage
-                            key={message.id}
-                            message={message}
-                            onDelete={handleDeleteMessage}
-                            onResubmitPrompt={handleResubmitPrompt}
-                            isChatLoading={isChatLoading}
-                        />
-                    ))}
-                </div>
+                    {/* +++ RESIZE HANDLE +++ */}
+                    <PanelResizeHandle className="chat-resize-handle-outer"><div className="chat-resize-handle-inner" /></PanelResizeHandle>
 
-                <div className="chat-input-wrapper">
-                    <form onSubmit={handleChatSubmit} className="d-flex align-items-start w-100 gap-2">
-                    <textarea
-                        value={chatInputValue}
-                        onChange={(e) => setChatInputValue(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey)) { e.preventDefault(); handleChatSubmit(e); } }}
-                        placeholder={!chatModel ? "Select a model..." : "Ask a question (Shift+Enter to send)"}
-                        className="form-control"
-                        disabled={isChatLoading || !chatModel}
-                        rows="2"
-                    />
-                        <button
-                            type="submit"
-                            className="btn btn-primary"
-                            disabled={isChatLoading || !chatInputValue.trim() || !chatModel}
-                            title="Send"
-                        >
-                            Send
-                        </button>
-                    </form>
-                </div>
+                    {/* --- PANEL 2: INPUT --- */}
+                    <Panel defaultSize={20} minSize={10} maxSize={60}>
+                        <div className="chat-input-wrapper">
+                            <form onSubmit={handleChatSubmit} className="d-flex align-items-start w-100 h-100 gap-2">
+                            <textarea
+                                value={chatInputValue}
+                                onChange={(e) => setChatInputValue(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' &&( e.shiftKey || e.ctrlKey)) { e.preventDefault(); handleChatSubmit(e); } }}
+                                placeholder={!chatModel ? "Select a model..." : "Ask a question (Shift or CTRL +Enter to send, Enter for new line)"}
+                                className="form-control"
+                                disabled={isChatLoading || !chatModel}
+                                // The rows attribute is no longer needed as CSS will control the height
+                            />
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    disabled={isChatLoading || !chatInputValue.trim() || !chatModel}
+                                    title="Send"
+                                >
+                                    Send
+                                </button>
+                            </form>
+                        </div>
+                    </Panel>
+                </PanelGroup>
+
             </div>
             <ChatHistoryPanel onClose={() => setIsHistoryPanelOpen(false)} />
         </div>

@@ -44,19 +44,19 @@ export default function VersionHistoryTab() {
         const isCurrentlyComparing = diffSelection.compare?.id === versionToCompare.id;
 
         if (isCurrentlyComparing) {
-            // === KORREKTUR: Dies ist die Aktion "Vergleich beenden" ===
-            // 1. Setze den Zustand auf die neueste Version zurück.
-            if (versions && versions.length > 0) {
-                setDiffBase(versions[0]);
-            }
-            // 2. Setze den Vergleichszustand explizit auf null.
+            // AKTION: "Vergleich beenden"
+            // 1. Setze nur den Vergleichszustand auf null. Der `base` Zustand
+            //    bleibt unberührt, sodass die Ansicht zur ausgewählten Basisversion zurückkehrt.
             setDiffCompare(null);
-            // 3. Räume die URL vollständig auf.
-            updateUrl(new URLSearchParams());
+
+            // 2. Entferne NUR den `compare`-Parameter aus der URL.
+            //    Der `version`-Parameter (für die Basisversion) bleibt erhalten.
+            newSearchParams.delete('compare');
+            updateUrl(newSearchParams);
         } else {
-            // Dies ist die Aktion "Vergleich starten"
-            newSearchParams.set('compare', String(versionToCompare.version));
+            // AKTION: "Vergleich starten" (Diese Logik war bereits korrekt)
             setDiffCompare(versionToCompare);
+            newSearchParams.set('compare', String(versionToCompare.version));
             updateUrl(newSearchParams);
         }
     };

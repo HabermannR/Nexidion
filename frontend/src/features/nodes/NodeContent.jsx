@@ -49,9 +49,8 @@ export default function NodeContent() {
 
     // ZUSTAND
     const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
-    // KORREKTUR: Wir nennen die Setter um, um Verwechslungen zu vermeiden
     const setStoreDiffBase = useWorkspaceStore((state) => state.setDiffBase);
-    const clearStoreDiff = useWorkspaceStore((state) => state.clearDiff); // Eine dedizierte "Aufräum"-Aktion ist sauberer
+    const clearStoreDiff = useWorkspaceStore((state) => state.clearDiff);
     const { base: selectedBaseVersion, compare: selectedCompareVersion } = useWorkspaceStore(state => state.diffSelection);
 
     const [isEditing, setIsEditing] = useState(false);
@@ -69,14 +68,22 @@ export default function NodeContent() {
     // ==========================================================
     // --- PHASE 2: DATEN-SYNCHRONISATION & EFFEKTE ---
     // ==========================================================
+
+    // =======================================
+    // === THE FIX IS HERE ===
+    // This effect acts as a "master reset" whenever the user navigates to a new node.
+    // It runs IMMEDIATELY when `nodeId` changes, before any data fetching completes.
     useEffect(() => {
-        // Wenn sich die nodeId ändert, MÜSSEN wir den alten Zustand verwerfen.
-        // `clearDiff` sollte im Store `diffSelection: { base: null, compare: null }` setzen.
-        clearStoreDiff();
-    }, [nodeId, clearStoreDiff]);
+        // We MUST proactively reset all local and global state related to the
+        // node's content to prevent showing stale data from the previous node.
+        setIsEditing(false);      // Exit editing mode if it was active on the old node.
+        setLocalContent('');      // CRUCIAL: Clear the local editor content immediately.
+        clearStoreDiff();         // Clear the globally selected version object in Zustand.
+
+    }, [nodeId, clearStoreDiff]); // The dependency array ensures this runs only on a node change.
     // =======================================
 
-    // Dieser Effekt berechnet nur noch den Breadcrumb.
+    // This effect calculates the breadcrumb path. It's fine as is.
     useEffect(() => {
         if (vaultTreeData?.tree && nodeId) {
             const path = findPathInTree(vaultTreeData.tree, nodeId);
@@ -86,7 +93,7 @@ export default function NodeContent() {
         }
     }, [vaultTreeData, nodeId, setBreadcrumbPath]);
 
-    // Dieser Effekt setzt den initialen Zustand, NACHDEM er zurückgesetzt wurde.
+    // This effect sets the initial state AFTER the reset has happened and AFTER data has loaded.
     useEffect(() => {
         if (versions && versions.length > 0) {
             const href = window.location.href;
@@ -95,18 +102,18 @@ export default function NodeContent() {
                 ? versions.find(v => String(v.version) === versionParam)
                 : versions[0];
 
-            // Die fehlerhafte Bedingung `!selectedBaseVersion` ist entfernt.
             if (initialBase) {
                 setStoreDiffBase(initialBase);
             }
         }
     }, [versions, setStoreDiffBase]);
 
-    // Dieser Effekt reagiert auf jede Änderung der anzuzeigenden Version.
+    // This effect syncs the local editor content with the selected version from global state.
     useEffect(() => {
+        // This will only run after the global state (`selectedBaseVersion`) has been correctly
+        // set by the effect above, ensuring we don't load stale content.
         if (selectedBaseVersion) {
             setLocalContent(selectedBaseVersion.content || '');
-            setIsEditing(false);
         }
     }, [selectedBaseVersion]);
 
@@ -117,6 +124,7 @@ export default function NodeContent() {
         return <div className="p-4 text-center text-muted"><h4>Dokument auswählen</h4><p>Wähle ein Dokument aus der Navigation, um es hier anzuzeigen.</p></div>;
     }
 
+    // This loading state is now safe because all stale state has been cleared.
     if (isTreeLoading || isLoadingVersions) {
         return <AppLoading message="Lade Dokument..." />;
     }
@@ -128,18 +136,25 @@ export default function NodeContent() {
     // ==========================================================
     // --- PHASE 4: VARIABLEN & DATEN FÜR RENDER-LOGIK ---
     // ==========================================================
-    const initialVersion = (versions && versions.length > 0) ? versions[0] : null;
+    const currentBaseVersion = selectedBaseVersion || (versions && versions.length > 0 ? versions[0] : null);
 
-    // Wir bestimmen, welche Version angezeigt wird: die vom User ausgewählte oder die initiale.
-    const currentBaseVersion = selectedBaseVersion || initialVersion;
+    const handleEditClick = () => {
+        // When the user clicks edit, we know `currentBaseVersion` is stable and correct.
+        // We populate the local editor state from it right before entering editing mode.
+        setLocalContent(currentBaseVersion?.content || '');
+        setIsEditing(true);
+    };
 
-    // Prüfe, ob wir nach allen Lade- und Fehlerprüfungen immer noch nichts zum Anzeigen haben.
+    // This check is now robust. If there are no versions, currentBaseVersion will be null.
     if (!currentBaseVersion) {
         return (
-            <Alert variant="warning" className="m-4">
-                <h4>Kein Inhalt</h4>
-                <p>Für dieses Dokument wurde noch kein Inhalt gefunden. Beginne mit dem Bearbeiten, um die erste Version zu erstellen.</p>
-            </Alert>
+            <div className="p-4">
+                <Alert variant="info">
+                    <h4>Kein Inhalt</h4>
+                    <p>Für dieses Dokument wurde noch kein Inhalt gefunden. Beginne mit dem Bearbeiten, um die erste Version zu erstellen.</p>
+                    <Button variant="primary" onClick={() => setIsEditing(true)}>Bearbeiten</Button>
+                </Alert>
+            </div>
         );
     }
 
@@ -181,7 +196,7 @@ export default function NodeContent() {
                     currentVersion={currentBaseVersion}
                     vaultId={vaultId}
                     isEditing={isEditing}
-                    onEditClick={() => setIsEditing(true)}
+                    onEditClick={handleEditClick}
                     onDeleteClick={() => setShowDeleteModal(true)}
                 />
             )}

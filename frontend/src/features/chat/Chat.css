@@ -26,6 +26,9 @@
     position: relative;
     flex: 1 1 0;
     width: 100%;
+    /* Ensure this wrapper allows its content to fill the height */
+    display: flex;
+    flex-direction: column;
 }
 
 .chat-layout-container {
@@ -38,32 +41,36 @@
 }
 
 .chat-messages-wrapper {
-    flex: 1 1 0;
+    /* This rule is now applied to the panel, but keeping it here is fine. */
+    /* It will ensure the inner div scrolls if needed. */
+    height: 100%;
     overflow-y: auto;
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    /* Fügt einen kleinen Abstand zwischen den Nachrichten hinzu */
     gap: 0.25rem;
 }
 
+/* --- MODIFIED --- */
+/* This wrapper now lives inside a resizable Panel and needs to fill its height */
 .chat-input-wrapper {
-    flex-shrink: 0;
+    height: 100%; /* Fill the parent panel */
+    width: 100%;
     padding: 1rem;
     background-color: var(--panel-bg);
-    border-top: 1px solid var(--border-color);
+    /* border-top is now handled by the resize handle */
 }
 
 /* ======================================================== */
 /* <<< 3. CHAT-NACHRICHTEN (STRUKTUR) >>> */
 /* ======================================================== */
+/* (No changes in this section) */
 
 .message {
     max-width: 97%;
     display: flex;
     flex-direction: column;
     line-height: 1.5;
-    /* margin-bottom wurde durch gap im parent ersetzt */
 }
 .message.user {
     align-self: flex-end;
@@ -121,17 +128,12 @@
 /* ======================================================== */
 /* <<< 4. SPRECHBLASEN (INHALT & DESIGN) - AUFGERÄUMT >>> */
 /* ======================================================== */
+/* (No changes in this section) */
 
-/*
-  NEU: Basis-Klasse für alle Sprechblasen.
-  Diese Klasse sollte in ChatMessage.jsx zu BEIDEN Sprechblasen-Typen hinzugefügt werden.
-  Beispiel: <div class="message-content-bubble user-message-content">...</div>
-*/
 .message-content-bubble {
     padding: 0.75rem 1rem;
     border-radius: var(--base-border-radius);
     word-break: break-word;
-    /* white-space: pre-wrap; WIRD VON HIER ENTFERNT */
 }
 .message-content-bubble > *:first-child { margin-top: 0; }
 .message-content-bubble > *:last-child { margin-bottom: 0; }
@@ -141,14 +143,13 @@
     background-color: var(--user-bubble-bg);
     color: var(--user-bubble-text);
     border-bottom-right-radius: 0.25rem;
-    white-space: pre-wrap; /* HIER GEZIELT HINZUGEFÜGT */
+    white-space: pre-wrap;
 }
 
 .markdown-content {
     background-color: var(--assistant-bubble-bg);
     color: var(--assistant-bubble-text);
     border-bottom-left-radius: 0.25rem;
-    /* Hat kein white-space: pre-wrap mehr, da ReactMarkdown das steuert */
 }
 
 .markdown-content pre,
@@ -158,7 +159,6 @@
     max-width: 100%;
     overflow-x: auto;
 }
-
 
 @keyframes blink {
     50% { background-color: transparent; }
@@ -176,8 +176,9 @@
 
 
 /* ======================================================== */
-/* <<< 5. CHAT HISTORY PANEL (unverändert) >>> */
+/* <<< 5. CHAT HISTORY PANEL >>> */
 /* ======================================================== */
+/* (No changes in this section) */
 
 .chat-history-panel {
     position: absolute;
@@ -201,11 +202,7 @@
     overscroll-behavior: contain;
 }
 
-.session-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
+.session-list { list-style: none; padding: 0; margin: 0; }
 
 .session-item {
     display: flex;
@@ -216,9 +213,7 @@
     cursor: pointer;
     transition: background-color 0.2s;
 }
-.session-item:hover {
-    background-color: var(--panel-hover-bg);
-}
+.session-item:hover { background-color: var(--panel-hover-bg); }
 
 .session-title {
     font-weight: 600;
@@ -227,28 +222,12 @@
     text-overflow: ellipsis;
     max-width: 180px;
 }
-.session-meta {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
+.session-meta { font-size: 0.8rem; color: var(--text-muted); }
 
-.session-item-actions {
-    display: flex;
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-.session-item:hover .session-item-actions {
-    opacity: 1;
-}
-.btn-icon-danger:hover {
-    color: var(--brand-danger);
-}
-
-.session-item.session-item-confirm-delete {
-    background-color: #fff3cd;
-    cursor: default;
-}
-
+.session-item-actions { display: flex; opacity: 0; transition: opacity 0.2s; }
+.session-item:hover .session-item-actions { opacity: 1; }
+.btn-icon-danger:hover { color: var(--brand-danger); }
+.session-item.session-item-confirm-delete { background-color: #fff3cd; cursor: default; }
 .session-item.editing {
     background-color: #e9ecef;
     cursor: default;
@@ -261,14 +240,18 @@
 }
 
 /* ======================================================== */
-/* <<< 6. CHAT INPUT FORM (unverändert) >>> */
+/* <<< 6. CHAT INPUT FORM >>> */
 /* ======================================================== */
 
+/* --- MODIFIED --- */
+/* The form and textarea must fill the height of the resizable panel wrapper */
 form.d-flex {
     background-color: var(--panel-bg);
+    height: 100%;
 }
 
 form.d-flex textarea.form-control {
+    height: 100%; /* Fill the form's height */
     resize: none;
     transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
 }
@@ -276,4 +259,50 @@ form.d-flex textarea.form-control {
 form.d-flex textarea.form-control:focus {
     border-color: var(--user-bubble-bg);
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, .25);
+}
+
+
+/* ======================================================== */
+/* +++ 7. ADDED SECTION FOR RESIZABLE PANELS & HANDLE +++ */
+/* ======================================================== */
+
+.chat-resize-handle-outer {
+    position: relative;
+    background-color: transparent; /* No background color here */
+    outline: none;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.2s ease-in-out;
+
+    /* Sizing for a horizontal handle */
+    height: 9px;
+    cursor: ns-resize; /* North-South resize cursor */
+}
+
+/*
+  The inner handle is the small visible grabber line.
+  Its color will change on hover/drag.
+*/
+.chat-resize-handle-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
+    /* Visuals for the grabber line */
+    width: 40px;
+    height: 3px;
+    background-color: #ced4da; /* A neutral gray, same as your workspace handle */
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+/*
+  We use the parent's hover/drag state to change the background
+  color of the *inner handle*, just like in your WorkspaceLayout.css.
+  The [data-resize-handle-state] selector is provided by the library.
+*/
+.chat-resize-handle-outer:hover .chat-resize-handle-inner,
+.chat-resize-handle-outer[data-resize-handle-state="drag"] .chat-resize-handle-inner {
+    background-color: #0d6efd; /* Bootstrap primary blue, same as your workspace handle */
 }
