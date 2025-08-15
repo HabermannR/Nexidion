@@ -44,7 +44,9 @@ export const copyTreeStructure = async (treeData) => {
   const formatNodeRecursive = (node, prefix, isLast) => {
     // Bestimmt den Connector basierend darauf, ob es das letzte Element ist
     const connector = isLast ? '└── ' : '├── ';
-    let output = prefix + connector + node.title + '\n';
+
+    // +++ GEÄNDERT: Füge die Node-ID (UUID) hinzu +++
+    let output = prefix + connector + `${node.title} (${node.id})` + '\n';
 
     // Berechnet das Präfix für die Kind-Elemente
     const childPrefix = prefix + (isLast ? '    ' : '│   ');
@@ -57,12 +59,13 @@ export const copyTreeStructure = async (treeData) => {
     }
     return output;
   };
-  
+
   // Da es nur einen Wurzelknoten gibt, greifen wir direkt darauf zu.
   const rootNode = treeData[0];
-  
-  // Beginne den Output mit dem Titel des Wurzelknotens.
-  let formattedTree = rootNode.title + '\n';
+
+  // +++ GEÄNDERT: Füge die Node-ID (UUID) des Wurzelknotens hinzu +++
+  // Beginne den Output mit dem Titel und der ID des Wurzelknotens.
+  let formattedTree = `${rootNode.title} (${rootNode.id})` + '\n';
 
   // Verarbeite die direkten Kinder des Wurzelknotens.
   if (rootNode.children && rootNode.children.length > 0) {

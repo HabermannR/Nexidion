@@ -6,7 +6,6 @@
  */
 .markdown-body {
     line-height: 1.6;
-    /* Mobile-first font-size: a comfortable size for smaller screens, migrated from old CSS. */
     font-size: 14px;
     color: #24292e;
 }
@@ -76,11 +75,9 @@
 
 /* --- Table Styles (New and Improved) --- */
 .markdown-body table {
-    /* Use block display to enable overflow scrolling on small screens */
     display: block;
     width: 100%;
     overflow: auto;
-
     margin-top: 1em;
     margin-bottom: 1em;
     border-collapse: collapse;
@@ -93,71 +90,83 @@
 
 .markdown-body th,
 .markdown-body td {
-    padding: 6px 13px; /* A standard, balanced padding */
-    border: 1px solid #dfe2e5; /* Softer borders */
+    padding: 6px 13px;
+    border: 1px solid #dfe2e5;
     text-align: left;
 }
 
-/* Alternating row colors (zebra-striping) for readability */
 .markdown-body tr:nth-child(2n) {
     background-color: #f6f8fa;
 }
 
 /* --- Link Styles (Migrated from old CSS) --- */
 .markdown-body a {
-  color: #007bff; /* A modern, accessible blue */
-  text-decoration: none; /* No underline by default */
-  cursor: pointer;
-  transition: color 0.15s ease-in-out, text-decoration 0.15s ease-in-out;
+    color: #007bff;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.15s ease-in-out, text-decoration 0.15s ease-in-out;
 }
 
 .markdown-body a:hover,
 .markdown-body a:focus {
-  color: #0056b3; /* Darken on hover for feedback */
-  text-decoration: underline; /* Underline on hover for clarity */
+    color: #0056b3;
+    text-decoration: underline;
 }
 
-/* Accessibility: Clear focus state for keyboard users */
 .markdown-body a:focus {
-  outline: 2px solid #80bdff;
-  outline-offset: 1px;
-  border-radius: 2px;
+    outline: 2px solid #80bdff;
+    outline-offset: 1px;
+    border-radius: 2px;
 }
 
 /* --- Responsive Adjustments --- */
 @media (min-width: 992px) {
     .markdown-body {
-        /* Increase font size for better readability on larger screens */
         font-size: 16px;
     }
 }
 
-/* Basis-Styling für alle internen Links */
-.internal-link {
-    color: #0969da; /* Ein Standard-Blau, ähnlich wie bei GitHub */
-    text-decoration: none;
+/* ========================================================== */
+/* === STYLING FÜR INTERNE LINKS === */
+/* ========================================================== */
+
+/* Basis-Styling für ALLE internen Links */
+.markdown-body a.internal-link {
     background-color: transparent;
     cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease-in-out;
 }
 
-.internal-link:hover {
+.markdown-body a.internal-link:hover {
     text-decoration: underline;
 }
 
-/* Styling für den Zustand, während der Link aufgelöst wird */
-.internal-link.resolving {
-    color: #6a737d; /* Ein neutrales Grau */
-    cursor: wait;
+/* Starker Link: Standard-Blau, wie jeder andere Link auch */
+.markdown-body a.strong-link {
+    color: #007bff; /* Standard-Link-Blau */
+    /* Kein extra Styling, er soll sich normal anfühlen */
 }
 
-/* Styling für erfolgreich aufgelöste Links (kann gleich bleiben wie der Basis-Style) */
-.internal-link.resolved {
-    /* Standard-Link-Farbe ist hier meistens ausreichend */
+.markdown-body a.strong-link:hover {
+    color: #0056b3; /* Standard-Hover-Farbe */
 }
 
-/* WICHTIG: Styling für kaputte/nicht gefundene Links */
-.internal-link.broken {
-    color: #cf222e; /* Ein deutliches Rot */
+/* Schwacher Link: Grün, um ihn als speziell, aber gültig zu markieren */
+.markdown-body a.weak-link {
+    color: #1a7f37; /* Ein zugängliches Grün */
+    border-bottom: 1px dotted #1a7f37; /* Ein dezenter Hinweis auf "anders" */
+}
+
+.markdown-body a.weak-link:hover {
+    color: #125a27; /* Dunkleres Grün bei Hover */
+    border-bottom-style: solid;
+}
+
+/* Kaputter Link: Rot und durchgestrichen */
+.markdown-body a.internal-link.broken {
+    color: #cf222e;
     text-decoration: line-through;
+    border-bottom: 1px dotted #cf222e;
     cursor: not-allowed;
 }

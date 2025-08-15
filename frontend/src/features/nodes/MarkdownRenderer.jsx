@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw'; // WICHTIG: Neues Plugin importieren
+import rehypeRaw from 'rehype-raw';
 
 import wikiLinkPlugin from '@nexidion/remark-internal-links';
 import InternalLink from './InternalLink';
@@ -10,19 +10,22 @@ import './MarkdownRenderer.css';
 
 export default function MarkdownRenderer({ content }) {
     const markdownComponents = {
-        // Wir fangen alle <span>-Tags ab.
-        span: ({ node, children, ...props }) => {
-            // Wir prüfen, ob es einer unserer speziellen Links ist.
-            if (props['data-target']) {
-                const target = decodeURIComponent(props['data-target']);
-                const displayText = decodeURIComponent(props['data-display-text']);
+        span: ({ node, children, className, ...props }) => { // Holen uns die className
+            const displayText = props['data-display-text'] ? decodeURIComponent(props['data-display-text']) : children;
 
-                // Wir rendern unsere intelligente React-Komponente.
-                return <InternalLink target={target} displayText={displayText} />;
+            if (props['data-uuid']) {
+                const uuid = props['data-uuid'];
+                // Geben die Klasse weiter
+                return <InternalLink uuid={uuid} displayText={displayText} className={className} />;
             }
 
-            // Ansonsten ist es ein normaler Span, den wir einfach durchreichen.
-            return <span {...props}>{children}</span>;
+            if (props['data-target']) {
+                const targetTitle = decodeURIComponent(props['data-target']);
+                // Geben die Klasse weiter
+                return <InternalLink targetTitle={targetTitle} displayText={displayText} className={className} />;
+            }
+
+            return <span className={className} {...props}>{children}</span>;
         },
 
         // Die anderen Renderer bleiben wie gewohnt.
@@ -34,9 +37,9 @@ export default function MarkdownRenderer({ content }) {
         <div className="markdown-body">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, wikiLinkPlugin]}
-                // WICHTIG: Erlaube das Rendern von rohem HTML, das unser Plugin erzeugt.
                 rehypePlugins={[rehypeRaw]}
                 components={markdownComponents}
+                skipHtml={false}
             >
                 {content || ''}
             </ReactMarkdown>
