@@ -10,8 +10,6 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.associationproxy import association_proxy
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import joinedload, with_parent
-from sqlalchemy import select
 from sqlalchemy import Index
 from werkzeug.security import generate_password_hash, check_password_hash
 

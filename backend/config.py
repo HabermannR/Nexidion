@@ -17,7 +17,17 @@ class Config:
     SECURE_IMAGE_FOLDER = os.path.join(project_root, 'secure_images')
 
     ## --- DATABASE CONFIGURATION ---
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'knowledge_base.db')
+    #SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'knowledge_base.db')
+    ## --- DATABASE CONFIGURATION ---
+    # Hole die DB-Details aus den Umgebungsvariablen
+    DB_USER = os.getenv('DB_USER', 'default_user')
+    DB_PASSWORD = os.getenv('DB_PASSWORD', 'default_password')
+    DB_HOST = os.getenv('DB_HOST', 'localhost')
+    DB_PORT = os.getenv('DB_PORT', '5432')
+    DB_NAME = os.getenv('DB_NAME', 'default_db')
+
+    # Baue die PostgreSQL-Verbindungs-URI zusammen
+    SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # --- AUTHENTICATION & SECURITY ---

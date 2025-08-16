@@ -65,7 +65,6 @@ def get_llm_user(model_name: str) -> User:
 # --- GENERISCHE FUNKTION FÜR STRUKTURIERTE AUSGABEN ---
 def generate_json_response(system_prompt: str, user_prompt: str, model: str, schema_generator,
                            max_tokens: int = 4096):
-    logger.info(f"Generating structured JSON with model {model} using schema from {schema_generator.__name__}")
     try:
         if 'claude' in model:
             tool_schema = schema_generator('claude')
@@ -105,12 +104,31 @@ def _generate_json_with_gemini(system_prompt, user_prompt, model, max_tokens, re
         response_schema=response_schema,
         system_instruction=[genai_types.Part.from_text(text=system_prompt)] if system_prompt else None
     )
-    response = client.models.generate_content(
-        model=model,
-        contents=[genai_types.Part.from_text(text=user_prompt)],
-        config=config_obj  # <-- KORREKTER PARAMETERNAME IST 'config'
-    )
-    return json.loads(response.text)
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=[genai_types.Part.from_text(text=user_prompt)],
+            config=config_obj  # <-- KORREKTER PARAMETERNAME IST 'config'
+        )
+        ### NEUES LOGGING START ###
+        # Das ist der wichtigste Log-Eintrag. Wir loggen die rohe Antwort, BEVOR wir sie parsen.
+        raw_response_text = response.text
+        ### NEUES LOGGING ENDE ###
+        parsed_json = json.loads(raw_response_text)
+        return parsed_json
+    except json.JSONDecodeError as e:
+        # Dieser Fehler tritt auf, wenn die API-Antwort kein valides JSON ist (z.B. eine Fehlermeldung).
+        logger.error(
+            f"[GEMINI_DEBUG] FAILED to decode JSON from Gemini response. "
+            f"The API returned non-JSON content. Raw text was: '{raw_response_text}'",
+            exc_info=True
+        )
+        # Wir werfen den Fehler weiter, damit der Aufrufer weiß, dass etwas schiefgelaufen ist.
+        raise ValueError(f"Gemini API did not return valid JSON. See logs for details.") from e
+    except Exception as e:
+        # Fängt alle anderen API-Fehler ab (z.B. 429 Too Many Requests, 400 Invalid Argument).
+        logger.error(f"[GEMINI_DEBUG] An unexpected error occurred during the Gemini API call: {e}", exc_info=True)
+        raise
 
 
 def _generate_json_with_openai_compatible(system_prompt, user_prompt, model, max_tokens, tool_schema):
@@ -136,7 +154,6 @@ def _generate_json_with_openai_compatible(system_prompt, user_prompt, model, max
 
 # --- Öffentliche API-Funktionen (Wrapper) ---
 def generate_structured_response(system_prompt: str, user_prompt: str, model: str, max_tokens: int = 4096):
-    logger.info(f"Requesting content update with model {model}")
     if 'mock' in model: return f"Mock response ID: {uuid.uuid4()}"
     response_data = generate_json_response(system_prompt, user_prompt, model, get_content_update_schema, max_tokens)
     content = response_data.get("new_content")
@@ -175,7 +192,6 @@ def generate_response(messages, system_prompt=None, model='claude-3-sonnet-20240
 
 
 def generate_response_stream(messages, system_prompt=None, model='claude-3-sonnet-20240229', max_tokens=10000):
-    logger.info(f"Entering function `generate_response_stream` for model '{model}'")
     try:
         if model.startswith('mock'):
             generator_function = _mock_llm_stream_generator
@@ -216,11 +232,6 @@ def _generate_with_claude_streaming(messages, system_prompt, model, max_tokens):
     """
     client = anthropic.Anthropic(api_key=current_app.config['ANTHROPIC_API_KEY'])
 
-    logger.info("--- ANTHROPIC DIAGNOSTIC START ---")
-    logger.info(f"Model: {model}")
-    logger.info(f"System Prompt: {system_prompt}")
-    logger.info(f"Messages being sent: {messages}")  # Log the exact input
-
     try:
         with client.messages.stream(
                 model=model,
@@ -229,7 +240,6 @@ def _generate_with_claude_streaming(messages, system_prompt, model, max_tokens):
                 max_tokens=max_tokens,
                 temperature=0.7
         ) as stream:
-            logger.info("Stream context opened. Iterating over all events...")
             has_yielded_anything = False
             # We iterate over the raw stream object to see every event
             for event in stream:
@@ -242,16 +252,10 @@ def _generate_with_claude_streaming(messages, system_prompt, model, max_tokens):
             if not has_yielded_anything:
                 logger.warning("DIAGNOSTIC: The stream finished, but no text chunks were yielded.")
 
-            # After the loop, let's see the final state of the message
-            final_message = stream.get_final_message()
-            logger.info(f"DIAGNOSTIC FINAL MESSAGE: {final_message.dict()}")
-
     except Exception as e:
         logger.error(f"--- ANTHROPIC DIAGNOSTIC ERROR ---: An exception occurred: {e}", exc_info=True)
         # Yield the error to the frontend so it doesn't just hang
         yield f"[DIAGNOSTIC ERROR in LLM Service: {str(e)}]"
-    finally:
-        logger.info("--- ANTHROPIC DIAGNOSTIC END ---")
 
 
 def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
@@ -259,7 +263,6 @@ def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
     FINALE KORREKTE VERSION für Streaming.
     Das 'contents'-Format ist jetzt korrekt als Liste von Content-Objekten.
     """
-    logger.info(f"Entering function `_generate_with_gemini_streaming` for model {model}")
     client = genai.Client(api_key=current_app.config['GEMINI_API_KEY'])
 
     # KORREKTUR: Das ist das richtige Format für einen Chat-Verlauf.
@@ -277,8 +280,6 @@ def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
         system_instruction=genai_types.Part.from_text(text=system_prompt) if system_prompt else None
     )
 
-    logger.info("Calling Gemini API (`client.models.generate_content_stream`)...")
-
     stream = client.models.generate_content_stream(
         model=model,
         contents=contents,  # <-- `contents` hat jetzt das korrekte Format
@@ -292,7 +293,6 @@ def _generate_with_gemini_streaming(messages, system_prompt, model, max_tokens):
         except (ValueError, IndexError):
             logger.debug("Skipping empty or invalid chunk from Gemini stream.")
             continue
-    logger.info("Stream from Gemini finished.")
 
 
 def _mock_llm_stream_generator(model: str = 'mock'):

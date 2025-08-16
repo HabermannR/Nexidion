@@ -400,16 +400,13 @@ def propose_node_update(
         Ein Dictionary mit {"original_content": "...", "proposed_content": "..."}.
     """
     context_node_ids = context_node_ids or []
-    logger.info(f"User {user_id} starting node update proposal for node {target_node_id} in vault {vault_id}.")
 
     # --- Schritt 1: Daten sammeln und Berechtigungen prüfen ---
 
     chat_history_text = ""
     # PATH A: Wenn eine session_id vorhanden ist, validieren wir sie und holen den Verlauf.
     if session_id:
-        logger.info(f"Using session {session_id} for context.")
         session = _verify_session_access(session_id, user_id)
-        # Sicherheits-Check: Gehört die Session zum richtigen Vault?
         if session.vault_id != vault_id:
             raise PermissionError(f"Session {session_id} does not belong to vault {vault_id}.")
 
@@ -461,17 +458,17 @@ Here is the data for your task:
 {context_content}
 ---
 Now, please analyze all the information, follow all rules, and provide the updated content for the node '{target_title}'. """
-    #print(user_prompt)
     # --- Schritt 3: LLM-Service aufrufen ---
     try:
         logger.info(f"Calling llm_service.generate_structured_response with model {model}.")
-        # Assuming llm_service returns a dict like {'content': '...'}
         response_data = llm_service.generate_structured_response(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            model=model
+            model=model,
+            max_tokens=10240
         )
-        proposed_content = response_data.get('content', '') if isinstance(response_data, dict) else str(response_data)
+        # generate_structured_response gibt direkt den Inhalt zurück, nicht das ganze Dict.
+        proposed_content = response_data if isinstance(response_data, str) else str(response_data)
 
         return {
             "original_content": original_content,
