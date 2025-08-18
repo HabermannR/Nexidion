@@ -2,7 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { Link, useLocation, useParams, Outlet } from 'react-router-dom';
-import { Navbar, Nav, Button, NavDropdown, Container } from 'react-bootstrap';
+import { Navbar, Nav, Button, NavDropdown, Container,NavLink  } from 'react-bootstrap';
 import { useQuery } from '@tanstack/react-query';
 
 import { useLogoutMutation } from '../features/auth/useLogoutMutation.js';
@@ -55,6 +55,7 @@ export default function AppShell() {
 
     // KORREKTUR: Wir prüfen, ob wir uns auf IRGENDEINER Einstellungsseite befinden.
     const isOnAnySettingsPage = location.pathname.startsWith('/settings/');
+    const isOnAdminPage = location.pathname.startsWith('/admin');
 
 
     return (
@@ -94,6 +95,17 @@ export default function AppShell() {
                                     Modelle verwalten...
                                 </NavDropdown.Item>
                             </NavDropdown>
+
+                            {user?.is_admin && (
+                                <Nav.Link
+                                    as={Link}
+                                    to="/admin"
+                                    className="me-lg-3"
+                                    active={isOnAdminPage} // Hebt den Link hervor, wenn man auf der Seite ist
+                                >
+                                    Admin
+                                </Nav.Link>
+                            )}
 
                             {/* --- User Dropdown --- */}
                             <NavDropdown title={user?.username || 'Account'} id="user-settings-dropdown" align="end" className="me-lg-2">

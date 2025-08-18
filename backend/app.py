@@ -30,6 +30,7 @@ from backend.api.llm import llm_bp
 from backend.api.images import image_bp
 from backend.api.workflows import workflows_bp
 from backend.api.tools import tools_bp
+from backend.api.admin import admin_bp
 
 migrate = Migrate()
 
@@ -78,6 +79,7 @@ def create_app(config_class=Config):
     app.register_blueprint(image_bp, url_prefix='/api/image')
     app.register_blueprint(tools_bp)
     app.register_blueprint(workflows_bp)
+    app.register_blueprint(admin_bp)
 
     # --- CLI Befehle (bereinigt) ---
     register_cli_commands(app)

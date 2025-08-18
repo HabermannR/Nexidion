@@ -1,8 +1,9 @@
 import { createBrowserRouter } from 'react-router-dom';
 
 // --- LAYOUTS & GLOBALE KOMPONENTEN ---
-// V4: Der neue "Türsteher" für geschützte Bereiche.
 import { ProtectedRoute } from './layouts/ProtectedRoute.jsx';
+// NEU: Importiere den Admin-Schutz
+import AdminProtectedRoute from './layouts/AdminProtectedRoute.jsx';
 import AppShell from './layouts/AppShell.jsx';
 import ErrorPage from './components/ErrorPage.jsx';
 
@@ -16,35 +17,26 @@ import LlmSettings from './features/settings/LlmSettings.jsx';
 import UserSettings from './features/settings/UserSettings.jsx';
 import AdminDashboard from './features/admin/AdminDashboard.jsx';
 
-// Die alten V3-Imports für 'action' und 'loader' sind nicht mehr notwendig und wurden entfernt.
-
 const router = createBrowserRouter([
-    // --- GRUPPE 1: Öffentliche Route (kein Login erforderlich) ---
-    // V4: Die Login-Seite hat keine 'action' mehr. Die Logik steckt im 'useLoginMutation'-Hook.
+    // --- GRUPPE 1: Öffentliche Route ---
     {
         path: "/login",
         element: <LoginPage />,
     },
 
-    // --- GRUPPE 2: Geschützte Routen (alles, was einen Login erfordert) ---
-    // V4: Der "root"-Pfad wird nun von unserer 'ProtectedRoute'-Komponente bewacht.
-    // Es gibt keinen 'loader' oder 'shouldRevalidate' mehr.
+    // --- GRUPPE 2: Geschützte Routen ---
     {
         path: "/",
         element: <ProtectedRoute />,
         errorElement: <ErrorPage />,
         children: [
-            // Wenn der Zugang durch 'ProtectedRoute' gewährt wurde, wird das AppShell-Layout gerendert.
-            // Alle folgenden Routen leben innerhalb dieses Layouts.
             {
                 element: <AppShell />,
                 children: [
-                    // Wenn der Pfad genau "/" ist, entscheidet der 'VaultIndexRedirector', wohin es geht.
                     {
                         index: true,
                         element: <VaultIndexRedirector />,
                     },
-                    // Die Haupt-Workspace-Route
                     {
                         path: "vaults/:vaultId",
                         element: <WorkspaceLayout />,
@@ -55,7 +47,7 @@ const router = createBrowserRouter([
                             },
                         ]
                     },
-                    // Alle Einstellungs- und Admin-Seiten
+                    // Alle Einstellungs-Seiten für normale Benutzer
                     {
                         path: "settings/vaults",
                         element: <VaultManager />,
@@ -68,17 +60,25 @@ const router = createBrowserRouter([
                         path: "settings/user",
                         element: <UserSettings />,
                     },
+
+                    // --- HIER IST DIE ÄNDERUNG ---
+                    // Wir erstellen eine neue verschachtelte Gruppe,
+                    // die von unserem AdminProtectedRoute bewacht wird.
                     {
-                        path: "admin",
-                        element: <AdminDashboard />,
+                        element: <AdminProtectedRoute />,
+                        children: [
+                            {
+                                path: "admin",
+                                element: <AdminDashboard />,
+                            },
+                            // Hier könnten zukünftig weitere Admin-Seiten hinzukommen
+                            // z.B. { path: "admin/stats", element: <AdminStats /> }
+                        ]
                     },
                 ]
             }
         ]
     },
-
-    // Die Route "/logout" wurde entfernt. Der Logout-Prozess wird durch den
-    // 'useLogoutMutation'-Hook gesteuert, der in der 'AppShell' aufgerufen wird.
 ]);
 
 export default router;

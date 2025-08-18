@@ -110,10 +110,7 @@ def _generate_json_with_gemini(system_prompt, user_prompt, model, max_tokens, re
             contents=[genai_types.Part.from_text(text=user_prompt)],
             config=config_obj  # <-- KORREKTER PARAMETERNAME IST 'config'
         )
-        ### NEUES LOGGING START ###
-        # Das ist der wichtigste Log-Eintrag. Wir loggen die rohe Antwort, BEVOR wir sie parsen.
         raw_response_text = response.text
-        ### NEUES LOGGING ENDE ###
         parsed_json = json.loads(raw_response_text)
         return parsed_json
     except json.JSONDecodeError as e:

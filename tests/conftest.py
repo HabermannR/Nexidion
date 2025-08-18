@@ -309,3 +309,24 @@ def pytest_generate_tests(metafunc):
     # This is the magic: Pytest will now create variants of the test function,
     # feeding each entry from 'models_to_run' into the 'llm_model_name' fixture.
     metafunc.parametrize("llm_model_name", models_to_run)
+
+@pytest.fixture(scope='function')
+def test_admin_obj(db_session):
+    """Erstellt einen Admin-Benutzer in der DB und gibt das SQLAlchemy-User-Objekt zurück."""
+    admin = User(username='admin_user', display_name='Admin User', user_type='human', is_admin=True)
+    admin.set_password('admin_password')
+    db_session.session.add(admin)
+    db_session.session.commit()
+    return admin
+
+@pytest.fixture(scope="function")
+def test_llm_user_obj(db_session):
+    """Erstellt einen LLM-Benutzer in der DB, der nicht angezeigt werden soll."""
+    llm_user = User(
+        username='claude-3-opus',
+        display_name='Claude 3 Opus',
+        user_type='llm_assistant' # Wichtigster Teil
+    )
+    db_session.session.add(llm_user)
+    db_session.session.commit()
+    return llm_user
