@@ -322,6 +322,23 @@ def delete_node(vault_id: int, node_id: str):
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
 
+@nodes_bp.route('/<string:node_id>/summary', methods=['PATCH'], strict_slashes=False)
+@jwt_required()
+def update_ai_summary(vault_id: int, node_id: str):
+    """Updates the AI summary for a node."""
+    user_id = int(get_jwt_identity())
+    data = request.json
+
+    if 'ai_summary' not in data:
+        return jsonify({"error": "Request body must contain 'ai_summary'."}), 400
+
+    try:
+        updated_node = node_service.update_node_ai_summary(node_id, vault_id, user_id, data['ai_summary'])
+        return jsonify(updated_node.to_dict())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
 
 # ========================================================================
 # API-ROUTEN (SPEZIAL-ENDPUNKTE)

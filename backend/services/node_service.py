@@ -578,6 +578,19 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     return updated_node_with_new_version.to_dict()
 
 
+def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary: str) -> Node:
+    """Updates the ai_summary field and marks it as current. No new version created."""
+    _verify_vault_access(vault_id, user_id)
+    node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
+    if not node:
+        raise ValueError("Node not found in the specified vault.")
+
+    node.ai_summary = ai_summary
+    node.summary_is_current = True
+    db.session.commit()
+    db.session.refresh(node)
+    return node
+
 def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: int) -> Node:
     """Bewegt einen Node zu einem neuen Parent (keine neue Version)."""
     _verify_vault_access(vault_id, user_id)

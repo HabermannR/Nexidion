@@ -98,29 +98,21 @@ class Node(db.Model):
     __tablename__ = 'nodes'
 
     # --- Columns ---
-    # The primary key is a UUID string, generated automatically for new nodes.
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     current_version = db.Column(db.Integer, nullable=False, default=1)
-    # Ein optionaler String für den Icon-Namen, z.B. "bxs-file-doc".
     icon = db.Column(db.String(50), nullable=True)
+    ai_summary = db.Column(db.Text, nullable=True)                                        # +++ NEU +++
+    summary_is_current = db.Column(db.Boolean, nullable=False, default=False)             # +++ NEU +++
 
     # --- Relationships ---
-    # Foreign key for the self-referential parent-child relationship.
-    # The index=True mirrors the CREATE INDEX command in your schema for better performance.
     parent_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=True, index=True)
-
     vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
 
-    # Defines the 'node.children' attribute, which provides a query to get all child nodes.
-    # The database-level "ON DELETE SET NULL" is respected by this relationship.
     children = db.relationship(
         'Node',
         backref=db.backref('parent', remote_side=[id]),
     )
 
-    # Defines the 'node.versions' attribute.
-    # The 'cascade="all, delete-orphan"' rule tells SQLAlchemy to automatically delete
-    # all versions of a node when the node itself is deleted, mirroring "ON DELETE CASCADE".
     versions = db.relationship('Version', backref='node', lazy=True, cascade="all, delete-orphan")
 
     current_version_object = db.relationship(
@@ -133,20 +125,15 @@ class Node(db.Model):
     title = association_proxy('current_version_object', 'title')
 
     def to_dict(self, include_children=False, include_content=True):
-        """
-        Konvertiert das Node-Objekt in ein serialisierbares Dictionary.
-        Der Titel wird von der aktuellen Version geholt.
-        """
         node_dict = {
             'id': self.id,
-            # +++ GEÄNDERT +++
-            # Wir holen den Titel von der verknüpften Version. Fallback für den seltenen Fall,
-            # dass ein Node keine Versionen hat.
             'title': self.current_version_object.title if self.current_version_object else "Unbenannter Node",
             'parent_id': self.parent_id,
             'current_version': self.current_version,
             'vault_id': self.vault_id,
-            'icon': self.icon
+            'icon': self.icon,
+            'ai_summary': self.ai_summary,                                                # +++ NEU +++
+            'summary_is_current': self.summary_is_current,                                # +++ NEU +++
         }
 
         if include_content:
