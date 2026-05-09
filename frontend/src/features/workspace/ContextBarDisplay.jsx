@@ -4,28 +4,22 @@ import React from 'react';
 import { Button, ButtonGroup, Dropdown } from 'react-bootstrap';
 import './ContextBar.css';
 
-/**
- * A "dumb" presentational component for the context bar.
- * It now handles rendering an expanded view showing the titles of selected nodes.
- */
 export default function ContextBarDisplay({
-                                              selectionSize,
-                                              savedSets,
-                                              onClear,
-                                              onSave,
-                                              onLoadSet,
-                                              onDeleteSet,
-                                              // NEW PROPS for the expandable detail view
-                                              isExpanded,
-                                              onToggleExpand,
-                                              selectedNodes
-                                          }) {
-
+    selectionSize,
+    savedSets,
+    onClear,
+    onSave,
+    onLoadSet,
+    onDeleteSet,
+    isExpanded,
+    onToggleExpand,
+    selectedNodes,
+    onCopyContent,
+    copyStatus,
+}) {
     const handleSave = () => {
-        const name = prompt("Name für diese Auswahl eingeben:");
-        if (name) {
-            onSave(name);
-        }
+        const name = prompt('Name für diese Auswahl eingeben:');
+        if (name) onSave(name);
     };
 
     const handleDelete = (e, name) => {
@@ -35,37 +29,50 @@ export default function ContextBarDisplay({
         }
     };
 
-    // Clicking anywhere on the bar (except buttons) should toggle the view,
-    // but only if there's something to show.
     const handleBarClick = (e) => {
-        // Prevent toggling if a button inside the bar was clicked
-        if (e.target.closest('button, .dropdown-menu')) {
-            return;
-        }
-        if (selectionSize > 0) {
-            onToggleExpand();
-        }
+        if (e.target.closest('button, .dropdown-menu')) return;
+        if (selectionSize > 0) onToggleExpand();
     };
 
     const hasSavedSets = savedSets.length > 0;
-
-    // Determine the chevron icon based on the expanded state
     const chevronIcon = isExpanded ? 'bxs-chevron-down' : 'bxs-chevron-right';
+
+    const copyLabel = () => {
+        if (copyStatus === 'copying') return '…';
+        if (copyStatus === 'success') return '✓';
+        if (copyStatus === 'error') return '✗';
+        return '⎘';
+    };
 
     return (
         <div className="context-bar-wrapper">
             <div
                 className={`context-bar ${selectionSize > 0 ? 'expandable' : ''}`}
                 onClick={handleBarClick}
-                title={selectionSize > 0 ? "Klicken zum Ein-/Ausklappen der Details" : ""}
+                title={selectionSize > 0 ? 'Klicken zum Ein-/Ausklappen der Details' : ''}
             >
                 <span className="context-status-text">
-                    {/* Add the chevron icon for visual feedback */}
                     {selectionSize > 0 && <i className={`bx ${chevronIcon} me-1`}></i>}
                     <strong>{selectionSize}</strong> Node(s) als Kontext ausgewählt
                 </span>
 
                 <ButtonGroup>
+                    {/* Copy content button — lives here now */}
+                    <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        onClick={onCopyContent}
+                        disabled={selectionSize === 0 || copyStatus === 'copying'}
+                        title={
+                            copyStatus === 'success' ? 'Copied!'
+                            : copyStatus === 'error' ? 'Copy failed'
+                            : `Copy content of ${selectionSize} node(s)`
+                        }
+                        style={{ minWidth: '2rem' }}
+                    >
+                        {copyLabel()}
+                    </Button>
+
                     <Button
                         variant="outline-secondary"
                         size="sm"
@@ -85,16 +92,11 @@ export default function ContextBarDisplay({
                             title="Gespeicherte Kontext-Sets verwalten"
                         />
                         <Dropdown.Menu align="end">
-                            <Dropdown.Item
-                                onClick={handleSave}
-                                disabled={selectionSize === 0}
-                            >
+                            <Dropdown.Item onClick={handleSave} disabled={selectionSize === 0}>
                                 <i className="bx bx-save me-2"></i>Aktuelle Auswahl speichern...
                             </Dropdown.Item>
-
                             <Dropdown.Divider />
                             <Dropdown.Header>Gespeicherte Sets</Dropdown.Header>
-
                             {hasSavedSets ? (
                                 savedSets.map((set) => (
                                     <Dropdown.Item
@@ -118,21 +120,19 @@ export default function ContextBarDisplay({
                                     </Dropdown.Item>
                                 ))
                             ) : (
-                                <Dropdown.ItemText>
-                                    Noch keine Sets gespeichert.
-                                </Dropdown.ItemText>
+                                <Dropdown.ItemText>Noch keine Sets gespeichert.</Dropdown.ItemText>
                             )}
                         </Dropdown.Menu>
                     </Dropdown>
                 </ButtonGroup>
             </div>
 
-            {/* CONDITIONAL RENDERING: Show this div only when expanded and items exist */}
+            {/* Expanded node list */}
             {isExpanded && selectionSize > 0 && (
                 <div className="context-expanded-content">
                     <div className="context-expanded-list">
                         {selectedNodes.map(node => (
-                            <div key={node.id} className="context-expanded-item" title={node.title}>
+                            <div key={node.id} className="context-expanded-item" title={node.id}>
                                 {node.title}
                             </div>
                         ))}

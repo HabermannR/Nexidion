@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 # Importiere die Services
-from backend.services import node_service, chat_service
+from backend.services import node_service
 
 # Der Blueprint enthält die vault_id als dynamischen Teil des Präfixes.
 # Alle Routen sind relativ zu diesem Prefix.
@@ -101,6 +101,41 @@ def search_nodes_by_title(vault_id: int):
         logging.error(f"Error during node search in vault {vault_id}: {e}", exc_info=True)
         # Gib eine generische Fehlermeldung an den Client zurück.
         return jsonify({"error": "An internal server error occurred during search"}), 500
+
+
+@nodes_bp.route('/full-search', methods=['GET'], strict_slashes=False)
+@jwt_required()
+def full_text_search(vault_id: int):
+    """
+    Volltextsuche speziell für LLM-Agenten.
+    Sucht in Titel, Inhalt und der AI-Zusammenfassung.
+
+    Query-Parameter:
+        q (str): Der Suchbegriff.
+        limit (int): Maximale Anzahl der Ergebnisse (Standard: 20).
+    """
+    user_id = int(get_jwt_identity())
+    query = request.args.get('q', '').strip()
+    limit = request.args.get('limit', 20, type=int)
+
+    if not query:
+        return jsonify({"error": "Missing search query parameter 'q'."}), 400
+
+    if limit < 1 or limit > 100:
+        return jsonify({"error": "Parameter 'limit' must be between 1 and 100."}), 400
+
+    try:
+        results = node_service.search_nodes_fulltext(query, vault_id, user_id, limit)
+        return jsonify({
+            "query": query,
+            "limit": limit,
+            "count": len(results),
+            "results": results
+        }), 200
+    except PermissionError:
+        return jsonify({"error": "Access to this vault is not permitted."}), 403
+    except Exception as e:
+        return jsonify({"error": "An unexpected error occurred.", "details": str(e)}), 500
 
 @nodes_bp.route('/resolve-links', methods=['POST'], strict_slashes=False)
 @jwt_required()

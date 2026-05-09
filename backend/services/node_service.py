@@ -1,8 +1,8 @@
 # backend/services/node_service.py
 
 from typing import List, Dict, Any, Optional, Set
-from sqlalchemy.orm import joinedload, subqueryload, contains_eager, with_parent
-from sqlalchemy import case, func, select
+from sqlalchemy.orm import joinedload, subqueryload, with_parent
+from sqlalchemy import case, func, select, or_, case, cast, Float
 import re
 
 # Importiere die Services und Modelle
@@ -273,6 +273,74 @@ def find_node_by_title(title: str, vault_id: int, user_id: int) -> dict | None:
     node = Node.query.options(joinedload(Node.current_version_object)).filter(Node.id == subquery).first()
 
     return node.to_dict(include_content=True) if node else None
+
+
+def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 20) -> list[dict]:
+    """
+    Relevance-ranked full-text search over title, content, and ai_summary.
+    Title matches rank highest (A), content next (B), summary last (C).
+    Includes title-length bonus so exact/shorter title matches rank higher.
+    """
+    _verify_vault_access(vault_id, user_id)
+
+    if not query or not query.strip():
+        return []
+
+    q = query.strip()
+
+    tsquery_en = func.plainto_tsquery("english", q)
+    tsquery_de = func.plainto_tsquery("german", q)
+
+    vector_en = func.setweight(
+        func.to_tsvector("english", func.coalesce(Version.title, "")), "A"
+    ).op("||")(
+        func.setweight(func.to_tsvector("english", func.coalesce(Version.content, "")), "B")
+    ).op("||")(
+        func.setweight(func.to_tsvector("english", func.coalesce(Node.ai_summary, "")), "C")
+    )
+
+    vector_de = func.setweight(
+        func.to_tsvector("german", func.coalesce(Version.title, "")), "A"
+    ).op("||")(
+        func.setweight(func.to_tsvector("german", func.coalesce(Version.content, "")), "B")
+    ).op("||")(
+        func.setweight(func.to_tsvector("german", func.coalesce(Node.ai_summary, "")), "C")
+    )
+
+    title_length_bonus = case(
+        (func.lower(Version.title) == q.lower(), 1.0),  # exact match → full bonus
+        (Version.title.ilike(f"%{q}%"),  # contains query → partial bonus
+         cast(func.length(q), Float) / func.nullif(func.length(Version.title), 0)
+         ),
+        else_=0.0  # no match → no bonus
+    )
+
+    relevance = (
+        func.ts_rank(vector_en, tsquery_en) +
+        func.ts_rank(vector_de, tsquery_de) +
+        title_length_bonus
+    ).label("relevance")
+
+    nodes = (
+        db.session.query(Node, relevance)
+        .join(Node.current_version_object)
+        .filter(
+            Node.vault_id == vault_id,
+            or_(
+                vector_en.op("@@")(tsquery_en),
+                vector_de.op("@@")(tsquery_de),
+            )
+        )
+        .order_by(relevance.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {**node.to_dict(), "relevance_score": float(score)}
+        for node, score in nodes
+    ]
+
 
 
 def get_node_by_id(node_id: str, vault_id: int, user_id: int, v3_mode: bool = False) -> dict | None:
