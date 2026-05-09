@@ -35,9 +35,7 @@ class User(db.Model):
 
     # Relationships
     owned_vaults = db.relationship('Vault', backref='owner', lazy=True)
-    owned_chat_sessions = db.relationship('ChatSession', backref='owner', lazy=True)
     authored_versions = db.relationship('Version', backref='author', lazy=True)
-    authored_messages = db.relationship('ChatMessage', backref='author', lazy=True)
 
     def set_password(self, password):
         """Creates a password hash using werkzeug."""
@@ -77,7 +75,6 @@ class Vault(db.Model):
     # The cascade rule ensures that when a vault is deleted, all its
     # associated nodes and chat sessions are also automatically deleted.
     nodes = db.relationship('Node', backref='vault', lazy='dynamic', cascade="all, delete-orphan")
-    chat_sessions = db.relationship('ChatSession', backref='vault', lazy='dynamic', cascade="all, delete-orphan")
 
     def to_dict(self):
         """
@@ -196,73 +193,27 @@ class Version(db.Model):
         return data
 
 
-# NEU: Assoziationstabelle für den Many-to-Many-Kontext
-# Eine Nachricht (message) kann viele Kontext-Versionen haben.
-# Eine Version kann der Kontext für viele Nachrichten sein.
-chat_message_context = db.Table('chat_message_context',
-    db.Column('message_id', db.String(36), db.ForeignKey('chat_messages.id'), primary_key=True),
-    db.Column('version_id', db.Integer, db.ForeignKey('versions.id'), primary_key=True)
-)
+class Task(db.Model):
+    __tablename__ = 'tasks'
 
-
-class ChatSession(db.Model):
-    """Represents a single, continuous chat conversation."""
-    __tablename__ = 'chat_sessions'
-
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = db.Column(db.String(255), nullable=False, default="New Chat")
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-
-    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
-    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-
-    messages = db.relationship('ChatMessage', back_populates='session', lazy='dynamic', cascade="all, delete-orphan")
+    id               = db.Column(db.String(36), primary_key=True,
+                                 default=lambda: str(uuid.uuid4()))
+    vault_id         = db.Column(db.Integer, db.ForeignKey('vaults.id'),
+                                 nullable=False, index=True)
+    instruction      = db.Column(db.Text, nullable=False)
+    status           = db.Column(db.String(20), nullable=False,
+                                 default='pending', index=True)
+                                 # 'pending' | 'processing' | 'completed' | 'failed'
+    context_node_ids = db.Column(db.JSON, nullable=False, default=list)
+    created_at       = db.Column(db.DateTime, nullable=False,
+                                 default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {
-            "id": self.id,
-            "title": self.title,
-            "created_at": self.created_at.isoformat(),
-            "vault_id": self.vault_id,
-            "owner_id": self.owner_id
-        }
-
-
-class ChatMessage(db.Model):
-    """Represents a single message (from user or assistant) in a chat session."""
-    __tablename__ = 'chat_messages'
-
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = db.Column(db.String(36), db.ForeignKey('chat_sessions.id'), nullable=False, index=True)
-    role = db.Column(db.String(20), nullable=False)  # 'user' or 'assistant'
-    content = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-
-    author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
-    llm_model_source = db.Column(db.String(100),
-                                 nullable=True)  # z.B. 'claude-3-5-sonnet-20240620', nur für role='assistant'
-    status = db.Column(db.String(20), nullable=False, default='active', index=True)  # 'active', 'retried', 'deleted'
-    sort_order = db.Column(db.Integer, nullable=False, index=True,
-                           comment="Explicit sort order for messages within a session.")
-
-    session = db.relationship('ChatSession', back_populates='messages')
-    # Many-to-Many-Beziehung zu den Kontext-Versionen
-    # Gilt nur für 'user'-Nachrichten, aber die Verknüpfung ist hier definiert.
-    context_versions = db.relationship('Version', secondary=chat_message_context, lazy='subquery',
-                                       backref=db.backref('context_for_messages', lazy=True))
-    # --- NEUER, KOMBINIERTER INDEX ---
-    __table_args__ = (
-        Index('idx_session_id_sort_order', 'session_id', 'sort_order'),
-    )
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "role": self.role,
-            "content": self.content,
-            "timestamp": self.timestamp.isoformat(),
-            "author_id": self.author_id,
-            "llm_model_source": self.llm_model_source,
-            "status": self.status,
-            "sort_order": self.sort_order
+            'id':               self.id,
+            'vault_id':         self.vault_id,
+            'instruction':      self.instruction,
+            'status':           self.status,
+            'context_node_ids': self.context_node_ids,
+            'created_at':       self.created_at.isoformat(),
         }
