@@ -1,3 +1,5 @@
+/* ContextPanel.css */
+
 /*
 ========================================================================
 1. HAUPT-CONTAINER: Start der Flex-Kette.
@@ -104,4 +106,43 @@
         color: white;
         border-color: #0d6efd;
     }
+}
+
+/*
+========================================================================
+7. AGENT TAB STYLES:
+   - Spezifische Layout- und UI-Anpassungen für das AgentTab innerhalb
+     des ContextPanels.
+========================================================================
+*/
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #ced4da;
+    border-radius: 4px;
+}
+
+.agent-context-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.agent-context-chip {
+    background: #e9ecef;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.75rem;
+    color: #495057;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
 }

@@ -11,7 +11,7 @@
     transition: opacity 0.2s ease-in-out;
 }
 
-/* 1. DER WRAPPER & DIE LINIE (Unverändert) */
+/* 1. DER WRAPPER & DIE LINIE */
 /*----------------------------------------------------------------*/
 .tree-node-wrapper {
     /* Der Wrapper hat keine eigenen visuellen Stile mehr, um Vererbung zu vermeiden */
@@ -36,6 +36,25 @@
 
 .tree-node-wrapper.is-selected > .tree-node-line:hover {
     background-color: #d0e2ff;
+}
+
+/* SUCH-HIGHLIGHTS (NEU) */
+/*----------------------------------------------------------------*/
+.tree-node-wrapper.is-highlighted > .tree-node-line {
+    background-color: #fff3cd; /* Leichtes Gelb (Bootstrap Warning light) */
+}
+
+.tree-node-wrapper.is-highlighted > .tree-node-line:hover {
+    background-color: #ffe69c;
+}
+
+.tree-node-wrapper.is-highlighted.is-selected > .tree-node-line {
+    background-color: #ffecb5; /* Mix aus Selected und Highlighted */
+}
+
+.tree-node-wrapper.is-highlighted > .tree-node-line .node-title {
+    color: #856404;
+    font-weight: 600;
 }
 
 
@@ -73,17 +92,14 @@
     font-size: 1.2rem;
     color: #495057;
     transition: opacity 0.15s ease, color 0.15s ease;
-    /* Grundzustand: Alle Icons sind erstmal unsichtbar */
     opacity: 0;
 }
 
-/* 2.2 Regeln für Nodes MIT Icon (Standardfall) */
-/* Grundzustand: Nur das Node-Icon ist sichtbar */
+/* 2.2 Regeln für Nodes MIT Icon */
 .selection-area:not(.no-icon-mode) .node-icon {
     opacity: 1;
 }
 
-/* Hover auf NICHT-ausgewähltem Node: Zeige leere Checkbox */
 .tree-node-wrapper:not(.is-selected) > .tree-node-line:hover .selection-area:not(.no-icon-mode) .node-icon {
     opacity: 0;
 }
@@ -91,13 +107,11 @@
     opacity: 1;
 }
 
-/* Ausgewählter Node (kein Hover): Zeige gefärbtes Node-Icon */
 .tree-node-wrapper.is-selected > .tree-node-line .selection-area:not(.no-icon-mode) .node-icon {
     opacity: 1;
     color: #0d6efd;
 }
 
-/* Hover auf BEREITS-ausgewähltem Node: Zeige volle Checkbox */
 .tree-node-wrapper.is-selected > .tree-node-line:hover .selection-area:not(.no-icon-mode) .node-icon {
     opacity: 0;
 }
@@ -106,13 +120,11 @@
     color: #0d6efd;
 }
 
-/* 2.3 Regeln für Nodes OHNE Icon (Sonderfall .no-icon-mode) */
-/* Grundzustand: Leere Checkbox ist immer sichtbar */
+/* 2.3 Regeln für Nodes OHNE Icon */
 .selection-area.no-icon-mode .selector-icon {
     opacity: 1;
 }
 
-/* Ausgewählter Node: Verstecke leere und zeige volle Checkbox */
 .tree-node-wrapper.is-selected > .tree-node-line .selection-area.no-icon-mode .selector-icon {
     opacity: 0;
 }
@@ -122,7 +134,7 @@
 }
 
 
-/* 3. DER NAVLINK & DIE KIND-ELEMENTE (Unverändert) */
+/* 3. DER NAVLINK & DIE KIND-ELEMENTE */
 /*----------------------------------------------------------------*/
 .node-link-content {
     flex-grow: 1;
@@ -150,7 +162,7 @@
 }
 
 
-/* 4. DAS PLUS-ICON (Unverändert) */
+/* 4. DAS PLUS-ICON */
 /*----------------------------------------------------------------*/
 .add-node-icon {
     display: flex;
@@ -178,7 +190,7 @@
     color: #268d80;
 }
 
-/* 5. STILE FÜR DRAG-AND-DROP (Unverändert) */
+/* 5. STILE FÜR DRAG-AND-DROP */
 /*----------------------------------------------------------------*/
 .tree-node-line.is-drop-target {
     background-color: #e6f7ff;

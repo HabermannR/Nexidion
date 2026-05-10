@@ -1,9 +1,9 @@
 // src/features/workspace/left-panel/ProjectTree.jsx
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useEffect } from "react";
 import { NavLink, useParams, useNavigate } from "react-router-dom";
 import { useDrag, useDrop } from "react-dnd";
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'; // NEU
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import apiClient from "../../api/apiClient.js";
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import "./ProjectTree.css";
@@ -19,9 +19,9 @@ const useVaultTreeQuery = (vaultId) => {
 };
 
 // ============================================================================
-// TreeNode Komponente (Wurde wie gewünscht angepasst)
+// TreeNode Komponente
 // ============================================================================
-const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
+const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlightedNodeIds = new Set() }) => {
     const wrapperRef = useRef(null);
     const dropRef = useRef(null);
 
@@ -29,6 +29,9 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
     const isSelected = selectedNodeIds.has(node.id);
     const isExpanded = !collapsedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
+    
+    // Prüfe ob dieser Node von der Suche getroffen wurde
+    const isHighlighted = highlightedNodeIds.has(node.id);
 
     const [{isDragging}, drag] = useDrag(() => ({
         type: ItemTypes.NODE,
@@ -64,21 +67,21 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
     };
 
     const getLinkClassName = ({isActive}) => `node-link-content ${isActive ? "is-active" : ""}`;
-    const wrapperClasses = `tree-node-wrapper ${isSelected ? "is-selected" : ""}`;
-    const lineClasses = ["tree-node-line", isOver && canDrop && "is-drop-target", isOver && !canDrop && "is-drop-invalid"].filter(Boolean).join(" ");
+    
+    // Klasse für Highlights ergänzen
+    const wrapperClasses = `tree-node-wrapper ${isSelected ? "is-selected" : ""} ${isHighlighted ? "is-highlighted" : ""}`;
+    const lineClasses =["tree-node-line", isOver && canDrop && "is-drop-target", isOver && !canDrop && "is-drop-invalid"].filter(Boolean).join(" ");
     const selectionAreaClasses = `selection-area ${!node.icon ? "no-icon-mode" : ""}`;
+    
     return (
         <div ref={wrapperRef} className={wrapperClasses} style={{ opacity: isDragging ? 0.4 : 1 }}>
             <div ref={dropRef} className={lineClasses}>
                 <span className="collapse-icon" onClick={handleToggleExpand}>
                     {hasChildren && <i className={`bx ${isExpanded ? "bx-chevron-down" : "bx-chevron-right"}`}></i>}
                 </span>
-                {/* NEU: Verwendet die dynamische Klasse */}
                 <span className={selectionAreaClasses} onClick={handleSelectNode}>
-                    {/* Checkboxen sind immer im DOM */}
                     <i className="selector-icon bx bx-checkbox"></i>
                     <i className="selector-icon-checked bx bxs-checkbox-checked"></i>
-                    {/* Das Node-Icon wird nur gerendert, wenn es existiert */}
                     {node.icon && <i className={`bx ${node.icon} node-icon`}></i>}
                 </span>
                 <NavLink
@@ -101,6 +104,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
                             onAddNode={onAddNode}
                             onMoveNode={onMoveNode}
                             onNodeClick={onNodeClick}
+                            highlightedNodeIds={highlightedNodeIds}
                         />
                     ))}
                 </div>
@@ -109,32 +113,57 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick  }) => {
     );
 });
 
-
-
 // ============================================================================
-// 3. HAUPTKOMPONENTE: ProjectTree (V4-Architektur mit useQuery & useMutation)
+// 3. HAUPTKOMPONENTE: ProjectTree
 // ============================================================================
-export default function ProjectTree({ onNodeClick }) {
+export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set() }) {
     const { vaultId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    
+    // Für Auto-Expand bei der Suche benötigt
+    const toggleNodeCollapse = useWorkspaceStore(state => state.toggleNodeCollapse);
+    const collapsedNodes = useWorkspaceStore(state => state.collapsedNodes);
 
     const {
         data: treeData,
         isLoading,
-        isSuccess,
-        isError,
-        error
+        isSuccess
     } = useVaultTreeQuery(vaultId);
 
+    // Auto-Expand von Elternknoten, damit Highlight-Treffer sichtbar werden
+    useEffect(() => {
+        if (!highlightedNodeIds || highlightedNodeIds.size === 0 || !treeData) return;
 
-    // NEU: Mutation für das Hinzufügen eines Nodes.
+        const parentsToExpand = new Set();
+
+        const findPaths = (nodes, currentPath) => {
+            for (const node of nodes) {
+                const path =[...currentPath, node.id];
+                if (highlightedNodeIds.has(node.id)) {
+                    // Füge alle Ancestor-IDs der Liste der zu expandierenden Knoten hinzu
+                    currentPath.forEach(parentId => parentsToExpand.add(parentId));
+                }
+                if (node.children && node.children.length > 0) {
+                    findPaths(node.children, path);
+                }
+            }
+        };
+
+        findPaths(treeData,[]);
+
+        parentsToExpand.forEach(parentId => {
+            if (collapsedNodes.has(parentId)) {
+                toggleNodeCollapse(parentId);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [highlightedNodeIds, treeData]);
+
     const addNodeMutation = useMutation({
         mutationFn: (payload) => apiClient.post(`/api/vaults/${vaultId}/nodes/`, payload),
         onSuccess: (response) => {
-            // 1. Baum-Daten invalidieren, um die UI zu aktualisieren
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
-            // 2. Zum neuen Element navigieren (ohne Reload-Tricks)
             navigate(`/vaults/${vaultId}/nodes/${response.data.id}`);
         },
         onError: (err) => {
@@ -143,31 +172,28 @@ export default function ProjectTree({ onNodeClick }) {
         }
     });
 
-    // NEU: Mutation für das Verschieben eines Nodes.
     const moveNodeMutation = useMutation({
     mutationFn: ({ nodeIdToMove, newParentId }) =>
         apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}/move`, { parent_id: newParentId }),
         onSuccess: () => {
-            // Baum-Daten invalidieren, um die UI zu aktualisieren. Keine Navigation nötig.
-            queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
+            queryClient.invalidateQueries({ queryKey:['vaultTree', vaultId] });
         },
         onError: (err) => {
             console.error("Fehler beim Verschieben des Elements:", err);
             alert(`Fehler: ${err.response?.data?.error || err.message}`);
-            // Bei Fehler trotzdem neu laden, um einen konsistenten Zustand sicherzustellen
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
         }
     });
 
     const handleAddNode = useCallback((parentId) => {
-        if (!isSuccess) return; // Verhindert Aktionen, während die Daten noch nicht geladen sind.
+        if (!isSuccess) return;
         const title = prompt("Titel für das neue Element eingeben:");
         if (!title || !title.trim()) return;
         addNodeMutation.mutate({ title, parent_id: parentId });
     }, [isSuccess, addNodeMutation]);
 
     const handleMoveNode = useCallback((sourceNode, targetNode) => {
-        if (!isSuccess) return; // Verhindert Aktionen, während die Daten noch nicht geladen sind.
+        if (!isSuccess) return;
         moveNodeMutation.mutate({
             nodeIdToMove: sourceNode.id,
             newParentId: targetNode.id
@@ -179,9 +205,8 @@ export default function ProjectTree({ onNodeClick }) {
         return <div className="p-2 text-muted small">Dieser Vault ist noch leer.</div>;
     }
 
-    const containerClasses = [
+    const containerClasses =[
         "project-tree-container",
-        // Wenn die Abfrage NICHT erfolgreich war, ist der Baum "stale".
         !isSuccess ? "is-stale" : ""
     ].filter(Boolean).join(" ");
 
@@ -194,6 +219,7 @@ export default function ProjectTree({ onNodeClick }) {
                     onAddNode={handleAddNode}
                     onMoveNode={handleMoveNode}
                     onNodeClick={onNodeClick}
+                    highlightedNodeIds={highlightedNodeIds}
                 />
             ))}
         </div>
