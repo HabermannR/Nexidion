@@ -1,13 +1,15 @@
 # backend/services/node_service.py
 
 from typing import List, Dict, Any, Optional, Set
-from sqlalchemy.orm import joinedload, subqueryload, with_parent
-from sqlalchemy import case, func, select, or_, case, cast, Float
+from sqlalchemy.orm import joinedload, with_parent, defer
+from sqlalchemy import func, select, or_, case, cast, Float
+import hashlib
+import json
 import re
 
 # Importiere die Services und Modelle
 from .vault_service import _verify_vault_access
-from ..models import db, Node, Version
+from ..models import db, Node, Version, Vault
 
 DEFAULT_NODE_ICON = "bxs-file-doc"
 # Konstante mit allen erlaubten Icon-Strings
@@ -185,48 +187,122 @@ def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user
     return nodes
 
 
+def rebuild_vault_tree_cache(vault_id: int) -> dict:
+    """Builds and caches both the UI tree and Agent tree in a single pass."""
+
+    # 1. Fetch nodes (Optimized: ignoring content and search vectors)
+    nodes = (
+        Node.query
+        .options(
+            joinedload(Node.current_version_object)
+            .defer(Version.content)
+            .defer(Version.fts_en)
+            .defer(Version.fts_de),
+            defer(Node.fts_summary_en),
+            defer(Node.fts_summary_de)
+        )
+        .filter_by(vault_id=vault_id)
+        .all()
+    )
+
+    ui_node_map = {}
+    agent_node_map = {}
+
+    # 2. Build flat dictionaries
+    for n in nodes:
+        title = n.current_version_object.title if n.current_version_object else "Unbenannter Node"
+
+        ui_node_map[n.id] = {
+            'id': n.id,
+            'title': title,
+            'parent_id': n.parent_id,
+            'icon': n.icon,
+            'children': []
+        }
+
+        agent_node_map[n.id] = {
+            'id': n.id,
+            'title': title,
+            'parent_id': n.parent_id,
+            'ai_summary': n.ai_summary,
+            'summary_is_current': n.summary_is_current,
+            'children': []
+        }
+
+    # 3. Link children to parents
+    ui_roots = []
+    agent_roots = []
+
+    for node in nodes:
+        ui_d = ui_node_map[node.id]
+        agent_d = agent_node_map[node.id]
+
+        if node.parent_id and node.parent_id in ui_node_map:
+            ui_node_map[node.parent_id]['children'].append(ui_d)
+            agent_node_map[node.parent_id]['children'].append(agent_d)
+        else:
+            ui_roots.append(ui_d)
+            agent_roots.append(agent_d)
+
+    # 4. Sort trees alphabetically
+    def sort_tree(nodes_list):
+        nodes_list.sort(key=lambda n: n.get('title') or '')
+        for n in nodes_list:
+            sort_tree(n['children'])
+
+    sort_tree(ui_roots)
+    sort_tree(agent_roots)
+
+    # 5. Generate ETags
+    ui_etag = hashlib.md5(json.dumps(ui_roots, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+    agent_etag = hashlib.md5(json.dumps(agent_roots, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+
+    # 6. Save to database
+    from ..models import Vault  # Just in case it's not imported at the top
+    vault = db.session.get(Vault, vault_id)
+    if vault:
+        vault.cached_ui_tree = ui_roots
+        vault.cached_ui_tree_etag = ui_etag
+        vault.cached_agent_tree = agent_roots
+        vault.cached_agent_tree_etag = agent_etag
+        db.session.commit()
+
+    return {
+        'ui': (ui_roots, ui_etag),
+        'agent': (agent_roots, agent_etag)
+    }
+
 # ========================================================================
 # READ OPERATIONS
 # ========================================================================
 
-def get_nodes_as_tree(vault_id: int, user_id: int, v3_mode: bool = False) -> list[dict]:
+def get_nodes_as_tree(vault_id: int, user_id: int, format_type: str = 'tree', client_etag: Optional[str] = None):
     """
-    Holt die komplette Node-Hierarchie als Baumstruktur.
-    Sortiert jetzt explizit auf Query-Ebene.
+    Holt den gecachten Baum für die UI oder den Agenten.
+    Gibt ein Tupel zurück: (tree_data, etag, is_not_modified)
     """
     _verify_vault_access(vault_id, user_id)
-    root_nodes = (
-        Node.query
-        .options(
-            # Wir laden die Kinder und deren Kinder...
-            subqueryload(Node.children).subqueryload(Node.children),
-            # ...und stellen sicher, dass die aktuelle Version für die Sortierung verfügbar ist.
-            joinedload(Node.current_version_object)
-        )
-        .filter(Node.vault_id == vault_id, Node.parent_id.is_(None))
-        # +++ HINZUGEFÜGT: Explizite Sortierung in der Abfrage +++
-        .join(Node.current_version_object)  # Joinen, um auf den Titel der Version zugreifen zu können
-        .order_by(Version.title)  # Sortiere nach dem Titel in der Version-Tabelle
-        .all()
-    )
 
-    # WICHTIG: Da die Sortierung in der `relationship` nicht mehr greift,
-    # müssen wir die Kinder möglicherweise auch im Python-Code sortieren, wenn die DB-Sortierung nicht tief genug geht.
-    # In den meisten Fällen ist die DB-Sortierung der Root-Nodes aber ausreichend.
-    # Für eine perfekte Sortierung auf allen Ebenen müsste man die `to_dict`-Methode anpassen.
+    vault = db.session.get(Vault, vault_id)
+    if not vault:
+        raise ValueError("Vault not found.")
 
-    # Für eine perfekte Sortierung auf allen Ebenen:
-    def sorted_to_dict(node):
-        node_dict = node.to_dict(include_children=False,
-                                 include_content=False)  # Kinder nicht rekursiv von to_dict holen lassen
+    is_ui = (format_type == 'tree')
+    target_etag = vault.cached_ui_tree_etag if is_ui else vault.cached_agent_tree_etag
 
-        # Kinder manuell holen und sortieren
-        sorted_children = sorted(node.children, key=lambda child: child.title or "")
-        node_dict['children'] = [sorted_to_dict(child) for child in sorted_children]
+    # 1. Check if client already has the latest version (304 Not Modified)
+    if target_etag and client_etag == target_etag:
+        return None, target_etag, True
 
-        return node_dict
+    # 2. Fetch the requested tree from DB cache
+    target_tree = vault.cached_ui_tree if is_ui else vault.cached_agent_tree
 
-    return [sorted_to_dict(node) for node in root_nodes]
+    # 3. Cache Miss: Rebuild if it somehow doesn't exist yet
+    if not target_tree:
+        trees = rebuild_vault_tree_cache(vault_id)
+        target_tree, target_etag = trees['ui'] if is_ui else trees['agent']
+
+    return target_tree, target_etag, False
 
 
 def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False) -> list[dict]:
@@ -282,43 +358,28 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
     Includes title-length bonus so exact/shorter title matches rank higher.
     """
     _verify_vault_access(vault_id, user_id)
-
     if not query or not query.strip():
         return []
 
     q = query.strip()
-
     tsquery_en = func.plainto_tsquery("english", q)
     tsquery_de = func.plainto_tsquery("german", q)
 
-    vector_en = func.setweight(
-        func.to_tsvector("english", func.coalesce(Version.title, "")), "A"
-    ).op("||")(
-        func.setweight(func.to_tsvector("english", func.coalesce(Version.content, "")), "B")
-    ).op("||")(
-        func.setweight(func.to_tsvector("english", func.coalesce(Node.ai_summary, "")), "C")
-    )
-
-    vector_de = func.setweight(
-        func.to_tsvector("german", func.coalesce(Version.title, "")), "A"
-    ).op("||")(
-        func.setweight(func.to_tsvector("german", func.coalesce(Version.content, "")), "B")
-    ).op("||")(
-        func.setweight(func.to_tsvector("german", func.coalesce(Node.ai_summary, "")), "C")
-    )
+    # Combine stored vectors
+    combined_en = Version.fts_en.op("||")(Node.fts_summary_en)
+    combined_de = Version.fts_de.op("||")(Node.fts_summary_de)
 
     title_length_bonus = case(
-        (func.lower(Version.title) == q.lower(), 1.0),  # exact match → full bonus
-        (Version.title.ilike(f"%{q}%"),  # contains query → partial bonus
-         cast(func.length(q), Float) / func.nullif(func.length(Version.title), 0)
-         ),
-        else_=0.0  # no match → no bonus
+        (func.lower(Version.title) == q.lower(), 1.0),
+        (Version.title.ilike(f"%{q}%"),
+         cast(func.length(q), Float) / func.nullif(func.length(Version.title), 0)),
+        else_=0.0
     )
 
     relevance = (
-        func.ts_rank(vector_en, tsquery_en) +
-        func.ts_rank(vector_de, tsquery_de) +
-        title_length_bonus
+            func.ts_rank(combined_en, tsquery_en) +
+            func.ts_rank(combined_de, tsquery_de) +
+            title_length_bonus
     ).label("relevance")
 
     nodes = (
@@ -327,8 +388,10 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
         .filter(
             Node.vault_id == vault_id,
             or_(
-                vector_en.op("@@")(tsquery_en),
-                vector_de.op("@@")(tsquery_de),
+                Version.fts_en.op("@@")(tsquery_en),
+                Version.fts_de.op("@@")(tsquery_de),
+                Node.fts_summary_en.op("@@")(tsquery_en),
+                Node.fts_summary_de.op("@@")(tsquery_de),
             )
         )
         .order_by(relevance.desc())
@@ -549,7 +612,7 @@ def create_node(
         parent_id: Optional[str],
         vault_id: int,
         author_id: int,
-        icon: Optional[str] = None  # <--- NEUES, OPTIONALES ARGUMENT
+        icon: Optional[str] = None
 ) -> Node:
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     _verify_vault_access(vault_id, author_id)
@@ -588,6 +651,7 @@ def create_node(
     db.session.add(initial_version)
 
     db.session.commit()
+    rebuild_vault_tree_cache(vault_id)
     return new_node
 
 
@@ -643,6 +707,7 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     # Lade die gerade erstellte Version, um sie mit `to_dict` zurückzugeben
     updated_node_with_new_version = Node.query.options(joinedload(Node.current_version_object)).filter_by(
         id=node_id).one()
+    rebuild_vault_tree_cache(vault_id)
     return updated_node_with_new_version.to_dict()
 
 
@@ -657,6 +722,7 @@ def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary
     node.summary_is_current = True
     db.session.commit()
     db.session.refresh(node)
+    rebuild_vault_tree_cache(vault_id)
     return node
 
 def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: int) -> Node:
@@ -676,6 +742,7 @@ def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: i
 
     node_to_move.parent_id = new_parent_id
     db.session.commit()
+    rebuild_vault_tree_cache(vault_id)
     return node_to_move
 
 
@@ -698,7 +765,7 @@ def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[s
 
     db.session.commit()
     db.session.refresh(node)
-
+    rebuild_vault_tree_cache(vault_id)
     return node
 
 
@@ -726,3 +793,4 @@ def delete_node(node_id: str, vault_id: int, user_id: int):
     # Den Node selbst löschen. Versionen werden durch 'cascade' automatisch mitgelöscht.
     db.session.delete(node_to_delete)
     db.session.commit()
+    rebuild_vault_tree_cache(vault_id)

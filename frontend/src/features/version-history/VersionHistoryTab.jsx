@@ -125,7 +125,13 @@ export default function VersionHistoryTab() {
                                 <div className="flex-grow-1 me-2" style={{ minWidth: 0, cursor: 'pointer' }} onClick={() => handleSelectVersion(v)}>
                                     <strong className="d-block text-truncate" title={v.title || `Version ${v.version}`}>{v.title || `Version ${v.version}`}</strong>
                                     <small className="text-muted">v{v.version} von {v.author_name || 'N/A'}</small><br/>
-                                    <small className="text-muted">{new Date(v.timestamp).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</small>
+                                    <small className="text-muted">
+                                        {new Date(v.timestamp).toLocaleString('de-DE', {
+                                            dateStyle: 'short',
+                                            timeStyle: 'short',
+                                            timeZone: 'UTC' // Verhindert die +2 Stunden Sommerzeit-Verschiebung
+                                        })}
+                                    </small>
                                 </div>
                                 {showDiffButton && (
                                     <Button

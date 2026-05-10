@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Modal, Alert } from 'react-bootstrap';
+import { Button, Modal, Alert, Collapse } from 'react-bootstrap';
 
 import apiClient from '../../api/apiClient.js';
 import DiffViewer from '../../components/DiffViewer.jsx';
@@ -56,6 +56,7 @@ export default function NodeContent() {
     const [isEditing, setIsEditing] = useState(false);
     const [localContent, setLocalContent] = useState('');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showSummary, setShowSummary] = useState(false);
     const saveContentMutation = useSaveNodeContent({ onSuccess: () => setIsEditing(false) });
     const deleteNodeMutation = useMutation({
         mutationFn: (payload) => apiClient.delete(`/api/vaults/${payload.vaultId}/nodes/${payload.nodeId}`),
@@ -198,9 +199,33 @@ export default function NodeContent() {
                     isEditing={isEditing}
                     onEditClick={handleEditClick}
                     onDeleteClick={() => setShowDeleteModal(true)}
+                    showSummary={showSummary}
+                    onToggleSummary={() => setShowSummary(!showSummary)}
                 />
             )}
             <hr />
+
+             {!isEditing && currentBaseVersion?.ai_summary && (
+                <Collapse in={showSummary}>
+                    <div id="ai-summary-collapse" className="mb-4">
+                        <div className="p-3 bg-light border border-info rounded text-dark shadow-sm" style={{ fontSize: '0.95rem' }}>
+                            <div className="fw-bold mb-1 text-info d-flex align-items-center">
+                                <i className="bx bx-brain me-1"></i> AI Zusammenfassung
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>
+                                {currentBaseVersion.ai_summary}
+                            </div>
+                            {!currentBaseVersion.summary_is_current && (
+                                <div className="text-warning mt-2" style={{ fontSize: '0.85rem' }}>
+                                    <i className="bx bx-error-circle me-1"></i>
+                                    Hinweis: Diese Zusammenfassung ist möglicherweise veraltet.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </Collapse>
+            )}
+
             {isEditing ? (
                 <>
                     <NodeEditor content={localContent} onContentChange={setLocalContent} />

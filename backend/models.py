@@ -2,15 +2,16 @@
 """
 Defines the SQLAlchemy database models for the Knowledge Base application.
 
-These models map Python classes to the tables in the SQLite database,
+These models map Python classes to the tables in the Postgres database,
 providing a secure and object-oriented way to interact with the data.
 """
 
 import uuid
 from datetime import datetime, timezone
+import sqlalchemy as sa
 from sqlalchemy.ext.associationproxy import association_proxy
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Index
+from sqlalchemy.dialects import postgresql
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Create the SQLAlchemy database instance.
@@ -34,8 +35,8 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    owned_vaults = db.relationship('Vault', backref='owner', lazy=True)
-    authored_versions = db.relationship('Version', backref='author', lazy=True)
+    owned_vaults = db.relationship('Vault', back_populates='owner', lazy=True)
+    authored_versions = db.relationship('Version', back_populates='author', lazy=True)
 
     def set_password(self, password):
         """Creates a password hash using werkzeug."""
@@ -71,10 +72,20 @@ class Vault(db.Model):
 
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
 
+    # 1. Ultra-lightweight tree for the Frontend
+    cached_ui_tree = db.Column(db.JSON, nullable=True)
+    cached_ui_tree_etag = db.Column(db.String(32), nullable=True)
+
+    # 2. Heavier tree including AI summaries for the LLM
+    cached_agent_tree = db.Column(db.JSON, nullable=True)
+    cached_agent_tree_etag = db.Column(db.String(32), nullable=True)
+
     # Relationships to nodes and sessions within this vault.
     # The cascade rule ensures that when a vault is deleted, all its
     # associated nodes and chat sessions are also automatically deleted.
-    nodes = db.relationship('Node', backref='vault', lazy='dynamic', cascade="all, delete-orphan")
+    nodes = db.relationship('Node', back_populates='vault', lazy='dynamic', cascade="all, delete-orphan")
+    # Add explicitly for the User relationship
+    owner = db.relationship('User', back_populates='owned_vaults')
 
     def to_dict(self):
         """
@@ -98,19 +109,33 @@ class Node(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     current_version = db.Column(db.Integer, nullable=False, default=1)
     icon = db.Column(db.String(50), nullable=True)
-    ai_summary = db.Column(db.Text, nullable=True)                                        # +++ NEU +++
-    summary_is_current = db.Column(db.Boolean, nullable=False, default=False)             # +++ NEU +++
+    ai_summary = db.Column(db.Text, nullable=True)
+    summary_is_current = db.Column(db.Boolean, nullable=False, default=False)
+
+    fts_summary_en = db.Column(postgresql.TSVECTOR(), sa.Computed(
+        "setweight(to_tsvector('english', coalesce(ai_summary,'')), 'C')",
+        persisted=True
+    ))
+    fts_summary_de = db.Column(postgresql.TSVECTOR(), sa.Computed(
+        "setweight(to_tsvector('german', coalesce(ai_summary,'')), 'C')",
+        persisted=True
+    ))
+
+    __table_args__ = (
+        db.Index('ix_nodes_fts_summary_en', 'fts_summary_en', postgresql_using='gin'),
+        db.Index('ix_nodes_fts_summary_de', 'fts_summary_de', postgresql_using='gin'),
+    )
 
     # --- Relationships ---
     parent_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=True, index=True)
     vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
 
-    children = db.relationship(
-        'Node',
-        backref=db.backref('parent', remote_side=[id]),
-    )
+    versions = db.relationship('Version', back_populates='node', lazy=True, cascade="all, delete-orphan")
+    vault = db.relationship('Vault', back_populates='nodes')
 
-    versions = db.relationship('Version', backref='node', lazy=True, cascade="all, delete-orphan")
+    # Self-referential relationships using back_populates
+    children = db.relationship('Node', back_populates='parent')
+    parent = db.relationship('Node', back_populates='children', remote_side=[id])
 
     current_version_object = db.relationship(
         'Version',
@@ -129,8 +154,8 @@ class Node(db.Model):
             'current_version': self.current_version,
             'vault_id': self.vault_id,
             'icon': self.icon,
-            'ai_summary': self.ai_summary,                                                # +++ NEU +++
-            'summary_is_current': self.summary_is_current,                                # +++ NEU +++
+            'ai_summary': self.ai_summary,
+            'summary_is_current': self.summary_is_current,
         }
 
         if include_content:
@@ -160,10 +185,28 @@ class Version(db.Model):
     content = db.Column(db.Text, nullable=True)  # Matches schema where content can be NULL
     timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    fts_en = db.Column(postgresql.TSVECTOR(), sa.Computed(
+        "setweight(to_tsvector('english', coalesce(title,'')), 'A') || "
+        "setweight(to_tsvector('english', coalesce(content,'')), 'B')",
+        persisted=True
+    ))
+    fts_de = db.Column(postgresql.TSVECTOR(), sa.Computed(
+        "setweight(to_tsvector('german', coalesce(title,'')), 'A') || "
+        "setweight(to_tsvector('german', coalesce(content,'')), 'B')",
+        persisted=True
+    ))
+
+    __table_args__ = (
+        db.Index('ix_versions_fts_en', 'fts_en', postgresql_using='gin'),
+        db.Index('ix_versions_fts_de', 'fts_de', postgresql_using='gin'),
+    )
+
     # --- Relationships ---
     # Foreign key linking this version back to its parent Node.
     node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False, index=True)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    node = db.relationship('Node', back_populates='versions')
+    author = db.relationship('User', back_populates='authored_versions')
 
     def to_dict(self, include_content=True):
         """
@@ -173,10 +216,12 @@ class Version(db.Model):
         data = {
             'id': self.id,
             'node_id': self.node_id,
-            # +++ HINZUGEFÜGT: Node-Metadaten für die UI ---
+            # Node-Metadaten für die UI ---
             'vault_id': self.node.vault_id,  # Wird für Aktionen (save, delete) benötigt
             'icon': self.node.icon,  # Kosmetisch, aber nützlich für die Anzeige
-
+            # Die AI Summary vom übergeordneten Node holen +++
+            'ai_summary': self.node.ai_summary,
+            'summary_is_current': self.node.summary_is_current,
             # --- Versions-spezifische Daten ---
             'title': self.title,  # Das neue, versionierte Titelfeld
             'version': self.version,

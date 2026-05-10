@@ -41,31 +41,50 @@ def cached_jsonify(data: dict | list) -> 'Response':
 @jwt_required()
 def get_nodes(vault_id: int):
     """
-    Holt Nodes eines Vaults. Unterstützt Baum-Format (mit Caching),
-    Listen-Format und Titelsuche (ohne Caching).
+    Holt Nodes eines Vaults. Unterstützt Baum-Format (UI/Agent),
+    Listen-Format und Titelsuche.
     """
     user_id = int(get_jwt_identity())
     format_type = request.args.get('format', 'tree').lower()
 
     try:
+        # 1. Title Search
         if 'title' in request.args:
             search_title = request.args.get('title')
             node = node_service.find_node_by_title(search_title, vault_id, user_id)
             return jsonify([node] if node else [])
 
+        # 2. List Format
         if format_type == 'list':
             nodes = node_service.get_nodes_as_list(vault_id, user_id)
             return jsonify(nodes)
 
-        # Baum-Struktur (Standardfall)
-        tree_data = node_service.get_nodes_as_tree(vault_id, user_id)
-        return cached_jsonify(tree_data)
+        # 3. TREE OR AGENT TREE (Via Service Layer)
+        if format_type in ['tree', 'agent_tree']:
+            client_etag = request.headers.get('If-None-Match')
+
+            # Ask the service for the tree!
+            tree_data, etag, is_not_modified = node_service.get_nodes_as_tree(
+                vault_id, user_id, format_type, client_etag
+            )
+
+            if is_not_modified:
+                return Response(status=304)
+
+            response = jsonify(tree_data)
+            if etag:
+                response.set_etag(etag)
+
+            return response
+
+        return jsonify({"error": "Invalid format requested."}), 400
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), 404
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
     except Exception as e:
+        logging.error(f"Error fetching tree: {e}", exc_info=True)
         return jsonify({"error": f"An internal error occurred: {e}"}), 500
 
 

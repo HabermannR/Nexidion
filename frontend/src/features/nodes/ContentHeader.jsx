@@ -11,6 +11,8 @@ export default function ContentHeader({
                                           isEditing,
                                           onEditClick,
                                           onDeleteClick,
+                                          showSummary,
+                                          onToggleSummary
                                       }) {
     // NEU: QueryClient für die Invalidierung holen
     const queryClient = useQueryClient();
@@ -109,11 +111,26 @@ export default function ContentHeader({
             {!isEditing && !isRenaming && (
                 <div className="action-buttons">
                     <ButtonGroup>
+                        {/* 1. AI Summary Button (falls vorhanden) */}
+                        {currentVersion?.ai_summary && (
+                            <Button
+                                variant={showSummary ? "info" : "outline-info"}
+                                size="sm"
+                                onClick={onToggleSummary}
+                                title="AI Summary umschalten"
+                            >
+                                <i className="bx bx-bot"></i>
+                                <span className="d-none d-md-inline ms-1">Summary</span>
+                            </Button>
+                        )}
+
+                        {/* 2. Der Bearbeiten Button (der fehlte!) */}
                         <Button variant="primary" size="sm" onClick={onEditClick} title="Inhalt bearbeiten" className="edit-button-responsive">
                             <i className="bx bx-pencil"></i>
-                            {/* d-none d-sm-inline: Text ist nur auf sm-Bildschirmen (>=576px) und größer sichtbar */}
                             <span className="d-none d-sm-inline ms-1">Bearbeiten</span>
                         </Button>
+
+                        {/* 3. Das Dropdown (hängt sich als "Split" optisch an den Bearbeiten-Button) */}
                         <Dropdown as={ButtonGroup}>
                             <Dropdown.Toggle split variant="primary" size="sm" id="node-actions-dropdown" title="Weitere Aktionen" />
                             <Dropdown.Menu align="end">

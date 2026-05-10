@@ -22,6 +22,7 @@ const useVaultTreeQuery = (vaultId) => {
 // TreeNode Komponente
 // ============================================================================
 const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlightedNodeIds = new Set() }) => {
+    const { vaultId } = useParams();
     const wrapperRef = useRef(null);
     const dropRef = useRef(null);
 
@@ -85,7 +86,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                     {node.icon && <i className={`bx ${node.icon} node-icon`}></i>}
                 </span>
                 <NavLink
-                    to={`/vaults/${node.vault_id}/nodes/${node.id}`}
+                    to={`/vaults/${vaultId}/nodes/${node.id}`}
                     className={getLinkClassName}
                     onClick={onNodeClick}
                 >
