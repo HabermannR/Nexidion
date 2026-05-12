@@ -74,6 +74,12 @@ export default function NodeContent() {
     const saveContentMutation = useSaveNodeContent({
         onSuccess: () => {
             setIsEditing(false);
+
+            // Cache invalidieren, damit die gerade neu erstellte Version
+            // sowie die aktualisierte Versionshistorie sofort geladen werden
+            queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, nodeId] });
+            queryClient.invalidateQueries({ queryKey: ['versions', vaultId, nodeId] });
+
             if (versionParam || compareParam) {
                 // Remove ?version and ?compare to see the latest version after save
                 const params = new URLSearchParams(searchParams);
