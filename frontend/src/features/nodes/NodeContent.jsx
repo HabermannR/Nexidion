@@ -1,7 +1,7 @@
 // src/features/nodes/NodeContent.jsx
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Modal, Alert, Collapse } from 'react-bootstrap';
 
@@ -17,8 +17,7 @@ import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
 import AppLoading from '../../components/AppLoading.jsx';
 
-// Hilfsfunktion bleibt unverändert.
-const findPathInTree = (nodes, nodeId, currentPath = []) => {
+const findPathInTree = (nodes, nodeId, currentPath =[]) => {
     for (const node of nodes) {
         const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${node.vault_id}/nodes/${node.id}`}];
         if (node.id === nodeId) return newPath;
@@ -30,34 +29,61 @@ const findPathInTree = (nodes, nodeId, currentPath = []) => {
     return null;
 };
 
-
 export default function NodeContent() {
-    // ==========================================================
-    // --- PHASE 1: ALLE HOOKS AUFRUFEN ---
-    // ==========================================================
     const { vaultId, nodeId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
 
-    // DATENQUELLEN
+    const [searchParams] = useSearchParams();
+    const versionParam = searchParams.get('version');
+    const compareParam = searchParams.get('compare');
+
     const { data: vaultTreeData, isLoading: isTreeLoading, isError: isTreeError } = useVaultTreeQuery(vaultId);
+
+    // 1. Hole alle Versionen als schlanke Stubs (Metadaten-Endpunkt)
     const { data: versions, isLoading: isLoadingVersions, isError: isVersionsError } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data),
         enabled: !!nodeId,
     });
 
-    // ZUSTAND
+    // 2. Hole VOLLSTÄNDIGE Daten exklusiv für diese angeforderte Version (oder aktuelle)
+    const { data: activeNodeData, isLoading: isLoadingNode, isError: isNodeError } = useQuery({
+        queryKey: ['nodeContent', vaultId, nodeId, versionParam],
+        queryFn: () => {
+            const params = versionParam ? { version: versionParam } : {};
+            return apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}`, { params }).then(res => res.data);
+        },
+        enabled: !!nodeId,
+    });
+
+    // 3. Diff-Vergleich falls vom Tab gefordert
+    const { data: compareNodeData } = useQuery({
+        queryKey: ['nodeContent', vaultId, nodeId, compareParam],
+        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}`, { params: { version: compareParam } }).then(res => res.data),
+        enabled: !!compareParam,
+    });
+
     const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
-    const setStoreDiffBase = useWorkspaceStore((state) => state.setDiffBase);
-    const clearStoreDiff = useWorkspaceStore((state) => state.clearDiff);
-    const { base: selectedBaseVersion, compare: selectedCompareVersion } = useWorkspaceStore(state => state.diffSelection);
 
     const [isEditing, setIsEditing] = useState(false);
     const [localContent, setLocalContent] = useState('');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
-    const saveContentMutation = useSaveNodeContent({ onSuccess: () => setIsEditing(false) });
+
+    const saveContentMutation = useSaveNodeContent({
+        onSuccess: () => {
+            setIsEditing(false);
+            if (versionParam || compareParam) {
+                // Remove ?version and ?compare to see the latest version after save
+                const params = new URLSearchParams(searchParams);
+                params.delete('version');
+                params.delete('compare');
+                navigate({ search: params.toString() }, { replace: true });
+            }
+        }
+    });
+
     const deleteNodeMutation = useMutation({
         mutationFn: (payload) => apiClient.delete(`/api/vaults/${payload.vaultId}/nodes/${payload.nodeId}`),
         onSuccess: (data, variables) => {
@@ -66,87 +92,40 @@ export default function NodeContent() {
         },
     });
 
-    // ==========================================================
-    // --- PHASE 2: DATEN-SYNCHRONISATION & EFFEKTE ---
-    // ==========================================================
-
-    // =======================================
-    // === THE FIX IS HERE ===
-    // This effect acts as a "master reset" whenever the user navigates to a new node.
-    // It runs IMMEDIATELY when `nodeId` changes, before any data fetching completes.
     useEffect(() => {
-        // We MUST proactively reset all local and global state related to the
-        // node's content to prevent showing stale data from the previous node.
-        setIsEditing(false);      // Exit editing mode if it was active on the old node.
-        setLocalContent('');      // CRUCIAL: Clear the local editor content immediately.
-        clearStoreDiff();         // Clear the globally selected version object in Zustand.
+        setIsEditing(false);
+        setLocalContent('');
+    }, [nodeId, versionParam]);
 
-    }, [nodeId, clearStoreDiff]); // The dependency array ensures this runs only on a node change.
-    // =======================================
-
-    // This effect calculates the breadcrumb path. It's fine as is.
     useEffect(() => {
         if (vaultTreeData?.tree && nodeId) {
             const path = findPathInTree(vaultTreeData.tree, nodeId);
-            setBreadcrumbPath(path || []);
+            setBreadcrumbPath(path ||[]);
         } else {
             setBreadcrumbPath([]);
         }
     }, [vaultTreeData, nodeId, setBreadcrumbPath]);
 
-    // This effect sets the initial state AFTER the reset has happened and AFTER data has loaded.
     useEffect(() => {
-        if (versions && versions.length > 0) {
-            const href = window.location.href;
-            const versionParam = new URL(href).searchParams.get('version');
-            const initialBase = versionParam
-                ? versions.find(v => String(v.version) === versionParam)
-                : versions[0];
-
-            if (initialBase) {
-                setStoreDiffBase(initialBase);
-            }
+        if (activeNodeData) {
+            setLocalContent(activeNodeData.content || '');
         }
-    }, [versions, setStoreDiffBase]);
+    }, [activeNodeData]);
 
-    // This effect syncs the local editor content with the selected version from global state.
-    useEffect(() => {
-        // This will only run after the global state (`selectedBaseVersion`) has been correctly
-        // set by the effect above, ensuring we don't load stale content.
-        if (selectedBaseVersion) {
-            setLocalContent(selectedBaseVersion.content || '');
-        }
-    }, [selectedBaseVersion]);
-
-    // ==========================================================
-    // --- PHASE 3: GUARD CLAUSES & BEDINGTE RETURNS ---
-    // ==========================================================
     if (!nodeId) {
         return <div className="p-4 text-center text-muted"><h4>Dokument auswählen</h4><p>Wähle ein Dokument aus der Navigation, um es hier anzuzeigen.</p></div>;
     }
 
-    // This loading state is now safe because all stale state has been cleared.
-    if (isTreeLoading || isLoadingVersions) {
+    if (isTreeLoading || isLoadingVersions || isLoadingNode) {
         return <AppLoading message="Lade Dokument..." />;
     }
 
-    if (isTreeError || isVersionsError) {
+    if (isTreeError || isVersionsError || isNodeError) {
         return <Alert variant="danger" className="m-4"><h4>Fehler</h4><p>Das Dokument konnte nicht geladen werden.</p></Alert>;
     }
 
-    // ==========================================================
-    // --- PHASE 4: VARIABLEN & DATEN FÜR RENDER-LOGIK ---
-    // ==========================================================
-    const currentBaseVersion = selectedBaseVersion || (versions && versions.length > 0 ? versions[0] : null);
+    const currentBaseVersion = activeNodeData;
 
-    const handleEditClick = () => {
-        // When the user clicks edit, we know `currentBaseVersion` is stable and correct.
-        // We populate the local editor state from it right before entering editing mode.
-        setLocalContent(currentBaseVersion?.content || '');
-        setIsEditing(true);
-    };
-
-    // This check is now robust. If there are no versions, currentBaseVersion will be null.
     if (!currentBaseVersion) {
         return (
             <div className="p-4">
@@ -159,11 +138,17 @@ export default function NodeContent() {
         );
     }
 
+    const handleEditClick = () => {
+        setLocalContent(currentBaseVersion.content || '');
+        setIsEditing(true);
+    };
+
     const isSaving = saveContentMutation.isPending;
-    const isViewingOldVersion = currentBaseVersion.id !== versions[0]?.id;
+    const isViewingOldVersion = currentBaseVersion.version !== currentBaseVersion.current_version;
 
     let sortedOldVersion = currentBaseVersion;
-    let sortedNewVersion = selectedCompareVersion;
+    let sortedNewVersion = compareParam ? compareNodeData : null;
+
     if (sortedNewVersion && currentBaseVersion) {
         if ((currentBaseVersion.version || 0) > (sortedNewVersion.version || 0)) {
             sortedOldVersion = sortedNewVersion;
@@ -180,9 +165,6 @@ export default function NodeContent() {
         setShowDeleteModal(false);
     };
 
-    // ==========================================================
-    // --- PHASE 5: FINALES RETURN MIT JSX ---
-    // ==========================================================
     return (
         <>
             {isEditing ? (

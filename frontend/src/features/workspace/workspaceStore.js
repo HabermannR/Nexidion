@@ -19,12 +19,9 @@ export const useWorkspaceStore = create(
             collapsedNodes: new Set(),
             savedSets: {},
 
-            // Diff state
-            diffSelection: { base: null, compare: null },
-
             // UI layout
             activeContextTab: 'agent',
-            breadcrumbPath: [],
+            breadcrumbPath:[],
 
             // ===============================================
             // ACTIONS
@@ -39,25 +36,12 @@ export const useWorkspaceStore = create(
                 selectedNodeIds: new Set(),
                 collapsedNodes: new Set(),
                 savedSets: {},
-                diffSelection: { base: null, compare: null },
-                breadcrumbPath: [],
+                breadcrumbPath:[],
             }),
 
             // UI layout
             setActiveContextTab: (tabKey) => set({ activeContextTab: tabKey }),
             setBreadcrumbPath: (path) => set({ breadcrumbPath: path }),
-
-            // Diff actions
-            setDiffBase: (version) => set(state => ({
-                diffSelection: { ...state.diffSelection, base: version },
-            })),
-            setDiffCompare: (version) => set(state => {
-                if (state.diffSelection.compare?.id === version?.id) {
-                    return { diffSelection: { ...state.diffSelection, compare: null } };
-                }
-                return { diffSelection: { ...state.diffSelection, compare: version } };
-            }),
-            clearDiff: () => set({ diffSelection: { base: null, compare: null } }),
 
             // Tree/selection actions
             toggleNodeSelection: (nodeId) => set((state) => {

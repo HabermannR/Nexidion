@@ -225,25 +225,39 @@ def get_multiple_nodes(vault_id: int):
 @jwt_required()
 def get_single_node(vault_id: int, node_id: str):
     """
-    Holt die Details eines einzelnen Nodes (ohne kompletten Versionsverlauf).
-    Diese Antwort wird mittels ETag gecacht.
+    Holt die Details eines einzelnen Nodes.
+    Akzeptiert optional einen ?version= Parameter.
     """
     user_id = int(get_jwt_identity())
+
+    # +++ NEU: Version strikt parsen für HTTP 400 +++
+    version_param = request.args.get('version')
+    target_version = None
+    if version_param is not None:
+        try:
+            target_version = int(version_param)
+            if target_version <= 0:
+                raise ValueError()
+        except ValueError:
+            return jsonify({"error": "Invalid version parameter"}), 400
+
     try:
-        node = node_service.get_node_by_id(node_id, vault_id, user_id)
+        node = node_service.get_node_by_id(node_id, vault_id, user_id, target_version=target_version)
         if node is None:
             return jsonify({"error": "Node not found"}), 404
         return cached_jsonify(node)
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
 
 
 @nodes_bp.route('/<string:node_id>/versions', methods=['GET'])
 @jwt_required()
 def get_node_versions_route(vault_id: int, node_id: str):
     """
-    Holt den kompletten Versionsverlauf für einen Node.
-    Diese Antwort wird mittels ETag gecacht.
+    Returns the version history for a node.
+    The current version is a full payload; older versions are lightweight stubs.
     """
     user_id = int(get_jwt_identity())
     try:
@@ -253,6 +267,26 @@ def get_node_versions_route(vault_id: int, node_id: str):
         return cached_jsonify(versions)
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
+
+
+@nodes_bp.route('/<string:node_id>/versions/<int:version_id>', methods=['GET'])
+@jwt_required()
+def get_single_version_route(vault_id: int, node_id: str, version_id: int):
+    """
+    Lazy-loads the full content of a single historical version.
+    Called by the frontend when the user clicks a stub version entry.
+    """
+    user_id = int(get_jwt_identity())
+    try:
+        version = node_service.get_version_by_id(version_id, node_id, vault_id, user_id)
+        if version is None:
+            return jsonify({"error": "Version not found"}), 404
+        return cached_jsonify(version)
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        logging.error(f"Error fetching version {version_id} for node {node_id}: {e}", exc_info=True)
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 
 # ========================================================================
