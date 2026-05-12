@@ -4,7 +4,8 @@ import {
     Form as BootstrapForm, Row, Col, InputGroup
 } from 'react-bootstrap';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import apiClient from '../../api/apiClient'; // Stelle sicher, dass der Pfad korrekt ist
+import apiClient from '../../api/apiClient';
+import VaultAccessManager from './VaultAccessManager';
 
 // Helper-Komponente für das Passwort-Feld mit "Anzeigen"-Button
 function PasswordInput({ name, label, required = true }) {
@@ -157,7 +158,7 @@ export default function AdminDashboard() {
     };
 
     return (
-        <Container className="p-4">
+        <Container className="p-4" style={{ height: '100%', overflowY: 'auto' }}>
             <h1>Admin Dashboard</h1>
             <p>Verwaltung von Benutzern und Systemeinstellungen.</p>
 
@@ -206,6 +207,12 @@ export default function AdminDashboard() {
                     </Card>
                 </Col>
             </Row>
+
+            {/* --- Vault Access Management --- */}
+            <hr className="my-4" />
+            <h4 className="mb-1">Vault Access Management</h4>
+            <p className="text-muted">Assign human users and LLM agents to vaults.</p>
+            <VaultAccessManager />
 
             {/* --- Modals --- */}
 

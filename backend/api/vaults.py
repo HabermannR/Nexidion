@@ -1,9 +1,8 @@
 # backend/api/vaults.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from backend.services import vault_service  # Importiere den neuen Service
+from backend.services import vault_service
 
-# Wir passen den Blueprint an, um die Routen aus app.py zu spiegeln.
 vaults_bp = Blueprint('vaults', __name__, url_prefix='/api/vaults')
 
 
@@ -11,9 +10,19 @@ vaults_bp = Blueprint('vaults', __name__, url_prefix='/api/vaults')
 @jwt_required()
 def list_vaults():
     current_user_id = int(get_jwt_identity())
-    # Rufe den Service auf
-    vaults = vault_service.get_vaults_for_user(user_id=current_user_id)
-    return jsonify([v.to_dict() for v in vaults])
+    client_etag = request.headers.get('If-None-Match')
+
+    data, etag, not_modified = vault_service.get_vaults_for_user_cached(
+        current_user_id, client_etag
+    )
+
+    if not_modified:
+        return Response(status=304, headers={'ETag': f'"{etag}"'})
+
+    response = jsonify(data)
+    response.headers['ETag'] = f'"{etag}"'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
 
 
 # =================================================================

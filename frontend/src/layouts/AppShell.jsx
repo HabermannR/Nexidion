@@ -1,6 +1,5 @@
 // src/layouts/AppShell.jsx
-
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Link, useLocation, useParams, Outlet } from 'react-router-dom';
 import { Navbar, Nav, Button, NavDropdown, Container } from 'react-bootstrap';
 import { useQuery } from '@tanstack/react-query';
@@ -11,15 +10,31 @@ import apiClient from '../api/apiClient';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './AppShell.css';
 
-const useUserQuery = () => useQuery({
-    queryKey: ['user'],
-    queryFn: () => apiClient.get('/api/auth/me').then(res => res.data),
-});
+// 1. IMPORTIERE DEINEN SHARED HOOK HIER:
+import { useUserQuery } from '../features/auth/useUserQuery';
 
-const useVaultsQuery = () => useQuery({
-    queryKey: ['allVaults'],
-    queryFn: () => apiClient.get('/api/vaults/').then(res => res.data),
-});
+const useVaultsQuery = () => {
+    const etagRef = useRef(null);
+    return useQuery({
+        queryKey: ['allVaults'],
+        queryFn: async () => {
+            const headers = {};
+            if (etagRef.current) {
+                headers['If-None-Match'] = etagRef.current;
+            }
+            const res = await apiClient.get('/api/vaults/', { headers, validateStatus: s => s < 500 });
+            if (res.status === 304) {
+                // Return undefined so TanStack Query keeps previous data
+                return undefined;
+            }
+            const etag = res.headers['etag'];
+            if (etag) etagRef.current = etag;
+            return res.data;
+        },
+        // Keep previous data on 304
+        placeholderData: (prev) => prev,
+    });
+};
 
 export default function AppShell() {
     const { data: vaults, isLoading: isLoadingVaults } = useVaultsQuery();

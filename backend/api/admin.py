@@ -1,43 +1,48 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from functools import wraps
 
-# Passe die Importe an deine Projektstruktur an
-from backend.services import user_service
+from backend.services import user_service, vault_service
 from backend.models import db, User
 
-# Erstelle den Blueprint
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
 
-# --- Custom Decorator für Admin-Autorisierung ---
+# ---------------------------------------------------------------------------
+# Auth decorator
+# ---------------------------------------------------------------------------
 
 def admin_required(fn):
-    """
-    Ein Decorator, der sicherstellt, dass der eingeloggte Benutzer Admin-Rechte hat.
-    Muss NACH @jwt_required() verwendet werden.
-    """
+    """Ensures the logged-in user has admin privileges. Use after @jwt_required()."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         current_user_id = int(get_jwt_identity())
         user = db.session.get(User, current_user_id)
         if user and user.is_admin:
             return fn(*args, **kwargs)
-        else:
-            return jsonify({"error": "Admin privileges required"}), 403
+        return jsonify({"error": "Admin privileges required"}), 403
     return wrapper
 
 
-# --- API Endpunkte für die Benutzerverwaltung ---
+# ---------------------------------------------------------------------------
+# User management
+# ---------------------------------------------------------------------------
 
 @admin_bp.route('/users', methods=['GET'])
 @jwt_required()
 @admin_required
 def list_users():
-    """
-    [ADMIN] Listet alle Benutzer im System auf.
-    """
+    """[ADMIN] List all human users."""
     users = user_service.get_all_users()
+    return jsonify([u.to_dict() for u in users])
+
+
+@admin_bp.route('/users/all', methods=['GET'])
+@jwt_required()
+@admin_required
+def list_all_users():
+    """[ADMIN] List all users including llm_assistant accounts."""
+    users = User.query.order_by(User.display_name).all()
     return jsonify([u.to_dict() for u in users])
 
 
@@ -45,9 +50,7 @@ def list_users():
 @jwt_required()
 @admin_required
 def create_user():
-    """
-    [ADMIN] Erstellt einen neuen Benutzer.
-    """
+    """[ADMIN] Create a new user."""
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
@@ -61,8 +64,6 @@ def create_user():
         new_user = user_service.create_user(username, password, display_name, is_admin)
         return jsonify(new_user.to_dict()), 201
     except ValueError as e:
-        # Fängt Fehler wie "username exists" oder "password too short" ab
-        # 409 Conflict ist passend für "already exists"
         return jsonify({"error": str(e)}), 409
 
 
@@ -70,18 +71,14 @@ def create_user():
 @jwt_required()
 @admin_required
 def delete_user(user_id):
-    """
-    [ADMIN] Löscht einen Benutzer.
-    """
+    """[ADMIN] Delete a user."""
     acting_user_id = int(get_jwt_identity())
     try:
         user_service.delete_user(user_id_to_delete=user_id, acting_user_id=acting_user_id)
-        return jsonify({"message": f"User with ID {user_id} deleted successfully."}), 200
+        return jsonify({"message": f"User {user_id} deleted successfully."}), 200
     except ValueError as e:
-        # Fängt "User not found"
         return jsonify({"error": str(e)}), 404
     except PermissionError as e:
-        # Fängt "Cannot delete self" oder "Cannot delete last admin"
         return jsonify({"error": str(e)}), 403
 
 
@@ -89,9 +86,7 @@ def delete_user(user_id):
 @jwt_required()
 @admin_required
 def set_user_password(user_id):
-    """
-    [ADMIN] Setzt oder ändert das Passwort für einen Benutzer.
-    """
+    """[ADMIN] Set or change a user's password."""
     data = request.get_json()
     new_password = data.get('new_password')
 
@@ -102,7 +97,6 @@ def set_user_password(user_id):
         user_service.set_user_password(user_id, new_password)
         return jsonify({"message": "Password updated successfully."}), 200
     except ValueError as e:
-        # Fängt "User not found" oder "password too short"
         status_code = 404 if "not found" in str(e).lower() else 400
         return jsonify({"error": str(e)}), status_code
 
@@ -111,9 +105,7 @@ def set_user_password(user_id):
 @jwt_required()
 @admin_required
 def update_user_details(user_id):
-    """
-    [ADMIN] Aktualisiert Benutzerdetails wie display_name oder is_admin.
-    """
+    """[ADMIN] Update user details (display_name, is_admin, etc.)."""
     updates = request.get_json()
     if not updates:
         return jsonify({"error": "Request body cannot be empty."}), 400
@@ -122,9 +114,66 @@ def update_user_details(user_id):
         updated_user = user_service.update_user_details(user_id, updates)
         return jsonify(updated_user.to_dict()), 200
     except ValueError as e:
-        # Fängt "User not found", "username taken", etc.
         status_code = 404 if "not found" in str(e).lower() else 409
         return jsonify({"error": str(e)}), status_code
     except PermissionError as e:
-        # Fängt "Cannot remove admin status from last admin"
         return jsonify({"error": str(e)}), 403
+
+
+# ---------------------------------------------------------------------------
+# Vault access management
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/vaults', methods=['GET'])
+@jwt_required()
+@admin_required
+def list_all_vaults():
+    """[ADMIN] List all vaults in the system with owner info and access count."""
+    try:
+        vaults = vault_service.get_all_vaults()
+        return jsonify(vaults), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/vaults/<int:vault_id>/access', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_vault_access(vault_id):
+    """[ADMIN] Get vault metadata, current access list, and grantable users."""
+    try:
+        data = vault_service.get_vault_access_list(vault_id)
+        return jsonify(data), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+@admin_bp.route('/vaults/<int:vault_id>/access', methods=['POST'])
+@jwt_required()
+@admin_required
+def grant_vault_access(vault_id):
+    """[ADMIN] Grant a user access to a vault. Body: { user_id, role? }"""
+    data = request.get_json()
+    user_id = data.get('user_id')
+    role = data.get('role', 'editor')
+
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+    try:
+        vault_service.grant_vault_access(vault_id, int(user_id), role)
+        return jsonify({"message": "Access granted."}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@admin_bp.route('/vaults/<int:vault_id>/access/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def revoke_vault_access(vault_id, user_id):
+    """[ADMIN] Revoke a user's access to a vault."""
+    try:
+        vault_service.revoke_vault_access(vault_id, user_id)
+        return jsonify({"message": "Access revoked."}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400

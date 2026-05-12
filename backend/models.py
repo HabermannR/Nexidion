@@ -34,6 +34,10 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    # Cached vault list for fast GET /api/vaults/ responses
+    cached_vault_list      = db.Column(db.JSON,       nullable=True)
+    cached_vault_list_etag = db.Column(db.String(32), nullable=True)
+
     # Relationships
     owned_vaults = db.relationship('Vault', back_populates='owner', lazy=True)
     authored_versions = db.relationship('Version', back_populates='author', lazy=True)

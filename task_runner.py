@@ -49,7 +49,7 @@ AUDIT_DIR     = os.environ.get("NEXIDION_AUDIT_DIR", "./audit_logs")
 
 # The agent user — user ID 2 (default-llm), type llm_assistant.
 # All service calls are made on behalf of this user.
-AGENT_USER_ID = 1
+AGENT_USER_ID = 2
 
 MAX_LOOP_TURNS   = 25
 MAX_TOOL_FETCHES = 20

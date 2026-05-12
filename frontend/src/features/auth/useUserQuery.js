@@ -1,14 +1,26 @@
 // src/features/auth/useUserQuery.js
 import { useQuery } from '@tanstack/react-query';
-import apiClient from '../../api/apiClient'; // Pfad anpassen
+import apiClient from '../../api/apiClient';
 
 export const useUserQuery = () => {
+    const token = localStorage.getItem('authToken');
+
     return useQuery({
         queryKey: ['user'],
         queryFn: () => apiClient.get('/api/auth/me').then(res => res.data),
-        // Wichtige Optionen für eine User-Query:
-        staleTime: Infinity, // User-Daten ändern sich selten, also nicht ständig neu laden.
-        gcTime: Infinity, // Garbage-Collection-Zeit
-        retry: 1, // Bei Fehler (z.B. ungültiger Token) nicht endlos versuchen.
+
+        // Führe die Query nur aus, wenn ein Token existiert.
+        enabled: !!token,
+
+        // Das hier repariert den doppelten Request!
+        staleTime: Infinity,
+        gcTime: Infinity,
+
+        retry: (failureCount, error) => {
+            if (error.response?.status === 401 || error.response?.status === 404) {
+                return false; // Bei Auth-Fehlern nicht wiederholen.
+            }
+            return failureCount < 1;
+        },
     });
 };
