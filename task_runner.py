@@ -11,7 +11,7 @@ Calls the service layer directly — no HTTP, no JWT required.
 Environment variables — all read from ~/KnowledgeBase/.env:
     DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME  — Postgres credentials
     OPENAI_API_KEY
-    OPENAI_MODEL        — defaults to gpt-4o
+    OPENAI_MODEL        — defaults to gpt-5.4
     NEXIDION_AUDIT_DIR  — defaults to ./audit_logs
     NEXIDION_POLL_INTERVAL — seconds between polls, defaults to 5
 
@@ -42,7 +42,7 @@ flask_app = create_app()
 # ---------------------------------------------------------------------------
 
 GPT_TOKEN = os.environ.get("OPENAI_API_KEY")
-GPT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+GPT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4")
 
 POLL_INTERVAL = int(os.environ.get("NEXIDION_POLL_INTERVAL", "5"))
 AUDIT_DIR     = os.environ.get("NEXIDION_AUDIT_DIR", "./audit_logs")
@@ -82,7 +82,7 @@ class Audit:
         self.task        = task
         self.started_at  = datetime.now(timezone.utc)
         self.turns: list = []
-        self.writes: list = []
+        self.writes: list =[]
         self._current_turn: dict | None = None
 
     def begin_turn(self, turn_num: int):
@@ -90,7 +90,7 @@ class Audit:
             "turn":       turn_num,
             "timestamp":  _iso(),
             "elapsed_s":  None,
-            "tool_calls": [],
+            "tool_calls":[],
         }
 
     def end_turn(self, elapsed: float):
@@ -219,7 +219,7 @@ def svc_get_tree(vault_id: int) -> list:
     )
 
     if is_not_modified:
-        _log(f"  [Cache Hit] Using in-memory tree for vault {vault_id}")
+        _log(f"[Cache Hit] Using in-memory tree for vault {vault_id}")
         return _cached_agent_trees[vault_id]
 
     # If it was modified (or first run), save the new data to memory
@@ -250,7 +250,7 @@ def svc_search(vault_id: int, query: str, limit: int = 15) -> dict:
     results = node_service.search_nodes_fulltext(query, vault_id, AGENT_USER_ID, limit=limit)
     return {
         "count":   len(results),
-        "results": [{"id": n.get("id"), "title": n.get("title"),
+        "results":[{"id": n.get("id"), "title": n.get("title"),
                      "ai_summary": n.get("ai_summary")} for n in results],
     }
 
@@ -297,7 +297,7 @@ def svc_create_node(vault_id: int, title: str, parent_id: str,
 
 
 # ==========================================
-# TREE HELPERS (unchanged logic)
+# TREE HELPERS
 # ==========================================
 
 def get_children_from_tree(parent_id: str, tree: list) -> list:
@@ -305,19 +305,23 @@ def get_children_from_tree(parent_id: str, tree: list) -> list:
         for node in nodes:
             if node["id"] == pid:
                 return node.get("children", [])
-            found = find(node.get("children", []), pid)
+            found = find(node.get("children",[]), pid)
             if found is not None:
                 return found
         return None
-    return find(tree, parent_id) or []
+    return find(tree, parent_id) or[]
 
 
-def get_subtree_summary(vault_id: int, node_id: str, tree: list) -> dict:
+def get_subtree_summary(vault_id: int, node_id: str) -> dict:
     node = svc_get_node_summary(vault_id, node_id)
     if "error" in node:
         return node
+    
+    # Fetch updated tree securely with caching enabled directly here
+    tree = svc_get_tree(vault_id)
+    
     children_stubs = get_children_from_tree(node_id, tree)
-    children = [svc_get_node_summary(vault_id, stub["id"]) for stub in children_stubs]
+    children =[svc_get_node_summary(vault_id, stub["id"]) for stub in children_stubs]
     return {**node, "children": children}
 
 
@@ -327,7 +331,7 @@ def find_root_for_node(node_id: str, tree: list) -> dict | None:
             new_path = path + [node]
             if node["id"] == target:
                 return new_path
-            result = find_path(node.get("children", []), target, new_path)
+            result = find_path(node.get("children",[]), target, new_path)
             if result:
                 return result
         return None
@@ -344,7 +348,7 @@ def is_blacklisted(vault_id: int, node_id: str) -> bool:
 # TOOL DEFINITIONS (unchanged)
 # ==========================================
 
-TOOLS = [
+TOOLS =[
     {
         "type": "function",
         "name": "get_subtree",
@@ -394,7 +398,7 @@ TOOLS = [
             "properties": {
                 "node_id": {"type": "string", "description": "UUID of the node."},
             },
-            "required": ["node_id"],
+            "required":["node_id"],
             "additionalProperties": False,
         },
     },
@@ -464,7 +468,7 @@ TOOLS = [
                     },
                 },
                 "ai_summary": {
-                    "type": ["string", "null"],
+                    "type":["string", "null"],
                     "description": "Updated summary (3 bullets). Pass null to leave unchanged.",
                 },
             },
@@ -508,7 +512,7 @@ TOOLS = [
                 "content":    {"type": "string", "description": "Initial Markdown content."},
                 "ai_summary": {"type": "string", "description": "Exactly 3 bullet points starting with '- '."},
             },
-            "required": ["title", "parent_id", "content", "ai_summary"],
+            "required":["title", "parent_id", "content", "ai_summary"],
             "additionalProperties": False,
         },
     },
@@ -526,7 +530,7 @@ TOOLS = [
             "properties": {
                 "summary": {"type": "string", "description": "Brief description of all changes made."},
             },
-            "required": ["summary"],
+            "required":["summary"],
             "additionalProperties": False,
         },
     },
@@ -534,7 +538,7 @@ TOOLS = [
 
 
 # ==========================================
-# SYSTEM PROMPT (unchanged)
+# SYSTEM PROMPT
 # ==========================================
 
 def build_system_prompt(instruction: str, context_nodes_block: str,
@@ -579,8 +583,8 @@ HOW TO WORK:
 - ai_summary must ALWAYS be exactly 3 bullet points starting with '- '.
 - Internal links use the format: [[Display Text|UUID]]
 - Only link to UUIDs you have confirmed. Never guess a UUID.
-- PROTECTED NODES: nodes with icon 'bxs-lock-alt' are read-only. You MAY move them
-  but must NEVER call write_node or patch_node on them, or create_node under them.
+- PROTECTED NODES: nodes with icon 'bxs-lock-alt' are protected. You MAY move them.
+  You MAY use write_node or patch_node to update their AI summary (any content changes will be safely ignored).
 - When all changes are applied, call finish() with a clear summary of what was done.
 
 FETCH BUDGET: {MAX_TOOL_FETCHES} total calls for get_node_summary + get_node_content.
@@ -611,7 +615,7 @@ def run_agent(task_row: dict, audit: Audit) -> str:
             _log(f"Overview: '{root_stub.get('title')}' ({root_stub['id']})")
             overview_node = svc_get_node(vault_id, root_stub["id"])
 
-    context_lines = []
+    context_lines =[]
     for node_id in context_node_ids:
         node = svc_get_node_summary(vault_id, node_id)
         if node and "error" in node:
@@ -631,7 +635,7 @@ def run_agent(task_row: dict, audit: Audit) -> str:
         http_client=httpx.Client(verify=False),
     )
 
-    input_list = [
+    input_list =[
         {"role": "system", "content": system_prompt},
         {"role": "user",   "content": "Please carry out the task now."},
     ]
@@ -683,7 +687,7 @@ def run_agent(task_row: dict, audit: Audit) -> str:
 
             # ── get_subtree ───────────────────────────────────────────
             if name == "get_subtree":
-                result = get_subtree_summary(vault_id, args["node_id"], tree)
+                result = get_subtree_summary(vault_id, args["node_id"])
                 _append(input_list, item.call_id, _fmt(result))
                 audit.record_tool(name, args, "error" if "error" in result else "ok",
                                   result.get("error", "Fetched subtree"))
@@ -735,16 +739,24 @@ def run_agent(task_row: dict, audit: Audit) -> str:
                 content    = args["content"].strip()
                 ai_summary = args["ai_summary"].strip()
 
-                if is_blacklisted(vault_id, node_id):
-                    msg = "Node is protected (bxs-lock-alt) — content cannot be modified."
-                    _append(input_list, item.call_id, msg)
-                    audit.record_tool(name, args, "blocked", msg)
-                    continue
-
                 err = _validate_summary(ai_summary)
                 if err:
                     _append(input_list, item.call_id, f"Validation error: {err}")
                     audit.record_tool(name, args, "error", err)
+                    continue
+
+                if is_blacklisted(vault_id, node_id):
+                    res2 = svc_update_summary(vault_id, node_id, ai_summary)
+                    if not res2["ok"]:
+                        _append(input_list, item.call_id, f"Error writing summary to protected node: {res2['error']}")
+                        audit.record_tool(name, args, "error", res2["error"])
+                        continue
+                    
+                    msg = "Node is protected (bxs-lock-alt) — content modification ignored, but AI summary was updated."
+                    _log(f"  ✅ write_node (summary only): {node_id}")
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "ok", msg)
+                    audit.record_write("write_node_summary_only", node_id, {"summary": ai_summary})
                     continue
 
                 res = svc_update_node(vault_id, node_id, content=content)
@@ -775,6 +787,26 @@ def run_agent(task_row: dict, audit: Audit) -> str:
 
                 if is_blacklisted(vault_id, node_id):
                     msg = "Node is protected (bxs-lock-alt) — content cannot be modified."
+                    if ai_summary:
+                        err = _validate_summary(ai_summary)
+                        if err:
+                            _append(input_list, item.call_id, f"Content protected, and summary validation error: {err}")
+                            audit.record_tool(name, args, "error", err)
+                            continue
+                        
+                        res2 = svc_update_summary(vault_id, node_id, ai_summary)
+                        if not res2["ok"]:
+                            _append(input_list, item.call_id, f"Error writing summary to protected node: {res2['error']}")
+                            audit.record_tool(name, args, "error", res2["error"])
+                            continue
+                        
+                        msg += " However, AI summary was updated."
+                        _log(f"  ✅ patch_node (summary only): {node_id}")
+                        _append(input_list, item.call_id, msg)
+                        audit.record_tool(name, args, "ok", msg)
+                        audit.record_write("patch_node_summary_only", node_id, {"summary": ai_summary})
+                        continue
+
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "blocked", msg)
                     continue

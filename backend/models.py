@@ -238,6 +238,13 @@ class Version(db.Model):
         return data
 
 
+class VaultAccess(db.Model):
+    __tablename__ = 'vault_access'
+    user_id  = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), primary_key=True)
+    role     = db.Column(db.String(10), nullable=False, default='editor')
+    # 'editor' is all you need for now. 'viewer' can come later if ever.
+
 class Task(db.Model):
     __tablename__ = 'tasks'
 
