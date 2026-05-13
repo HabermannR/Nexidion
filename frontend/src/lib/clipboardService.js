@@ -60,20 +60,19 @@ export const copyTreeStructure = async (treeData) => {
     return output;
   };
 
-  // Da es nur einen Wurzelknoten gibt, greifen wir direkt darauf zu.
-  const rootNode = treeData[0];
-
-  // +++ GEÄNDERT: Füge die Node-ID (UUID) des Wurzelknotens hinzu +++
-  // Beginne den Output mit dem Titel und der ID des Wurzelknotens.
-  let formattedTree = `${rootNode.title} (${rootNode.id})` + '\n';
-
-  // Verarbeite die direkten Kinder des Wurzelknotens.
-  if (rootNode.children && rootNode.children.length > 0) {
-    rootNode.children.forEach((child, index) => {
-      const isLastChild = index === rootNode.children.length - 1;
-      formattedTree += formatNodeRecursive(child, '', isLastChild);
-    });
-  }
+  // Loop over ALL root nodes so nothing is silently dropped.
+  let formattedTree = '';
+  treeData.forEach((rootNode, rootIndex) => {
+    // Separate multiple roots with a blank line
+    if (rootIndex > 0) formattedTree += '\n';
+    formattedTree += `${rootNode.title} (${rootNode.id})` + '\n';
+    if (rootNode.children && rootNode.children.length > 0) {
+      rootNode.children.forEach((child, index) => {
+        const isLastChild = index === rootNode.children.length - 1;
+        formattedTree += formatNodeRecursive(child, '', isLastChild);
+      });
+    }
+  });
 
   try {
     await navigator.clipboard.writeText(formattedTree.trim());

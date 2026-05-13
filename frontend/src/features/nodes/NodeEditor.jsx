@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Form } from 'react-bootstrap';
 import { useParams } from 'react-router-dom';
 import { useNodeSearchQuery } from './hooks/useNodeSearchQuery';
@@ -78,6 +78,14 @@ export default function NodeEditor({ content, onContentChange }) {
 
     useEffect(() => { setSelectedIndex(0); }, [searchResults]);
 
+    const startRepairMode = useCallback(() => {
+        if (!activeWeakLink || !textareaRef.current) return;
+        setSearchTerm(activeWeakLink.searchTerm);
+        setShowAutocomplete(true);
+        const pos = getCaretCoordinates(textareaRef.current, activeWeakLink.range.end);
+        if (pos) setDropdownPosition(pos);
+    }, [activeWeakLink]);
+
     // --- NEU: Dieser Hook startet den Reparaturmodus automatisch ---
     useEffect(() => {
         // Wenn ein schwacher Link durch einen Klick identifiziert wurde...
@@ -85,7 +93,7 @@ export default function NodeEditor({ content, onContentChange }) {
             // ...starte den Reparaturmodus sofort.
             startRepairMode();
         }
-    }, [activeWeakLink]); // Abhängigkeit: Nur ausführen, wenn sich activeWeakLink ändert.
+    }, [activeWeakLink, showAutocomplete, startRepairMode]);
 
 
     const checkForActiveLink = (text, cursorIdx) => {
@@ -174,13 +182,6 @@ export default function NodeEditor({ content, onContentChange }) {
         selectResult(result);
     };
 
-    const startRepairMode = () => {
-        if (!activeWeakLink || !textareaRef.current) return;
-        setSearchTerm(activeWeakLink.searchTerm);
-        setShowAutocomplete(true);
-        const pos = getCaretCoordinates(textareaRef.current, activeWeakLink.range.end);
-        if (pos) setDropdownPosition(pos);
-    };
 
     return (
         <div className="editor-wrapper">

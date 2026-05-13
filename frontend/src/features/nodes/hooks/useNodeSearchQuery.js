@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import apiClient from '../../../api/apiClient';
 
 /**
@@ -47,7 +47,7 @@ export const useNodeSearchQuery = (vaultId, searchTerm) => {
 
         // UX-Verbesserung: Zeigt die alten Ergebnisse an, während neue geladen werden.
         // Verhindert ein "Flackern" der Ergebnisliste.
-        keepPreviousData: true,
+        placeholderData: keepPreviousData,
 
         // Die Ergebnisse der Autocomplete-Suche sind oft nur kurz relevant.
         // Wir können sie schneller als "stale" markieren, damit sie bei Bedarf

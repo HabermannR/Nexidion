@@ -7,6 +7,7 @@ import './ContentHeader.css';
 
 export default function ContentHeader({
                                           currentVersion,
+                                          nodeId,
                                           vaultId,
                                           isEditing,
                                           onEditClick,
@@ -42,9 +43,11 @@ export default function ContentHeader({
             // Invalidiere den Baum, damit der neue Titel dort erscheint.
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
 
-            // === VERBESSERUNG ===
-            // Invalidiere auch die Versionen, damit der Titel im Header und im Verlauf sofort aktuell ist.
+            // Invalidiere die Versionen, damit der Titel im Verlauf sofort aktuell ist.
             queryClient.invalidateQueries({ queryKey: ['versions', vaultId, variables.nodeId] });
+
+            // Invalidiere den Node-Inhalt, damit der Titel im Header sofort aktuell ist.
+            queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, variables.nodeId] });
 
             setIsRenaming(false);
         },
@@ -70,7 +73,7 @@ export default function ContentHeader({
     const handleRenameSubmit = (e) => {
         e.preventDefault();
         renameNodeMutation.mutate({
-            nodeId: currentVersion.node_id,
+            nodeId: nodeId,
             title: newTitle,
             content: currentVersion.content, // Den unveraenderten Inhalt aus der aktuellen Version nehmen
         });
@@ -82,7 +85,7 @@ export default function ContentHeader({
                 <IconSelectorDropdown
                     currentVersion={currentVersion}
                     vaultId={vaultId}
-                    nodeId={currentVersion.node_id}
+                    nodeId={nodeId}
                 />
             </div>
 

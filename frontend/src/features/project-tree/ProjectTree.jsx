@@ -3,20 +3,13 @@
 import React, { useCallback, useRef, useEffect } from "react";
 import { NavLink, useParams, useNavigate } from "react-router-dom";
 import { useDrag, useDrop } from "react-dnd";
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from "../../api/apiClient.js";
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
+import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
 import "./ProjectTree.css";
 
 const ItemTypes = { NODE: "NODE" };
-
-const useVaultTreeQuery = (vaultId) => {
-    return useQuery({
-        queryKey: ['vaultTree', vaultId],
-        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/?format=tree`).then(res => res.data),
-        enabled: !!vaultId,
-    });
-};
 
 // ============================================================================
 // TreeNode Komponente
@@ -127,10 +120,11 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
     const collapsedNodes = useWorkspaceStore(state => state.collapsedNodes);
 
     const {
-        data: treeData,
+        data: vaultTreeData,
         isLoading,
         isSuccess
     } = useVaultTreeQuery(vaultId);
+    const treeData = vaultTreeData?.tree || null;
 
     // Auto-Expand von Elternknoten, damit Highlight-Treffer sichtbar werden
     useEffect(() => {

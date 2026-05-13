@@ -24,19 +24,10 @@ const root = ReactDOM.createRoot(rootElement);
 
 // Rendere die App in die erstellte Root.
 root.render(
-    // <React.StrictMode>
-
-    // 3. WRAPPE DEINE <App /> KOMPONENTE IN DEN PROVIDER
-    // Damit hat jede Komponente darunter Zugriff auf den queryClient und die Hooks wie useQuery.
-    <QueryClientProvider client={queryClient}>
-
-        <App />
-
-        {/* 4. FÜGE DIE DEVTOOLS HINZU */}
-        {/* Sie werden nur im Entwicklungsmodus angezeigt und sind im Production-Build nicht enthalten. */}
-        <ReactQueryDevtools initialIsOpen={false} />
-
-    </QueryClientProvider>
-
-    // </React.StrictMode>
+    <React.StrictMode>
+        <QueryClientProvider client={queryClient}>
+            <App />
+            <ReactQueryDevtools initialIsOpen={false} />
+        </QueryClientProvider>
+    </React.StrictMode>
 );

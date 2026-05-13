@@ -183,6 +183,7 @@ export default function NodeContent() {
             ) : (
                 <ContentHeader
                     currentVersion={currentBaseVersion}
+                    nodeId={nodeId}
                     vaultId={vaultId}
                     isEditing={isEditing}
                     onEditClick={handleEditClick}

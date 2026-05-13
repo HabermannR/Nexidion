@@ -2,7 +2,7 @@
 
 import { marked } from 'marked';
 import { getIdsInOrder, generateTocForSelectedNodes } from '../features/nodes/node.utils.js'; // Importieren die Helfer
-import api from '../_legacy/api/axios.jsx';
+import api from '../api/apiClient.js';
 
 // Die komplette, riesige generateEpub Funktion hier einfügen
 // Korrigierte generateEpub Funktion mit XML-Entitäten und vollständiger Bildunterstützung

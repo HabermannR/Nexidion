@@ -55,7 +55,7 @@ export default function AdminDashboard() {
 
     const deleteUserMutation = useMutation({
         mutationFn: (userId) => apiClient.delete(`/api/admin/users/${userId}`),
-        onSuccess: (data, userId) => {
+        onSuccess: () => {
             setAlert({ type: 'success', message: `Benutzer erfolgreich gelöscht.` });
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
             handleCloseModal();
@@ -71,6 +71,7 @@ export default function AdminDashboard() {
         onSuccess: () => {
             setAlert({ type: 'success', message: 'Passwort erfolgreich zurückgesetzt.' });
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+            passwordFormRef.current?.reset();
             handleCloseModal();
         },
         onError: (err) => {
@@ -146,8 +147,8 @@ export default function AdminDashboard() {
                             <Button variant="outline-secondary" size="sm" className="me-2" onClick={() => handleShowModal('password', user)}>
                                 Passwort ändern
                             </Button>
-                            <Button variant="outline-danger" size="sm" onClick={() => handleShowModal('delete', user)} disabled={deleteUserMutation.isPending && deleteUserMutation.variables === user.id}>
-                                {deleteUserMutation.isPending && deleteUserMutation.variables === user.id ? <Spinner size="sm" /> : 'Löschen'}
+                            <Button variant="outline-danger" size="sm" onClick={() => handleShowModal('delete', user)} disabled={deleteUserMutation.isPending && Number(deleteUserMutation.variables) === Number(user.id)}>
+                                {deleteUserMutation.isPending && Number(deleteUserMutation.variables) === Number(user.id) ? <Spinner size="sm" /> : 'Löschen'}
                             </Button>
                         </td>
                     </tr>
