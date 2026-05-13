@@ -190,10 +190,25 @@ def claim_oldest_task(conn):
         return dict(row) if row else None
 
 
-def mark_task_raw(conn, task_id: str, status: str):
+def mark_task_raw(conn, task_id: str, status: str, summary: str = None, operations: list = None):
     """Update task status via raw connection (used for the claimed task)."""
     with conn.cursor() as cur:
-        cur.execute("UPDATE tasks SET status = %s WHERE id = %s", (status, task_id))
+        if status in ('completed', 'failed'):
+            now = datetime.now(timezone.utc)
+            # Dump JSON manually because psycopg2 raw queries need it formatted as a string
+            ops_json = json.dumps(operations) if operations is not None else None
+
+            cur.execute("""
+                        UPDATE tasks
+                        SET status         = %s,
+                            finish_summary = %s,
+                            operations     = %s,
+                            completed_at   = %s
+                        WHERE id = %s
+                        """, (status, summary, ops_json, now, task_id))
+        else:
+            cur.execute("UPDATE tasks SET status = %s WHERE id = %s", (status, task_id))
+
         conn.commit()
     _log(f"Task {task_id} → {status}")
 
@@ -1022,12 +1037,14 @@ def run_loop():
             audit = Audit(_TaskObj())
             try:
                 summary = run_agent(task_row, audit)
-                mark_task_raw(conn, task_id, "completed")
+                # Save success summary and the atomic writes to the DB
+                mark_task_raw(conn, task_id, "completed", summary=summary, operations=audit.writes)
                 audit.save("completed", summary)
                 _log(f"✅ {summary}")
             except Exception as e:
                 _log(f"✗ Task failed: {e}")
-                mark_task_raw(conn, task_id, "failed")
+                # Save failure summary and any operations completed before the crash
+                mark_task_raw(conn, task_id, "failed", summary=str(e), operations=audit.writes)
                 audit.save("failed", str(e))
 
         time.sleep(POLL_INTERVAL)

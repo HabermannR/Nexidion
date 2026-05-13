@@ -7,6 +7,7 @@ import { useWorkspaceStore } from './workspaceStore';
 import apiClient from '../../api/apiClient.js';
 
 import ProjectTree from '../project-tree/ProjectTree.jsx';
+import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
 import ContextPanel from './ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
@@ -34,13 +35,15 @@ export default function WorkspaceLayout() {
 
     // --- ZUSTAND AUS DEM GLOBALEN STORE ---
     const resetWorkspaceContext = useWorkspaceStore((state) => state.resetWorkspaceContext);
+    const expandAll = useWorkspaceStore((state) => state.expandAll);
+    const collapseAll = useWorkspaceStore((state) => state.collapseAll);
     const breadcrumbPath = useWorkspaceStore((state) => state.breadcrumbPath);
     const activeContextTab = useWorkspaceStore((state) => state.activeContextTab);
     const setActiveContextTab = useWorkspaceStore((state) => state.setActiveContextTab);
 
     // --- LOKALER UI-ZUSTAND ---
-    const[rightPanelMode, setRightPanelMode] = useState('normal');
-    const[showMobileTree, setShowMobileTree] = useState(false);
+    const [rightPanelMode, setRightPanelMode] = useState('normal');
+    const [showMobileTree, setShowMobileTree] = useState(false);
     const [showMobileContext, setShowMobileContext] = useState(false);
     const leftPanelRef = useRef(null);
     const rightPanelRef = useRef(null);
@@ -49,7 +52,8 @@ export default function WorkspaceLayout() {
 
     // --- SUCHE STATE ---
     const [searchInput, setSearchInput] = useState('');
-    const[debouncedSearch, setDebouncedSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [searchResultIndex, setSearchResultIndex] = useState(0);
 
     // Debounce Such-Eingabe
     useEffect(() => {
@@ -57,12 +61,59 @@ export default function WorkspaceLayout() {
         return () => clearTimeout(timer);
     }, [searchInput]);
 
+    // Suche zurücksetzen beim Ändern des Suchbegriffs
+    useEffect(() => {
+        setSearchResultIndex(0);
+    }, [debouncedSearch]);
+
     // Suche über TanStack Query ausführen
     const { data: searchData, isFetching, isSuccess } = useQuery({
-        queryKey:['nodeSearch', vaultId, debouncedSearch],
+        queryKey: ['nodeSearch', vaultId, debouncedSearch],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/full-search?q=${encodeURIComponent(debouncedSearch)}`).then(res => res.data),
         enabled: !!vaultId && debouncedSearch.trim().length > 0,
     });
+
+    const { data: vaultTreeDataForCollapse } = useVaultTreeQuery(vaultId);
+
+    const searchResultIds = useMemo(() => {
+        if (!searchData?.results) return[];
+
+        // 1. Create a Set of all matched IDs from the backend
+        const matchedIdsSet = new Set(searchData.results.map(r => r.id));
+
+        // 2. We will store the visually ordered IDs here
+        const orderedIds =[];
+
+        // 3. Recursive function to traverse the tree top-to-bottom (Depth-First Search)
+        const traverseTree = (nodes) => {
+            if (!nodes) return;
+            for (const node of nodes) {
+                // If this node is a search result, add it to our ordered list
+                if (matchedIdsSet.has(node.id)) {
+                    orderedIds.push(node.id);
+                    // Remove from Set to track leftovers
+                    matchedIdsSet.delete(node.id);
+                }
+                // Continue down the children
+                if (node.children && node.children.length > 0) {
+                    traverseTree(node.children);
+                }
+            }
+        };
+
+        // 4. Run the traversal if we have tree data
+        if (vaultTreeDataForCollapse?.tree) {
+            traverseTree(vaultTreeDataForCollapse.tree);
+        }
+
+        // 5. Append any remaining search results that weren't found in the tree
+        // (Serves as a fallback in case the tree data is out of sync or loading)
+        for (const leftoverId of matchedIdsSet) {
+            orderedIds.push(leftoverId);
+        }
+
+        return orderedIds;
+    }, [searchData, vaultTreeDataForCollapse]);
 
     // Berechne die gehighlighteten IDs
     const highlightedNodeIds = useMemo(() => {
@@ -76,7 +127,7 @@ export default function WorkspaceLayout() {
     const isSearchActive = searchInput.trim().length > 0;
     const isSearchLoading = isSearchActive && (searchInput !== debouncedSearch || isFetching);
     const isSearchFinished = isSearchActive && !isSearchLoading && isSuccess;
-    
+
     // Zähler aus dem API-Resultat extrahieren (falls fertig)
     const searchResultsCount = isSearchFinished && searchData ? searchData.count : null;
 
@@ -94,16 +145,46 @@ export default function WorkspaceLayout() {
         }
     }, [vaultId, resetWorkspaceContext]);
 
+    // Jump UP (↑) means going backwards in the array (towards index 0)
+    const handleJumpUp = () => {
+        if (searchResultIds.length > 0) {
+            setSearchResultIndex((prev) => (prev - 1 + searchResultIds.length) % searchResultIds.length);
+        }
+    };
+
+    // Jump DOWN (↓) means going forwards in the array (towards the end)
+    const handleJumpDown = () => {
+        if (searchResultIds.length > 0) {
+            setSearchResultIndex((prev) => (prev + 1) % searchResultIds.length);
+        }
+    };
+
+    const scrollToNodeId = searchResultIds.length > 0 ? searchResultIds[searchResultIndex] : null;
+
     // --- UI-HANDLER ---
     const handleMobileNavClose = useCallback(() => setShowMobileTree(false),[]);
 
-    // Tree Component wird memoized inkl. highlightedNodeIds
+    // Alle nicht-Blatt Knoten für 'collapseAll' aufsammeln
+
+    const allNonLeafIds = useMemo(() => {
+        const ids =[];
+        const collect = (nodes) => nodes?.forEach(n => {
+            if (n.children?.length) { ids.push(n.id); collect(n.children); }
+        });
+        collect(vaultTreeDataForCollapse?.tree);
+        return ids;
+    }, [vaultTreeDataForCollapse]);
+
+    const handleCollapseAll = useCallback(() => collapseAll(allNonLeafIds), [collapseAll, allNonLeafIds]);
+
+    // Tree Component wird memoized inkl. highlightedNodeIds + scrollToNodeId
     const treeComponent = useMemo(() => (
-        <ProjectTree 
-            onNodeClick={handleMobileNavClose} 
-            highlightedNodeIds={highlightedNodeIds} 
+        <ProjectTree
+            onNodeClick={handleMobileNavClose}
+            highlightedNodeIds={highlightedNodeIds}
+            scrollToNodeId={scrollToNodeId}
         />
-    ), [handleMobileNavClose, highlightedNodeIds]);
+    ), [handleMobileNavClose, highlightedNodeIds, scrollToNodeId]);
 
     const handleLayout = () => {
         if (programmaticResizeRef.current) {
@@ -145,18 +226,37 @@ export default function WorkspaceLayout() {
                     <Panel ref={leftPanelRef} id="left-panel" defaultSize={20} minSize={15} order={1} className="pane-template" collapsible>
                         <div className="left-panel-content-wrapper">
                             <div className="p-2 border-bottom bg-light">
-                                <h6 className="mb-0 small text-muted text-uppercase">
-                                    Navigation {searchResultsCount !== null && <span style={{ textTransform: 'none' }} className="fw-bold text-success">({searchResultsCount})</span>}
-                                </h6>
-                                <div className="mt-2">
+                                <div className="d-flex align-items-center justify-content-between mb-2">
+                                    <h6 className="mb-0 small text-muted text-uppercase flex-grow-1">
+                                        Navigation
+                                        {searchResultsCount !== null && (
+                                            <span style={{ textTransform: 'none' }} className="fw-bold text-success ms-1">
+                                                ({searchResultIndex + 1}/{searchResultsCount})
+                                            </span>
+                                        )}
+                                    </h6>
+                                    <ButtonGroup size="sm">
+                                        <Button variant="outline-secondary" onClick={expandAll} title="Alle aufklappen"
+                                            style={{ fontSize: '0.7rem', padding: '1px 5px' }}>↕ Alle</Button>
+                                        <Button variant="outline-secondary" onClick={handleCollapseAll} title="Alle zuklappen"
+                                            style={{ fontSize: '0.7rem', padding: '1px 5px' }}>⊟ Alle</Button>
+                                    </ButtonGroup>
+                                </div>
+                                <div className="d-flex gap-1">
                                     <input
                                         type="search"
-                                        className="form-control form-control-sm"
+                                        className="form-control form-control-sm flex-grow-1"
                                         placeholder="Suche in Nodes..."
                                         value={searchInput}
                                         onChange={(e) => setSearchInput(e.target.value)}
                                         style={searchInputStyle}
                                     />
+                                    {searchResultIds.length > 1 && (
+                                        <ButtonGroup size="sm" className="flex-shrink-0">
+                                            <Button variant="outline-secondary" onClick={handleJumpUp} title="Vorheriges Ergebnis">↑</Button>
+                                            <Button variant="outline-secondary" onClick={handleJumpDown} title="Nächstes Ergebnis">↓</Button>
+                                        </ButtonGroup>
+                                    )}
                                 </div>
                             </div>
                             <div className="scroll-pane">{treeComponent}</div>
@@ -217,18 +317,26 @@ export default function WorkspaceLayout() {
             <Offcanvas show={showMobileTree} onHide={() => setShowMobileTree(false)} placement="start" className="offcanvas-full-mobile">
                 <Offcanvas.Header closeButton>
                     <Offcanvas.Title>
-                        Navigation {searchResultsCount !== null && <span style={{ fontSize: '1rem' }} className="text-success">({searchResultsCount})</span>}
+                        Navigation {searchResultsCount !== null && <span style={{ fontSize: '1rem' }} className="text-success">({searchResultIndex + 1}/{searchResultsCount})</span>}
                     </Offcanvas.Title>
                 </Offcanvas.Header>
                 <div className="p-2 border-bottom bg-light">
-                    <input
-                        type="search"
-                        className="form-control form-control-sm"
-                        placeholder="Suche in Nodes..."
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        style={searchInputStyle}
-                    />
+                    <div className="d-flex gap-1">
+                        <input
+                            type="search"
+                            className="form-control form-control-sm flex-grow-1"
+                            placeholder="Suche in Nodes..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            style={searchInputStyle}
+                        />
+                        {searchResultIds.length > 1 && (
+                            <ButtonGroup size="sm" className="flex-shrink-0">
+                                <Button variant="outline-secondary" onClick={handleJumpUp} title="Vorheriges Ergebnis">↑</Button>
+                                <Button variant="outline-secondary" onClick={handleJumpDown} title="Nächstes Ergebnis">↓</Button>
+                            </ButtonGroup>
+                        )}
+                    </div>
                 </div>
                 <Offcanvas.Body className="d-flex flex-column p-0">
                     <div className="flex-grow-1 overflow-auto p-3">{treeComponent}</div>

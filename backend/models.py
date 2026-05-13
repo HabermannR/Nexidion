@@ -264,6 +264,10 @@ class Task(db.Model):
     created_at       = db.Column(db.DateTime, nullable=False,
                                  default=lambda: datetime.now(timezone.utc))
 
+    finish_summary   = db.Column(db.Text, nullable=True)
+    operations       = db.Column(db.JSON, nullable=True)
+    completed_at     = db.Column(db.DateTime, nullable=True)
+
     def to_dict(self):
         return {
             'id':               self.id,
@@ -272,4 +276,7 @@ class Task(db.Model):
             'status':           self.status,
             'context_node_ids': self.context_node_ids,
             'created_at':       self.created_at.isoformat(),
+            'finish_summary':   self.finish_summary,
+            'operations':       self.operations,
+            'completed_at':     self.completed_at.isoformat() if self.completed_at else None,
         }

@@ -58,6 +58,14 @@ export const useWorkspaceStore = create(
                 return { collapsedNodes: newCollapsed };
             }),
 
+            collapseAll: (allNodeIds) => set(() => ({
+                collapsedNodes: new Set(allNodeIds),
+            })),
+
+            expandAll: () => set(() => ({
+                collapsedNodes: new Set(),
+            })),
+
             // Saved sets
             saveCurrentSet: (name) => {
                 if (!name?.trim()) return;

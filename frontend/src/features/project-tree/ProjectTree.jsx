@@ -1,4 +1,4 @@
-// src/features/workspace/left-panel/ProjectTree.jsx
+// src/features/project-tree/ProjectTree.jsx
 
 import React, { useCallback, useRef, useEffect } from "react";
 import { NavLink, useParams, useNavigate } from "react-router-dom";
@@ -14,7 +14,8 @@ const ItemTypes = { NODE: "NODE" };
 // ============================================================================
 // TreeNode Komponente
 // ============================================================================
-const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlightedNodeIds = new Set() }) => {
+// ADDED: scrollToNodeId to the destructured props
+const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlightedNodeIds = new Set(), scrollToNodeId }) => {
     const { vaultId } = useParams();
     const wrapperRef = useRef(null);
     const dropRef = useRef(null);
@@ -23,9 +24,10 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
     const isSelected = selectedNodeIds.has(node.id);
     const isExpanded = !collapsedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
-    
-    // Prüfe ob dieser Node von der Suche getroffen wurde
+
+    // Prüfe ob dieser Node von der Suche getroffen wurde oder im Fokus des Jumpers ist
     const isHighlighted = highlightedNodeIds.has(node.id);
+    const isSearchFocused = scrollToNodeId === node.id; // NEU
 
     const [{isDragging}, drag] = useDrag(() => ({
         type: ItemTypes.NODE,
@@ -61,14 +63,14 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
     };
 
     const getLinkClassName = ({isActive}) => `node-link-content ${isActive ? "is-active" : ""}`;
-    
-    // Klasse für Highlights ergänzen
-    const wrapperClasses = `tree-node-wrapper ${isSelected ? "is-selected" : ""} ${isHighlighted ? "is-highlighted" : ""}`;
+
+    // Klasse für Focus ergänzt
+    const wrapperClasses = `tree-node-wrapper ${isSelected ? "is-selected" : ""} ${isHighlighted ? "is-highlighted" : ""} ${isSearchFocused ? "is-search-focused" : ""}`;
     const lineClasses =["tree-node-line", isOver && canDrop && "is-drop-target", isOver && !canDrop && "is-drop-invalid"].filter(Boolean).join(" ");
     const selectionAreaClasses = `selection-area ${!node.icon ? "no-icon-mode" : ""}`;
-    
+
     return (
-        <div ref={wrapperRef} className={wrapperClasses} style={{ opacity: isDragging ? 0.4 : 1 }}>
+        <div ref={wrapperRef} className={wrapperClasses} style={{ opacity: isDragging ? 0.4 : 1 }} data-node-id={node.id}>
             <div ref={dropRef} className={lineClasses}>
                 <span className="collapse-icon" onClick={handleToggleExpand}>
                     {hasChildren && <i className={`bx ${isExpanded ? "bx-chevron-down" : "bx-chevron-right"}`}></i>}
@@ -99,6 +101,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                             onMoveNode={onMoveNode}
                             onNodeClick={onNodeClick}
                             highlightedNodeIds={highlightedNodeIds}
+                            scrollToNodeId={scrollToNodeId} // NEU
                         />
                     ))}
                 </div>
@@ -110,12 +113,11 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
 // ============================================================================
 // 3. HAUPTKOMPONENTE: ProjectTree
 // ============================================================================
-export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set() }) {
+export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(), scrollToNodeId = null }) {
     const { vaultId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    
-    // Für Auto-Expand bei der Suche benötigt
+
     const toggleNodeCollapse = useWorkspaceStore(state => state.toggleNodeCollapse);
     const collapsedNodes = useWorkspaceStore(state => state.collapsedNodes);
 
@@ -126,7 +128,6 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
     } = useVaultTreeQuery(vaultId);
     const treeData = vaultTreeData?.tree || null;
 
-    // Auto-Expand von Elternknoten, damit Highlight-Treffer sichtbar werden
     useEffect(() => {
         if (!highlightedNodeIds || highlightedNodeIds.size === 0 || !treeData) return;
 
@@ -136,7 +137,6 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
             for (const node of nodes) {
                 const path =[...currentPath, node.id];
                 if (highlightedNodeIds.has(node.id)) {
-                    // Füge alle Ancestor-IDs der Liste der zu expandierenden Knoten hinzu
                     currentPath.forEach(parentId => parentsToExpand.add(parentId));
                 }
                 if (node.children && node.children.length > 0) {
@@ -154,6 +154,15 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [highlightedNodeIds, treeData]);
+
+    useEffect(() => {
+        if (!scrollToNodeId) return;
+        const timer = setTimeout(() => {
+            const el = document.querySelector(`[data-node-id="${scrollToNodeId}"]`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 80);
+        return () => clearTimeout(timer);
+    }, [scrollToNodeId]);
 
     const addNodeMutation = useMutation({
         mutationFn: (payload) => apiClient.post(`/api/vaults/${vaultId}/nodes/`, payload),
@@ -215,6 +224,7 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
                     onMoveNode={handleMoveNode}
                     onNodeClick={onNodeClick}
                     highlightedNodeIds={highlightedNodeIds}
+                    scrollToNodeId={scrollToNodeId} // NEU
                 />
             ))}
         </div>

@@ -38,7 +38,7 @@
     background-color: #d0e2ff;
 }
 
-/* SUCH-HIGHLIGHTS (NEU) */
+/* SUCH-HIGHLIGHTS & FOCUS (NEU) */
 /*----------------------------------------------------------------*/
 .tree-node-wrapper.is-highlighted > .tree-node-line {
     background-color: #fff3cd; /* Leichtes Gelb (Bootstrap Warning light) */
@@ -55,6 +55,24 @@
 .tree-node-wrapper.is-highlighted > .tree-node-line .node-title {
     color: #856404;
     font-weight: 600;
+}
+
+/* Aktiver Fokus durch die Pfeil-Navigation */
+.tree-node-wrapper.is-search-focused > .tree-node-line {
+    background-color: #ffeeba; /* Etwas kräftigeres Gelb */
+    outline: 2px solid #ffc107; /* Deutlicher Rand, damit es heraussticht */
+    outline-offset: -1px;
+    transition: all 0.2s ease-in-out;
+}
+
+.tree-node-wrapper.is-search-focused > .tree-node-line .node-title {
+    color: #000; /* Sehr dunkler Text für starken Kontrast */
+    font-weight: 700;
+}
+
+.tree-node-wrapper.is-search-focused.is-selected > .tree-node-line {
+    background-color: #ffeeba;
+    outline: 2px solid #0d6efd; /* Blaues Outline, falls es gleichzeitig ausgewählt und fokussiert ist */
 }
 
 
@@ -175,14 +193,14 @@
     font-size: 1.3rem;
     color: #2a9d8f;
     border-radius: 4px;
-    opacity: 0;
-    transform: scale(0.8);
+    opacity: 0.3; /* Vorher 0 - Jetzt standardmäßig schwach sichtbar */
+    transform: scale(0.9); /* Leicht vergrößert, damit es lesbar bleibt */
     transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.1s ease, color 0.1s ease;
 }
 
 .tree-node-line:hover .add-node-icon {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 1; /* Volle Sichtbarkeit, wenn man über die Zeile fährt */
+    transform: scale(1); /* Volle Größe */
 }
 
 .add-node-icon:hover {
