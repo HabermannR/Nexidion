@@ -686,7 +686,7 @@ def create_node(
 
 
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,
-                content: Optional[str] = None) -> dict:
+                content: Optional[str] = None) -> Node:
     """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt IMMER eine neue Version."""
     _verify_vault_access(vault_id, user_id)
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).options(joinedload(Node.current_version_object)).first()
@@ -700,13 +700,13 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
 
     # Wenn weder Titel noch Inhalt übergeben wurden, gibt es nichts zu tun.
     if title is None and content is None:
-        return node.to_dict()
+        return node
     new_title = title if title is not None else current_title
     new_content = content if content is not None else current_content
 
     # Wir erstellen keine neue Version, wenn sich absolut nichts geändert hat.
     if new_title == current_title and new_content == current_content:
-        return node.to_dict()
+        return node
 
     # Der Titel darf nicht leer sein.
     if not new_title or not new_title.strip():
@@ -723,13 +723,12 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     db.session.add(new_version)
     node.current_version = next_version_number
     db.session.commit()
-    db.session.refresh(node)
 
-    # Lade die gerade erstellte Version, um sie mit `to_dict` zurückzugeben
-    updated_node_with_new_version = Node.query.options(joinedload(Node.current_version_object)).filter_by(
+    # Reload with current_version_object eagerly so the caller can call .to_dict()
+    updated_node = Node.query.options(joinedload(Node.current_version_object)).filter_by(
         id=node_id).one()
     rebuild_vault_tree_cache(vault_id)
-    return updated_node_with_new_version.to_dict()
+    return updated_node
 
 
 def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary: str) -> Node:

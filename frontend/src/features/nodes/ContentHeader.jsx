@@ -1,8 +1,11 @@
+// src/features/nodes/ContentHeader.jsx
+
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonGroup, Dropdown, Form, InputGroup } from 'react-bootstrap';
 import IconSelectorDropdown from './IconSelectorDropdown.jsx';
-import apiClient from '../../api/apiClient.js'; // API Client importieren
+import apiClient from '../../api/apiClient.js';
+import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import './ContentHeader.css';
 
 export default function ContentHeader({
@@ -13,23 +16,21 @@ export default function ContentHeader({
                                           onEditClick,
                                           onDeleteClick,
                                           showSummary,
-                                          onToggleSummary
+                                          onToggleSummary,
+                                          onAddSummary
                                       }) {
-    // NEU: QueryClient für die Invalidierung holen
     const queryClient = useQueryClient();
+    const openPrintPreview = useWorkspaceStore(state => state.openPrintPreview); // <-- Get action from store
 
-    // NEU: UI-Zustand für den Umbenennungs-Modus
     const [isRenaming, setIsRenaming] = useState(false);
     const [newTitle, setNewTitle] = useState('');
 
-    // Stellt sicher, dass der Titel im Input-Feld aktuell ist, wenn sich der Node ändert
     useEffect(() => {
         if (currentVersion) {
             setNewTitle(currentVersion.title);
         }
     }, [currentVersion]);
 
-    // NEU: useMutation für das Umbenennen des Nodes
     const renameNodeMutation = useMutation({
         mutationFn: (updatedNodeData) => {
             return apiClient.put(`/api/vaults/${vaultId}/nodes/${updatedNodeData.nodeId}`, {
@@ -37,28 +38,20 @@ export default function ContentHeader({
                 content: updatedNodeData.content,
             });
         },
-        onSuccess: (data, variables) => { // Wir können die nodeId aus den `variables` bekommen
-            console.log(`[MUTATION SUCCESS] Invalidating queries after rename.`);
-
-            // Invalidiere den Baum, damit der neue Titel dort erscheint.
+        onSuccess: (data, variables) => {
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
-
-            // Invalidiere die Versionen, damit der Titel im Verlauf sofort aktuell ist.
             queryClient.invalidateQueries({ queryKey: ['versions', vaultId, variables.nodeId] });
-
-            // Invalidiere den Node-Inhalt, damit der Titel im Header sofort aktuell ist.
             queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, variables.nodeId] });
-
             setIsRenaming(false);
         },
         onError: (error) => {
-            console.error("Fehler beim Umbenennen des Nodes:", error);
+            console.error("Error renaming node:", error);
             setIsRenaming(false);
         }
     });
 
     if (!currentVersion) {
-        return <div className="content-header-container"><h1>Lädt...</h1></div>;
+        return <div className="content-header-container"><h1>Loading...</h1></div>;
     }
 
     const handleRenameClick = () => {
@@ -75,7 +68,7 @@ export default function ContentHeader({
         renameNodeMutation.mutate({
             nodeId: nodeId,
             title: newTitle,
-            content: currentVersion.content, // Den unveraenderten Inhalt aus der aktuellen Version nehmen
+            content: currentVersion.content,
         });
     };
 
@@ -100,7 +93,7 @@ export default function ContentHeader({
                             onKeyDown={(e) => { if (e.key === 'Escape') handleRenameCancel(); }}
                         />
                         <Button type="submit" variant="success" disabled={renameNodeMutation.isPending}>
-                            {renameNodeMutation.isPending ? 'Speichern...' : <i className="bx bx-check"></i>}
+                            {renameNodeMutation.isPending ? 'Saving...' : <i className="bx bx-check"></i>}
                         </Button>
                         <Button variant="secondary" onClick={handleRenameCancel} disabled={renameNodeMutation.isPending}>
                             <i className="bx bx-x"></i>
@@ -114,35 +107,51 @@ export default function ContentHeader({
             {!isEditing && !isRenaming && (
                 <div className="action-buttons">
                     <ButtonGroup>
-                        {/* 1. AI Summary Button (falls vorhanden) */}
-                        {currentVersion?.ai_summary && (
+                        {/* Summary Button / Add Summary Button */}
+                        {currentVersion?.ai_summary ? (
                             <Button
                                 variant={showSummary ? "info" : "outline-info"}
                                 size="sm"
                                 onClick={onToggleSummary}
-                                title="AI Summary umschalten"
+                                title="Toggle AI Summary"
                             >
                                 <i className="bx bx-bot"></i>
                                 <span className="d-none d-md-inline ms-1">Summary</span>
                             </Button>
+                        ) : (
+                            <Button
+                                variant="outline-info"
+                                size="sm"
+                                onClick={onAddSummary}
+                                title="Add AI Summary"
+                            >
+                                <i className="bx bx-bot"></i>
+                                <span className="d-none d-md-inline ms-1">Add Summary</span>
+                            </Button>
                         )}
 
-                        {/* 2. Der Bearbeiten Button (der fehlte!) */}
-                        <Button variant="primary" size="sm" onClick={onEditClick} title="Inhalt bearbeiten" className="edit-button-responsive">
+                        {/* Edit Content Button */}
+                        <Button variant="primary" size="sm" onClick={onEditClick} title="Edit Content" className="edit-button-responsive">
                             <i className="bx bx-pencil"></i>
-                            <span className="d-none d-sm-inline ms-1">Bearbeiten</span>
+                            <span className="d-none d-sm-inline ms-1">Edit</span>
                         </Button>
 
-                        {/* 3. Das Dropdown (hängt sich als "Split" optisch an den Bearbeiten-Button) */}
+                        {/* Dropdown Menu */}
                         <Dropdown as={ButtonGroup}>
-                            <Dropdown.Toggle split variant="primary" size="sm" id="node-actions-dropdown" title="Weitere Aktionen" />
+                            <Dropdown.Toggle split variant="primary" size="sm" id="node-actions-dropdown" title="More Actions" />
                             <Dropdown.Menu align="end">
                                 <Dropdown.Item onClick={handleRenameClick}>
-                                    <i className="bx bx-rename me-2"></i> Umbenennen...
+                                    <i className="bx bx-rename me-2"></i> Rename...
                                 </Dropdown.Item>
+
+                                {/* PRINT BUTTON */}
+                                <Dropdown.Item onClick={() => openPrintPreview([currentVersion], null)}>
+                                    <i className="bx bx-printer me-2"></i> Print...
+                                </Dropdown.Item>
+
                                 <Dropdown.Divider />
                                 <Dropdown.Item onClick={onDeleteClick} className="text-danger">
-                                    <i className="bx bxs-trash me-2"></i> Löschen...
+                                    <i className="bx bxs-trash me-2"></i> Delete...
                                 </Dropdown.Item>
                             </Dropdown.Menu>
                         </Dropdown>

@@ -189,18 +189,18 @@
     flex-shrink: 0;
     width: 20px;
     height: 20px;
-    margin-left: 4px;
+    margin-right: 4px; /* <--- CHANGED: Was margin-left */
     font-size: 1.3rem;
     color: #2a9d8f;
     border-radius: 4px;
-    opacity: 0.3; /* Vorher 0 - Jetzt standardmäßig schwach sichtbar */
-    transform: scale(0.9); /* Leicht vergrößert, damit es lesbar bleibt */
+    opacity: 0.3;
+    transform: scale(0.9);
     transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.1s ease, color 0.1s ease;
 }
 
 .tree-node-line:hover .add-node-icon {
-    opacity: 1; /* Volle Sichtbarkeit, wenn man über die Zeile fährt */
-    transform: scale(1); /* Volle Größe */
+    opacity: 1;
+    transform: scale(1);
 }
 
 .add-node-icon:hover {

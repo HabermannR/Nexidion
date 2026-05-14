@@ -1,39 +1,238 @@
 // src/features/agent/AgentTab.jsx
 import React, { useState, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, NavLink } from 'react-router-dom';
 import { Button, Alert, Form } from 'react-bootstrap';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
 import apiClient from '../../api/apiClient';
 
+// Import our new theme-compliant stylesheet
+import './AgentTab.css';
+
+// Operation accent colors mapped to generic custom properties (so they can be easily overridden)
+const OPERATION_META = {
+    create_node:             { label: 'Created node',  color: 'var(--agent-op-create, #2e7d5e)', icon: '✦' },
+    patch_node:              { label: 'Patched node',  color: 'var(--primary-color, #405d83)', icon: '✎' },
+    write_node:              { label: 'Wrote node',    color: 'var(--agent-op-write, #2e6b7d)', icon: '▤' },
+    write_node_summary_only: { label: 'Summary only',  color: 'var(--agent-op-summary, #888888)', icon: '◎' },
+    delete_node:             { label: 'Deleted node',  color: 'var(--agent-op-delete, #a03535)', icon: '✕' },
+    move_node:               { label: 'Moved node',    color: 'var(--agent-op-move, #7a6020)', icon: '⇢' },
+};
+
+// ─── OperationDetail ──────────────────────────────────────────────────────────
+
+function OperationDetail({ detail }) {
+    if (!detail || typeof detail !== 'object') return null;
+    const entries = Object.entries(detail);
+    if (entries.length === 0) return null;
+
+    return (
+        <div className="agent-op-detail">
+            {entries.map(([k, v]) => {
+                const isLong = typeof v === 'string' && v.length > 80;
+                return (
+                    <div key={k} className="agent-op-detail-row">
+                        <span className="agent-op-detail-key">
+                            {k.replace(/_/g, ' ')}
+                        </span>
+                        <span className={`agent-op-detail-val ${isLong ? 'is-long' : 'is-short'}`}>
+                            {typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v)}
+                        </span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── OperationRow ─────────────────────────────────────────────────────────────
+
+function OperationRow({ op, vaultId }) {
+    const [open, setOpen] = useState(false);
+    const meta = OPERATION_META[op.operation] || { label: op.operation, color: 'var(--text-muted, #6c757d)', icon: '●' };
+    const time = op.timestamp
+        ? new Date(op.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '';
+    const hasDetail = op.detail && Object.keys(op.detail).length > 0;
+    const shortId = String(op.node_id || '').substring(0, 8);
+
+    return (
+        <div className="agent-op-row" style={{ '--op-color': meta.color }}>
+            <div
+                className={`agent-op-row-header ${hasDetail ? 'clickable' : ''}`}
+                onClick={() => hasDetail && setOpen(o => !o)}
+            >
+                <span className="agent-op-label">
+                    {meta.icon} {meta.label}
+                </span>
+                {op.node_id && vaultId ? (
+                    <NavLink
+                        to={`/vaults/${vaultId}/nodes/${op.node_id}`}
+                        className="agent-op-link"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {shortId}
+                    </NavLink>
+                ) : (
+                    <span className="agent-op-id">
+                        {shortId}
+                    </span>
+                )}
+                <span className="agent-op-time">{time}</span>
+                {hasDetail && (
+                    <span className="agent-op-toggle">{open ? '▲' : '▼'}</span>
+                )}
+            </div>
+            {open && hasDetail && <OperationDetail detail={op.detail} />}
+        </div>
+    );
+}
+
+// ─── TaskDetail — fetched on expand ──────────────────────────────────────────
+
+function TaskDetail({ taskId, vaultId }) {
+    const { data, isLoading, isError } = useQuery({
+        queryKey: ['agentTask', taskId],
+        queryFn: async () => {
+            const res = await apiClient.get(`/api/tasks/${taskId}`);
+            return res.data;
+        },
+        staleTime: 10_000,
+    });
+
+    if (isLoading) return (
+        <div className="text-muted small py-2">Loading…</div>
+    );
+    if (isError || !data) return (
+        <div className="text-danger small py-2">Failed to load detail.</div>
+    );
+
+    const operations = Array.isArray(data.operations) ? data.operations : [];
+
+    return (
+        <div className="agent-task-detail-container">
+
+            {/* Input */}
+            <div>
+                <div className="agent-task-section-title">Input</div>
+                <div className="agent-task-box is-input">
+                    {data.instruction || <span className="text-muted">—</span>}
+                </div>
+            </div>
+
+            {/* Output */}
+            <div>
+                <div className="agent-task-section-title">Output</div>
+                <div className="agent-task-box">
+                    {data.finish_summary
+                        ? data.finish_summary
+                        : <span className="text-muted fst-italic">No output yet</span>
+                    }
+                </div>
+            </div>
+
+            {/* Operations */}
+            <div>
+                <div className="agent-task-section-title">
+                    Operations ({operations.length})
+                </div>
+                {operations.length === 0 ? (
+                    <div className="text-muted small fst-italic">No write operations recorded.</div>
+                ) : (
+                    <div className="d-flex flex-column gap-1">
+                        {operations.map((op, i) => <OperationRow key={i} op={op} vaultId={vaultId} />)}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }) {
+    const statusClass = `status-${(status || 'pending').toLowerCase()}`;
+    return (
+        <span className={`agent-status-badge ${statusClass}`}>
+            {status}
+        </span>
+    );
+}
+
+// ─── TaskCard ─────────────────────────────────────────────────────────────────
+
+function TaskCard({ task, vaultId }) {
+    const [expanded, setExpanded] = useState(false);
+    const preview = task.preview_text || '';
+
+    return (
+        <div className={`agent-task-card ${expanded ? 'expanded' : ''}`}>
+            <div
+                className="agent-task-card-header"
+                onClick={() => setExpanded(e => !e)}
+            >
+                <div className="d-flex gap-2 align-items-start">
+                    <div className={`agent-task-card-preview ${!expanded ? 'is-collapsed' : ''}`}>
+                        {preview}
+                    </div>
+                    <StatusBadge status={task.status} />
+                </div>
+
+                <div className="agent-task-card-meta">
+                    <span className="agent-task-card-id">
+                        {String(task.id).substring(0, 8)}
+                    </span>
+                    <div className="d-flex gap-2 align-items-center">
+                        {task.created_at && (
+                            <span className="agent-task-card-time">
+                                {new Date(task.created_at).toLocaleString()}
+                            </span>
+                        )}
+                        <span className="agent-task-card-time" style={{ fontSize: '0.6rem' }}>
+                            {expanded ? '▲' : '▼'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {expanded && (
+                <div className="agent-task-card-body">
+                    <TaskDetail taskId={task.id} vaultId={vaultId} />
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function AgentTab() {
-    const { vaultId } = useParams();
+    const {vaultId} = useParams();
     const queryClient = useQueryClient();
-    const[instruction, setInstruction] = useState('');
-    const [status, setStatus] = useState('idle'); // 'idle' | 'sending' | 'sent' | 'error'
+    const [instruction, setInstruction] = useState('');
+    const [status, setStatus] = useState('idle');
     const [statusFilter, setStatusFilter] = useState('');
-	const [expandedTasks, setExpandedTasks] = useState(new Set());
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
-    const { data: queryData } = useVaultTreeQuery(vaultId);
+    const {data: queryData} = useVaultTreeQuery(vaultId);
     const allNodesFlat = useMemo(() => queryData?.allNodesFlat || [], [queryData]);
 
     const selectedNodes = useMemo(() => {
-        if (allNodesFlat.length === 0 || selectedNodeIds.size === 0) return[];
+        if (allNodesFlat.length === 0 || selectedNodeIds.size === 0) return [];
         const nodeMap = new Map(allNodesFlat.map(n => [n.id, n]));
         return Array.from(selectedNodeIds)
-            .map(id => ({ id, title: nodeMap.get(id)?.title || id }))
+            .map(id => ({id, title: nodeMap.get(id)?.title || id}))
             .sort((a, b) => a.title.localeCompare(b.title));
     }, [selectedNodeIds, allNodesFlat]);
 
-    const { data: tasks = [], isLoading: loadingTasks } = useQuery({
-        queryKey:['agentTasks', vaultId, statusFilter],
+    const {data: tasks = [], isLoading: loadingTasks} = useQuery({
+        queryKey: ['agentTasks', vaultId, statusFilter],
         queryFn: async () => {
-            const params = { vault_id: vaultId };
+            const params = {vault_id: vaultId, limit: 20};
             if (statusFilter) params.status = statusFilter;
-            const res = await apiClient.get('/api/tasks', { params });
-            return Array.isArray(res.data) ? res.data : (res.data.tasks ||[]);
+            const res = await apiClient.get('/api/tasks', {params});
+            return Array.isArray(res.data) ? res.data : (res.data.tasks || []);
         },
         refetchInterval: 5000,
     });
@@ -49,7 +248,7 @@ export default function AgentTab() {
             });
             setInstruction('');
             setStatus('sent');
-            queryClient.invalidateQueries({ queryKey: ['agentTasks', vaultId] });
+            queryClient.invalidateQueries({queryKey: ['agentTasks', vaultId]});
             setTimeout(() => setStatus('idle'), 3000);
         } catch {
             setStatus('error');
@@ -58,18 +257,7 @@ export default function AgentTab() {
     };
 
     const handleKeyDown = (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            handleSend();
-        }
-    };
-	
-	const toggleTaskExpansion = (taskId) => {
-        setExpandedTasks(prev => {
-            const next = new Set(prev);
-            if (next.has(taskId)) next.delete(taskId);
-            else next.add(taskId);
-            return next;
-        });
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSend();
     };
 
     return (
@@ -77,7 +265,6 @@ export default function AgentTab() {
             <div className="flex-shrink-0">
                 <h6 className="text-muted mb-2">Queue Agent Task</h6>
 
-                {/* Context nodes display */}
                 <div className="mb-2">
                     <small className="text-muted fw-bold d-block mb-1">
                         Context nodes ({selectedNodes.length})
@@ -97,7 +284,6 @@ export default function AgentTab() {
                     )}
                 </div>
 
-                {/* Instruction textarea */}
                 <textarea
                     className="form-control form-control-sm font-monospace"
                     rows={4}
@@ -106,7 +292,7 @@ export default function AgentTab() {
                     onChange={e => setInstruction(e.target.value)}
                     onKeyDown={handleKeyDown}
                     disabled={status === 'sending'}
-                    style={{ resize: 'vertical', fontSize: '0.82rem' }}
+                    style={{resize: 'vertical', fontSize: '0.82rem'}}
                 />
 
                 <div className="d-grid mt-3">
@@ -132,17 +318,22 @@ export default function AgentTab() {
                 )}
             </div>
 
-            <hr className="my-1" />
+            <hr className="my-1"/>
 
-            <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: 0 }}>
+            <div className="flex-grow-1 d-flex flex-column" style={{minHeight: 0}}>
                 <div className="d-flex justify-content-between align-items-center mb-2">
-                    <h6 className="text-muted mb-0">Tasks</h6>
-                    <Form.Select 
-                        size="sm" 
-                        className="w-auto py-0 text-muted" 
-                        value={statusFilter} 
+                    <h6 className="text-muted mb-0">
+                        Tasks
+                        <span className="ms-1" style={{fontSize: '0.7rem', fontWeight: 400}}>
+                            (last 20)
+                        </span>
+                    </h6>
+                    <Form.Select
+                        size="sm"
+                        className="w-auto py-0 text-muted"
+                        value={statusFilter}
                         onChange={e => setStatusFilter(e.target.value)}
-                        style={{ fontSize: '0.8rem' }}
+                        style={{fontSize: '0.8rem'}}
                     >
                         <option value="">All Statuses</option>
                         <option value="pending">Pending</option>
@@ -151,7 +342,7 @@ export default function AgentTab() {
                         <option value="failed">Failed</option>
                     </Form.Select>
                 </div>
-                
+
                 <div className="flex-grow-1 overflow-auto pe-1 custom-scrollbar">
                     {loadingTasks ? (
                         <div className="text-center text-muted small py-3">Loading tasks...</div>
@@ -159,69 +350,9 @@ export default function AgentTab() {
                         <div className="text-center text-muted small py-3 fst-italic">No tasks found.</div>
                     ) : (
                         <div className="d-flex flex-column gap-2">
-                            {tasks.map(task => {
-                                // Prüfen ob Text lang genug ist, um überhaupt zu klappen
-                                const isLong = task.instruction?.length > 90;
-                                const isExpanded = expandedTasks.has(task.id);
-
-                                return (
-                                <div key={task.id} className="card border shadow-sm small">
-                                    <div className="card-body p-2 d-flex flex-column gap-2">
-                                        
-                                        <div className="d-flex justify-content-between align-items-start gap-2">
-                                            {/* TEXT: Line-Clamp beschneidet auf 2 Zeilen mit '...' */}
-                                            <div 
-                                                className="text-break text-wrap font-monospace" 
-                                                style={{ 
-                                                    fontSize: '0.75rem', 
-                                                    flex: 1, 
-                                                    minWidth: 0,
-                                                    display: (!isLong || isExpanded) ? 'block' : '-webkit-box',
-                                                    WebkitLineClamp: (!isLong || isExpanded) ? 'unset' : 2,
-                                                    WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden',
-                                                    cursor: isLong ? 'pointer' : 'default'
-                                                }}
-                                                onClick={() => isLong && toggleTaskExpansion(task.id)}
-                                                title={isLong && !isExpanded ? "Klicken zum Ausklappen" : ""}
-                                            >
-                                                {task.instruction}
-                                            </div>
-                                            
-                                            {/* BADGE */}
-                                            <span className={`badge bg-${
-                                                task.status === 'completed' ? 'success' : 
-                                                task.status === 'failed' ? 'danger' : 
-                                                task.status === 'processing' ? 'warning text-dark' : 'secondary'
-                                            } py-1 px-2 flex-shrink-0 mt-1`} style={{fontSize: '0.65rem'}}>
-                                                {task.status}
-                                            </span>
-                                        </div>
-
-                                        {/* UNTERER BEREICH: ID, "Mehr"-Link und Datum */}
-                                        <div className="text-muted d-flex justify-content-between align-items-center" style={{fontSize: '0.65rem'}}>
-                                            <div className="d-flex gap-2 align-items-center">
-                                                <span>ID: {String(task.id).substring(0, 8)}</span>
-                                                
-                                                {/* Zeige "Mehr/Weniger" nur bei langen Texten */}
-                                                {isLong && (
-                                                    <span 
-                                                        className="text-primary"
-                                                        style={{ cursor: 'pointer', textDecoration: 'underline' }}
-                                                        onClick={() => toggleTaskExpansion(task.id)}
-                                                    >
-                                                        {isExpanded ? 'Weniger' : 'Mehr'}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <span>
-                                                {task.created_at ? new Date(task.created_at).toLocaleString() : ''}
-                                            </span>
-                                        </div>
-                                        
-                                    </div>
-                                </div>
-                            )})}
+                            {tasks.map(task => (
+                                <TaskCard key={task.id} task={task} vaultId={vaultId}/>
+                            ))}
                         </div>
                     )}
                 </div>

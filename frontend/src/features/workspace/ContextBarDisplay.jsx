@@ -18,13 +18,13 @@ export default function ContextBarDisplay({
     copyStatus,
 }) {
     const handleSave = () => {
-        const name = prompt('Name für diese Auswahl eingeben:');
+        const name = prompt('Enter a name for this selection:');
         if (name) onSave(name);
     };
 
     const handleDelete = (e, name) => {
         e.stopPropagation();
-        if (window.confirm(`Soll das Kontext-Set "${name}" wirklich gelöscht werden?`)) {
+        if (window.confirm(`Are you sure you want to delete the context set "${name}"?`)) {
             onDeleteSet(name);
         }
     };
@@ -49,11 +49,11 @@ export default function ContextBarDisplay({
             <div
                 className={`context-bar ${selectionSize > 0 ? 'expandable' : ''}`}
                 onClick={handleBarClick}
-                title={selectionSize > 0 ? 'Klicken zum Ein-/Ausklappen der Details' : ''}
+                title={selectionSize > 0 ? 'Click to expand/collapse details' : ''}
             >
                 <span className="context-status-text">
                     {selectionSize > 0 && <i className={`bx ${chevronIcon} me-1`}></i>}
-                    <strong>{selectionSize}</strong> Node(s) als Kontext ausgewählt
+                    <strong>{selectionSize}</strong> node(s) selected as context
                 </span>
 
                 <ButtonGroup>
@@ -78,9 +78,9 @@ export default function ContextBarDisplay({
                         size="sm"
                         onClick={onClear}
                         disabled={selectionSize === 0}
-                        title="Aktuelle Auswahl zurücksetzen"
+                        title="Clear current selection"
                     >
-                        <i className="bx bx-x"></i> Leeren
+                        <i className="bx bx-x"></i> Clear
                     </Button>
 
                     <Dropdown as={ButtonGroup}>
@@ -89,21 +89,21 @@ export default function ContextBarDisplay({
                             variant="outline-secondary"
                             size="sm"
                             id="context-sets-dropdown"
-                            title="Gespeicherte Kontext-Sets verwalten"
+                            title="Manage saved context sets"
                         />
                         <Dropdown.Menu align="end">
                             <Dropdown.Item onClick={handleSave} disabled={selectionSize === 0}>
-                                <i className="bx bx-save me-2"></i>Aktuelle Auswahl speichern...
+                                <i className="bx bx-save me-2"></i>Save current selection...
                             </Dropdown.Item>
                             <Dropdown.Divider />
-                            <Dropdown.Header>Gespeicherte Sets</Dropdown.Header>
+                            <Dropdown.Header>Saved sets</Dropdown.Header>
                             {hasSavedSets ? (
                                 savedSets.map((set) => (
                                     <Dropdown.Item
                                         key={set.name}
                                         className="context-set-item"
                                         onClick={() => onLoadSet(set.ids)}
-                                        title={`Set "${set.name}" laden`}
+                                        title={`Load set "${set.name}"`}
                                     >
                                         <span className="context-set-name">
                                             {set.name} ({set.count})
@@ -113,14 +113,14 @@ export default function ContextBarDisplay({
                                             size="sm"
                                             className="text-danger p-0"
                                             onClick={(e) => handleDelete(e, set.name)}
-                                            title={`Set "${set.name}" löschen`}
+                                            title={`Delete set "${set.name}"`}
                                         >
                                             <i className="bx bxs-trash"></i>
                                         </Button>
                                     </Dropdown.Item>
                                 ))
                             ) : (
-                                <Dropdown.ItemText>Noch keine Sets gespeichert.</Dropdown.ItemText>
+                                <Dropdown.ItemText>No sets saved yet.</Dropdown.ItemText>
                             )}
                         </Dropdown.Menu>
                     </Dropdown>

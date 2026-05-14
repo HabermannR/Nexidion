@@ -378,7 +378,7 @@ img[src$=".svg"] {
  * @param {number} vaultId - Die ID des aktiven Vaults.
  * @returns {Promise<Array<Object>>} - Ein Promise, das ein Array von Node-Objekten liefert.
  */
-const getFullNodesByIds = async (ids, vaultId) => {
+export const getFullNodesByIds = async (ids, vaultId) => {
     if (!ids || ids.length === 0) {
         return [];
     }

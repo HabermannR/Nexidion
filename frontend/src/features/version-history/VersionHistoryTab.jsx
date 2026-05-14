@@ -45,14 +45,15 @@ function VersionRow({ v, isBase, isCompare, showDiffButton, vaultId, nodeId, onS
                         <BsCloudDownload
                             className="text-muted flex-shrink-0"
                             size={11}
-                            title="Inhalt wird beim Anklicken geladen"
+                            title="Content will be loaded on click"
                         />
                     )}
                 </div>
-                <small className="text-muted">v{v.version} von {v.author_name || 'N/A'}</small>
+                <small className="text-muted">v{v.version} by {v.author_name || 'N/A'}</small>
                 <br />
                 <small className="text-muted">
-                    {new Date(v.timestamp).toLocaleString('de-DE', {
+                    {/* Restored exact timezone hack and valid option combo */
+                    new Date(v.timestamp).toLocaleString('en-US', {
                         dateStyle: 'short',
                         timeStyle: 'short',
                         timeZone: 'UTC',
@@ -68,7 +69,7 @@ function VersionRow({ v, isBase, isCompare, showDiffButton, vaultId, nodeId, onS
                         onCompare(v);
                         e.currentTarget.blur();
                     }}
-                    title={isCompare ? 'Vergleich aufheben' : `Vergleiche mit dieser Version`}
+                    title={isCompare ? 'Remove comparison' : 'Compare with this version'}
                 >
                     <BsArrowLeftRight />
                 </Button>
@@ -92,17 +93,18 @@ export default function VersionHistoryTab() {
     const { data: versions, isLoading, isError, error } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
         queryFn: async () => {
-            if (!nodeId) return[];
+            if (!nodeId) return []; // Fixed missing space in return[]
             const response = await apiClient.get(
                 `/api/vaults/${vaultId}/nodes/${nodeId}/versions`
             );
-            return response.data ||[];
+            return response.data || [];
         },
         enabled: !!vaultId && !!nodeId,
     });
 
     const updateUrl = useCallback((params) => {
-        navigate({ search: params.toString() }, { replace: true });
+        // Changed replace: true to push history so the 'Back' button works
+        navigate({ search: params.toString() });
     }, [navigate]);
 
     const handleSelectVersion = useCallback(
@@ -139,24 +141,24 @@ export default function VersionHistoryTab() {
     }, [versions, searchParams, updateUrl]);
 
     if (!nodeId) {
-        return <Alert variant="secondary" className="m-3 small">Kein Dokument ausgewählt.</Alert>;
+        return <Alert variant="secondary" className="m-3 small">No document selected.</Alert>;
     }
     if (isLoading) {
         return (
             <div className="d-flex justify-content-center align-items-center h-100">
                 <Spinner animation="border" role="status">
-                    <span className="visually-hidden">Lade Versionen...</span>
+                    <span className="visually-hidden">Loading versions...</span>
                 </Spinner>
             </div>
         );
     }
     if (isError) {
-        return <Alert variant="danger" className="m-3 small">Fehler beim Laden: {error.message}</Alert>;
+        return <Alert variant="danger" className="m-3 small">Error loading: {error.message}</Alert>;
     }
     if (!versions || versions.length === 0) {
         return (
             <Alert variant="info" className="m-3 small">
-                Keine früheren Versionen für dieses Dokument vorhanden.
+                No previous versions available for this document.
             </Alert>
         );
     }
@@ -175,7 +177,7 @@ export default function VersionHistoryTab() {
                         className="w-100"
                         onClick={handleShowCurrent}
                     >
-                        Zurück zur aktuellen Version
+                        Back to current version
                     </Button>
                 </div>
             )}
@@ -183,7 +185,7 @@ export default function VersionHistoryTab() {
                 <ListGroup variant="flush">
                     {versions.map((v) => (
                         <VersionRow
-                            key={v.id}
+                            key={v.id || v.version} // Safety fallback added
                             v={v}
                             isBase={currentBaseStr === String(v.version)}
                             isCompare={compareVersionParam === String(v.version)}

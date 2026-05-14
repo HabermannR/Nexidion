@@ -12,6 +12,7 @@ import './AppShell.css';
 
 // 1. IMPORTIERE DEINEN SHARED HOOK HIER:
 import { useUserQuery } from '../features/auth/useUserQuery';
+import PrintPreview from "../features/print/PrintPreview.jsx";
 
 const useVaultsQuery = () => {
     const etagRef = useRef(null);
@@ -62,7 +63,7 @@ export default function AppShell() {
     const isOnAnySettingsPage = location.pathname.startsWith('/settings/');
     const isOnAdminPage = location.pathname.startsWith('/admin');
 
-    return (
+return (
         <div className={`app-shell-container ${isLoading ? 'is-loading' : ''}`}>
             <Navbar bg="light" variant="light" expand="lg" className="px-3 border-bottom app-shell-header">
                 <Container fluid>
@@ -74,7 +75,7 @@ export default function AppShell() {
                         <Nav className="ms-auto align-items-center">
 
                             {/* Vault Switcher */}
-                            <NavDropdown title="Vault wechseln" id="vault-switcher-dropdown" className="me-lg-3">
+                            <NavDropdown title="Switch Vault" id="vault-switcher-dropdown" className="me-lg-3">
                                 <div className="scrollable-dropdown">
                                     {isLoadingVaults ? (
                                         <NavDropdown.Item disabled>...</NavDropdown.Item>
@@ -93,7 +94,7 @@ export default function AppShell() {
                                 </div>
                                 <NavDropdown.Divider />
                                 <NavDropdown.Item as={Link} to="/settings/vaults" disabled={isOnAnySettingsPage}>
-                                    Vaults verwalten...
+                                    Manage Vaults...
                                 </NavDropdown.Item>
                             </NavDropdown>
 
@@ -112,7 +113,7 @@ export default function AppShell() {
                             {/* User dropdown */}
                             <NavDropdown title={user?.username || 'Account'} id="user-settings-dropdown" align="end" className="me-lg-2">
                                 <NavDropdown.Item as={Link} to="/settings/user" disabled={isOnAnySettingsPage}>
-                                    Benutzereinstellungen
+                                    User Settings
                                 </NavDropdown.Item>
                                 <NavDropdown.Divider />
                                 <NavDropdown.ItemText>
@@ -132,6 +133,7 @@ export default function AppShell() {
             <main className="app-shell-content">
                 <Outlet />
             </main>
+            <PrintPreview />
         </div>
     );
 }

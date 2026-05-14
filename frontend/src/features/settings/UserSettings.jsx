@@ -1,42 +1,42 @@
 // src/features/settings/UserSettings.jsx
 
 import React, { useState, useRef } from 'react';
-// KORREKTUR: useParams importieren, um den Kontext zu bestimmen, falls outlet-context fehlt.
+// FIX: Import useParams to determine the context in case outlet-context is missing.
 import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Container, Card, Button, Form as BootstrapForm, Row, Col, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
-// KORREKTUR: Den Workspace-Store importieren, um das vault-spezifische Pfad-Objekt zu lesen.
+// FIX: Import the Workspace store to read the vault-specific path object.
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 
 export default function UserSettings() {
-    // KORREKTUR: useOutletContext ist nicht immer zuverlässig, useParams als Fallback nutzen.
+    // FIX: useOutletContext is not always reliable, use useParams as a fallback.
     const { activeVault } = useOutletContext() || {};
-    // Der vaultId aus der URL gibt uns den Kontext, aus dem wir gekommen sind.
+    // The vaultId from the URL gives us the context we came from.
     const { vaultId } = useParams();
     const formRef = useRef();
     const navigate = useNavigate();
 
-    // KORREKTUR: Das vault-spezifische Pfad-Objekt lesen, nicht eine einzelne Variable.
+    // FIX: Read the vault-specific path object, not a single variable.
     const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
 
-    // KORREKTUR: Den korrekten Pfad für den aktuellen Vault-Kontext ermitteln.
-    // Wir priorisieren den `activeVault` aus dem Context, nehmen aber die URL-Param als Fallback.
+    // FIX: Determine the correct path for the current vault context.
+    // We prioritize the `activeVault` from the context, but take the URL param as a fallback.
     const currentVaultId = activeVault?.id || vaultId;
     const lastValidPathForThisVault = lastValidPaths ? lastValidPaths[currentVaultId] : null;
 
-    // --- LOKALER UI-ZUSTAND ---
+    // --- LOCAL UI STATE ---
     const [alert, setAlert] = useState(null);
 
     // --- DATA MUTATION ---
     const changePasswordMutation = useMutation({
         mutationFn: (passwords) => apiClient.post('/api/auth/change-password', passwords),
         onSuccess: () => {
-            setAlert({type: 'success', message: 'Passwort erfolgreich geändert.'});
+            setAlert({type: 'success', message: 'Password changed successfully.'});
             formRef.current?.reset();
         },
         onError: (err) => {
-            setAlert({type: 'danger', message: err.response?.data?.error || 'Ein Fehler ist aufgetreten.'});
+            setAlert({type: 'danger', message: err.response?.data?.error || 'An error occurred.'});
         }
     });
 
@@ -51,32 +51,32 @@ export default function UserSettings() {
         const confirm_password = formData.get('confirm_password');
 
         if (new_password !== confirm_password) {
-            setAlert({type: 'danger', message: 'Die neuen Passwörter stimmen nicht überein.'});
+            setAlert({type: 'danger', message: 'The new passwords do not match.'});
             return;
         }
 
         if (!old_password || !new_password) {
-            setAlert({type: 'danger', message: 'Bitte füllen Sie alle Felder aus.'});
+            setAlert({type: 'danger', message: 'Please fill in all fields.'});
             return;
         }
 
         changePasswordMutation.mutate({ old_password, new_password });
     };
 
-    // KORREKTUR: Handler für den Zurück-Button, der den vault-spezifischen Pfad nutzt.
+    // FIX: Handler for the back button that uses the vault-specific path.
     const handleBackClick = () => {
-        // Nutze den gespeicherten Pfad. Wenn keiner da ist, nimm den Fallback zum Vault-Root.
-        // Der finale Fallback zu '/' fängt den seltenen Fall ab, dass kein Vault-Kontext existiert.
+        // Use the saved path. If there is none, use the fallback to the vault root.
+        // The final fallback to '/' handles the rare case where no vault context exists.
         navigate(lastValidPathForThisVault || (currentVaultId ? `/vaults/${currentVaultId}` : '/'));
     };
 
     return (
         <Container className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
-                <h2>Benutzereinstellungen</h2>
-                {/* KORREKTUR: Der Button nutzt jetzt den korrigierten onClick-Handler */}
+                <h2>User Settings</h2>
+                {/* FIX: The button now uses the corrected onClick handler */}
                 <Button onClick={handleBackClick} variant="secondary">
-                    Zurück zum Workspace
+                    Back to Workspace
                 </Button>
             </div>
 
@@ -85,27 +85,27 @@ export default function UserSettings() {
             <Row>
                 <Col md={8} lg={6}>
                     <Card>
-                        <Card.Header as="h5">Passwort ändern</Card.Header>
+                        <Card.Header as="h5">Change Password</Card.Header>
                         <Card.Body>
                             <BootstrapForm ref={formRef} onSubmit={handleSubmit}>
                                 <BootstrapForm.Group className="mb-3" controlId="old_password">
-                                    <BootstrapForm.Label>Aktuelles Passwort</BootstrapForm.Label>
+                                    <BootstrapForm.Label>Current Password</BootstrapForm.Label>
                                     <BootstrapForm.Control type="password" name="old_password" required />
                                 </BootstrapForm.Group>
 
                                 <BootstrapForm.Group className="mb-3" controlId="new_password">
-                                    <BootstrapForm.Label>Neues Passwort</BootstrapForm.Label>
+                                    <BootstrapForm.Label>New Password</BootstrapForm.Label>
                                     <BootstrapForm.Control type="password" name="new_password" required />
                                 </BootstrapForm.Group>
 
                                 <BootstrapForm.Group className="mb-3" controlId="confirm_password">
-                                    <BootstrapForm.Label>Neues Passwort bestätigen</BootstrapForm.Label>
+                                    <BootstrapForm.Label>Confirm New Password</BootstrapForm.Label>
                                     <BootstrapForm.Control type="password" name="confirm_password" required />
                                 </BootstrapForm.Group>
 
                                 <div className="d-flex justify-content-end">
                                     <Button variant="primary" type="submit" disabled={changePasswordMutation.isPending}>
-                                        {changePasswordMutation.isPending ? <><Spinner size="sm"/> Speichern...</> : 'Passwort ändern'}
+                                        {changePasswordMutation.isPending ? <><Spinner size="sm"/> Saving...</> : 'Change Password'}
                                     </Button>
                                 </div>
                             </BootstrapForm>

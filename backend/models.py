@@ -268,15 +268,37 @@ class Task(db.Model):
     operations       = db.Column(db.JSON, nullable=True)
     completed_at     = db.Column(db.DateTime, nullable=True)
 
-    def to_dict(self):
+    def to_dict(self, short=False):
+        if short:
+            # 1. Determine which text to show based on status
+            if self.status == 'completed' and self.finish_summary:
+                text_to_show = self.finish_summary
+            else:
+                text_to_show = self.instruction
+
+            # 2. Truncate to max ~200 chars
+            if text_to_show and len(text_to_show) > 200:
+                text_to_show = text_to_show[:197] + '...'
+
+            # 3. Return a highly optimized dictionary for the list UI
+            return {
+                'id': self.id,
+                'status': self.status,
+                'created_at': self.created_at.isoformat(),
+                'preview_text': text_to_show,
+                # Optional: include completed_at if your UI wants to show completion time
+                'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            }
+
+        # Full detail for the GET /api/tasks/<task_id> route
         return {
-            'id':               self.id,
-            'vault_id':         self.vault_id,
-            'instruction':      self.instruction,
-            'status':           self.status,
+            'id': self.id,
+            'vault_id': self.vault_id,
+            'instruction': self.instruction,
+            'status': self.status,
             'context_node_ids': self.context_node_ids,
-            'created_at':       self.created_at.isoformat(),
-            'finish_summary':   self.finish_summary,
-            'operations':       self.operations,
-            'completed_at':     self.completed_at.isoformat() if self.completed_at else None,
+            'created_at': self.created_at.isoformat(),
+            'finish_summary': self.finish_summary,
+            'operations': self.operations,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }

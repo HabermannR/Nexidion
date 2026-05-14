@@ -14,7 +14,6 @@ const ItemTypes = { NODE: "NODE" };
 // ============================================================================
 // TreeNode Komponente
 // ============================================================================
-// ADDED: scrollToNodeId to the destructured props
 const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlightedNodeIds = new Set(), scrollToNodeId }) => {
     const { vaultId } = useParams();
     const wrapperRef = useRef(null);
@@ -25,9 +24,8 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
     const isExpanded = !collapsedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
 
-    // Prüfe ob dieser Node von der Suche getroffen wurde oder im Fokus des Jumpers ist
     const isHighlighted = highlightedNodeIds.has(node.id);
-    const isSearchFocused = scrollToNodeId === node.id; // NEU
+    const isSearchFocused = scrollToNodeId === node.id;
 
     const [{isDragging}, drag] = useDrag(() => ({
         type: ItemTypes.NODE,
@@ -64,9 +62,8 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
 
     const getLinkClassName = ({isActive}) => `node-link-content ${isActive ? "is-active" : ""}`;
 
-    // Klasse für Focus ergänzt
     const wrapperClasses = `tree-node-wrapper ${isSelected ? "is-selected" : ""} ${isHighlighted ? "is-highlighted" : ""} ${isSearchFocused ? "is-search-focused" : ""}`;
-    const lineClasses =["tree-node-line", isOver && canDrop && "is-drop-target", isOver && !canDrop && "is-drop-invalid"].filter(Boolean).join(" ");
+    const lineClasses = ["tree-node-line", isOver && canDrop && "is-drop-target", isOver && !canDrop && "is-drop-invalid"].filter(Boolean).join(" ");
     const selectionAreaClasses = `selection-area ${!node.icon ? "no-icon-mode" : ""}`;
 
     return (
@@ -75,11 +72,18 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                 <span className="collapse-icon" onClick={handleToggleExpand}>
                     {hasChildren && <i className={`bx ${isExpanded ? "bx-chevron-down" : "bx-chevron-right"}`}></i>}
                 </span>
+
                 <span className={selectionAreaClasses} onClick={handleSelectNode}>
                     <i className="selector-icon bx bx-checkbox"></i>
                     <i className="selector-icon-checked bx bxs-checkbox-checked"></i>
                     {node.icon && <i className={`bx ${node.icon} node-icon`}></i>}
                 </span>
+
+                {/* 1. MOVED PLUS ICON TO THE FRONT */}
+                <span className="add-node-icon" onClick={handleAddClick} title="Kind-Element hinzufügen">
+                    <i className="bx bx-plus"></i>
+                </span>
+
                 <NavLink
                     to={`/vaults/${vaultId}/nodes/${node.id}`}
                     className={getLinkClassName}
@@ -87,9 +91,6 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                 >
                     <span className="node-title" title={node.title}>{node.title}</span>
                 </NavLink>
-                <span className="add-node-icon" onClick={handleAddClick} title="Kind-Element hinzufügen">
-                    <i className="bx bx-plus"></i>
-                </span>
             </div>
             {hasChildren && isExpanded && (
                 <div className="children-container">
@@ -101,7 +102,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                             onMoveNode={onMoveNode}
                             onNodeClick={onNodeClick}
                             highlightedNodeIds={highlightedNodeIds}
-                            scrollToNodeId={scrollToNodeId} // NEU
+                            scrollToNodeId={scrollToNodeId}
                         />
                     ))}
                 </div>
@@ -111,7 +112,7 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
 });
 
 // ============================================================================
-// 3. HAUPTKOMPONENTE: ProjectTree
+// HAUPTKOMPONENTE: ProjectTree
 // ============================================================================
 export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(), scrollToNodeId = null }) {
     const { vaultId } = useParams();
@@ -121,21 +122,16 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
     const toggleNodeCollapse = useWorkspaceStore(state => state.toggleNodeCollapse);
     const collapsedNodes = useWorkspaceStore(state => state.collapsedNodes);
 
-    const {
-        data: vaultTreeData,
-        isLoading,
-        isSuccess
-    } = useVaultTreeQuery(vaultId);
+    const { data: vaultTreeData, isLoading, isSuccess } = useVaultTreeQuery(vaultId);
     const treeData = vaultTreeData?.tree || null;
 
     useEffect(() => {
         if (!highlightedNodeIds || highlightedNodeIds.size === 0 || !treeData) return;
 
         const parentsToExpand = new Set();
-
         const findPaths = (nodes, currentPath) => {
             for (const node of nodes) {
-                const path =[...currentPath, node.id];
+                const path = [...currentPath, node.id];
                 if (highlightedNodeIds.has(node.id)) {
                     currentPath.forEach(parentId => parentsToExpand.add(parentId));
                 }
@@ -145,22 +141,31 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
             }
         };
 
-        findPaths(treeData,[]);
+        findPaths(treeData, []);
 
         parentsToExpand.forEach(parentId => {
             if (collapsedNodes.has(parentId)) {
                 toggleNodeCollapse(parentId);
             }
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [highlightedNodeIds, treeData]);
 
     useEffect(() => {
         if (!scrollToNodeId) return;
         const timer = setTimeout(() => {
-            const el = document.querySelector(`[data-node-id="${scrollToNodeId}"]`);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // Select ALL elements with this ID (handles both mobile offcanvas and desktop sidebar if both are in DOM)
+            const elements = document.querySelectorAll(`[data-node-id="${scrollToNodeId}"]`);
+
+            elements.forEach(el => {
+                // Check if the element is currently visible on the screen
+                const isVisible = el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0;
+
+                if (isVisible) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
         }, 80);
+
         return () => clearTimeout(timer);
     }, [scrollToNodeId]);
 
@@ -177,10 +182,10 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
     });
 
     const moveNodeMutation = useMutation({
-    mutationFn: ({ nodeIdToMove, newParentId }) =>
-        apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}/move`, { parent_id: newParentId }),
+        mutationFn: ({ nodeIdToMove, newParentId }) =>
+            apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeIdToMove}/move`, { parent_id: newParentId }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey:['vaultTree', vaultId] });
+            queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
         },
         onError: (err) => {
             console.error("Fehler beim Verschieben des Elements:", err);
@@ -209,10 +214,7 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
         return <div className="p-2 text-muted small">Dieser Vault ist noch leer.</div>;
     }
 
-    const containerClasses =[
-        "project-tree-container",
-        !isSuccess ? "is-stale" : ""
-    ].filter(Boolean).join(" ");
+    const containerClasses = ["project-tree-container", !isSuccess ? "is-stale" : ""].filter(Boolean).join(" ");
 
     return (
         <div className={containerClasses}>
@@ -224,7 +226,7 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
                     onMoveNode={handleMoveNode}
                     onNodeClick={onNodeClick}
                     highlightedNodeIds={highlightedNodeIds}
-                    scrollToNodeId={scrollToNodeId} // NEU
+                    scrollToNodeId={scrollToNodeId}
                 />
             ))}
         </div>

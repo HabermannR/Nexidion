@@ -20,7 +20,7 @@ export default function ContextPanel({ activeKey, onTabSelect }) {
                 className="context-panel-grid-tabs"
             >
                 <Tab eventKey="agent" title="Agent"><AgentTab /></Tab>
-                <Tab eventKey="versions" title="Versionen"><VersionHistoryTab /></Tab>
+                <Tab eventKey="versions" title="Versions"><VersionHistoryTab /></Tab>
                 <Tab eventKey="tools" title="Tools">
                     <div className="tab-pane-content-wrapper">
                         <ToolsTab />

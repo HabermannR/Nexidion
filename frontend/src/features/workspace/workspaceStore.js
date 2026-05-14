@@ -21,7 +21,10 @@ export const useWorkspaceStore = create(
 
             // UI layout
             activeContextTab: 'agent',
-            breadcrumbPath:[],
+            breadcrumbPath: [],
+
+            // Print Preview State (Not persisted)
+            printPreviewData: null, // { nodes: [], toc: [] }
 
             // ===============================================
             // ACTIONS
@@ -36,7 +39,7 @@ export const useWorkspaceStore = create(
                 selectedNodeIds: new Set(),
                 collapsedNodes: new Set(),
                 savedSets: {},
-                breadcrumbPath:[],
+                breadcrumbPath: [],
             }),
 
             // UI layout
@@ -100,6 +103,14 @@ export const useWorkspaceStore = create(
                     savedSets: newSavedSets,
                 };
             }),
+
+            // Print Preview Actions
+            openPrintPreview: (nodes, toc) => set({
+                printPreviewData: { nodes, toc }
+            }),
+            closePrintPreview: () => set({
+                printPreviewData: null
+            }),
         }),
         {
             name: STORAGE_KEY,
@@ -123,6 +134,7 @@ export const useWorkspaceStore = create(
                 collapsedNodes: state.collapsedNodes,
                 savedSets: state.savedSets,
                 activeContextTab: state.activeContextTab,
+                // printPreviewData is intentionally left out so it doesn't persist
             }),
         }
     )

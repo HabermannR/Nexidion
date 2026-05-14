@@ -38,7 +38,9 @@ def list_tasks():
     except ValueError:
         return jsonify({'error': 'vault_id must be an integer'}), 400
 
-    limit = None
+    # Set default limit to 20 if not provided
+    limit_str = request.args.get('limit')
+    limit = 20
     if limit_str is not None:
         try:
             limit = int(limit_str)
@@ -54,7 +56,8 @@ def list_tasks():
             status=status,
             limit=limit,
         )
-        return jsonify([t.to_dict() for t in tasks])
+        # Use short=True for the List API
+        return jsonify([t.to_dict(short=True) for t in tasks])
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except PermissionError as e:

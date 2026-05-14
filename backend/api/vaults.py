@@ -76,8 +76,9 @@ def rename_vault(vault_id):
         updated_vault = vault_service.rename_vault(vault_id, new_name, user_id=current_user_id)
         return jsonify(updated_vault.to_dict())
     except ValueError as e:
-        # Kann "not found" oder "already exists" sein
-        return jsonify({"error": str(e)}), 404  # Oder 409, je nach Fehlertext
+        error_message = str(e)
+        status_code = 404 if "not found" in error_message.lower() else 409
+        return jsonify({"error": error_message}), status_code
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
 

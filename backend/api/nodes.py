@@ -204,16 +204,9 @@ def get_multiple_nodes(vault_id: int):
         for node in nodes:
             version = node.current_version_object
             if version:
-                response_data.append({
-                    'id': version.id,
-                    'node_id': version.node_id,
-                    'version': version.version,
-                    'content': version.content,
-                    'timestamp': version.timestamp.isoformat(),
-                    'author_id': version.author_id,
-                    'author_name': version.author.display_name if version.author else "Unknown",
-                    'title': node.title
-                })
+                # Use the model's built-in method — avoids duplication and
+                # ensures consistent field names and timestamp formatting.
+                response_data.append(version.to_dict())
         return jsonify(response_data)
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
@@ -304,8 +297,7 @@ def create_node(vault_id: int):
         return jsonify({"error": "title is required and cannot be empty"}), 400
 
     try:
-        # +++ GEÄNDERT +++
-        # Ruft die neue Service-Funktion auf, die jetzt ein Dictionary zurückgibt.
+        # Service returns a Node object; API layer converts it to a dict.
         new_node = node_service.create_node(
             title=title.strip(),
             content=data.get('content', ''),
@@ -313,7 +305,6 @@ def create_node(vault_id: int):
             vault_id=vault_id,
             author_id=user_id
         )
-        # Wir geben das zurückgegebene Dictionary direkt weiter.
         return jsonify(new_node.to_dict()), 201
 
     except (PermissionError, ValueError) as e:
@@ -336,17 +327,15 @@ def update_node(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'title' or 'content' for an update."}), 400
 
     try:
-        # +++ GEÄNDERT +++
-        # Ruft die neue Service-Funktion auf, die ein Dictionary zurückgibt.
-        updated_node_dict = node_service.update_node(
+        # Service returns a Node object; API layer converts it to a dict.
+        updated_node = node_service.update_node(
             node_id=node_id,
             vault_id=vault_id,
             user_id=user_id,
             title=data.get('title'),
             content=data.get('content')
         )
-        # Wir geben das zurückgegebene Dictionary direkt weiter.
-        return jsonify(updated_node_dict)
+        return jsonify(updated_node.to_dict())
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
@@ -365,8 +354,7 @@ def move_node_route(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'parent_id' (can be null)."}), 400
 
     try:
-        # +++ GEÄNDERT +++
-        # Die Service-Funktion gibt jetzt ein Node-Objekt zurück. Wir müssen es konvertieren.
+        # Service returns a Node object; API layer converts it to a dict.
         updated_node = node_service.move_node(node_id, data['parent_id'], vault_id, user_id)
         return jsonify(updated_node.to_dict())
 
@@ -386,8 +374,7 @@ def set_node_icon_route(vault_id: int, node_id: str):
     if 'icon' not in data:
         return jsonify({"error": "Request body must contain 'icon' (can be a string or null)."}), 400
     try:
-        # +++ GEÄNDERT +++
-        # Die Service-Funktion gibt jetzt ein Node-Objekt zurück. Wir müssen es konvertieren.
+        # Service returns a Node object; API layer converts it to a dict.
         updated_node = node_service.update_node_icon(node_id, vault_id, user_id, data['icon'])
         return jsonify(updated_node.to_dict())
 

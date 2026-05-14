@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Modal, Alert, Collapse } from 'react-bootstrap';
+import { Button, Modal, Alert, Collapse, Form } from 'react-bootstrap';
 
 import apiClient from '../../api/apiClient.js';
 import DiffViewer from '../../components/DiffViewer.jsx';
@@ -40,14 +40,12 @@ export default function NodeContent() {
 
     const { data: vaultTreeData, isLoading: isTreeLoading, isError: isTreeError } = useVaultTreeQuery(vaultId);
 
-    // 1. Hole alle Versionen als schlanke Stubs (Metadaten-Endpunkt)
     const { data: versions, isLoading: isLoadingVersions, isError: isVersionsError } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data),
         enabled: !!nodeId,
     });
 
-    // 2. Hole VOLLSTÄNDIGE Daten exklusiv für diese angeforderte Version (oder aktuelle)
     const { data: activeNodeData, isLoading: isLoadingNode, isError: isNodeError } = useQuery({
         queryKey: ['nodeContent', vaultId, nodeId, versionParam],
         queryFn: () => {
@@ -57,7 +55,6 @@ export default function NodeContent() {
         enabled: !!nodeId,
     });
 
-    // 3. Diff-Vergleich falls vom Tab gefordert
     const { data: compareNodeData } = useQuery({
         queryKey: ['nodeContent', vaultId, nodeId, compareParam],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}`, { params: { version: compareParam } }).then(res => res.data),
@@ -69,19 +66,19 @@ export default function NodeContent() {
     const [isEditing, setIsEditing] = useState(false);
     const [localContent, setLocalContent] = useState('');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+    // AI Summary states
     const [showSummary, setShowSummary] = useState(false);
+    const [isEditingSummary, setIsEditingSummary] = useState(false);
+    const [editSummaryContent, setEditSummaryContent] = useState('');
 
     const saveContentMutation = useSaveNodeContent({
         onSuccess: () => {
             setIsEditing(false);
-
-            // Cache invalidieren, damit die gerade neu erstellte Version
-            // sowie die aktualisierte Versionshistorie sofort geladen werden
             queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, nodeId] });
             queryClient.invalidateQueries({ queryKey: ['versions', vaultId, nodeId] });
 
             if (versionParam || compareParam) {
-                // Remove ?version and ?compare to see the latest version after save
                 const params = new URLSearchParams(searchParams);
                 params.delete('version');
                 params.delete('compare');
@@ -98,9 +95,19 @@ export default function NodeContent() {
         },
     });
 
+    // NEU: Mutation for updating the AI Summary
+    const updateSummaryMutation = useMutation({
+        mutationFn: (newSummary) => apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeId}/summary`, { ai_summary: newSummary }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, nodeId] });
+            setIsEditingSummary(false);
+        }
+    });
+
     useEffect(() => {
         setIsEditing(false);
         setLocalContent('');
+        setIsEditingSummary(false); // Reset summary edit mode on navigation
     }, [nodeId, versionParam]);
 
     useEffect(() => {
@@ -119,15 +126,15 @@ export default function NodeContent() {
     }, [activeNodeData]);
 
     if (!nodeId) {
-        return <div className="p-4 text-center text-muted"><h4>Dokument auswählen</h4><p>Wähle ein Dokument aus der Navigation, um es hier anzuzeigen.</p></div>;
+        return <div className="p-4 text-center text-muted"><h4>Select a Document</h4><p>Select a document from the navigation to view it here.</p></div>;
     }
 
     if (isTreeLoading || isLoadingVersions || isLoadingNode) {
-        return <AppLoading message="Lade Dokument..." />;
+        return <AppLoading message="Loading document..." />;
     }
 
     if (isTreeError || isVersionsError || isNodeError) {
-        return <Alert variant="danger" className="m-4"><h4>Fehler</h4><p>Das Dokument konnte nicht geladen werden.</p></Alert>;
+        return <Alert variant="danger" className="m-4"><h4>Error</h4><p>The document could not be loaded.</p></Alert>;
     }
 
     const currentBaseVersion = activeNodeData;
@@ -136,9 +143,9 @@ export default function NodeContent() {
         return (
             <div className="p-4">
                 <Alert variant="info">
-                    <h4>Kein Inhalt</h4>
-                    <p>Für dieses Dokument wurde noch kein Inhalt gefunden. Beginne mit dem Bearbeiten, um die erste Version zu erstellen.</p>
-                    <Button variant="primary" onClick={() => setIsEditing(true)}>Bearbeiten</Button>
+                    <h4>No Content</h4>
+                    <p>No content found for this document yet. Start editing to create the first version.</p>
+                    <Button variant="primary" onClick={() => setIsEditing(true)}>Edit</Button>
                 </Alert>
             </div>
         );
@@ -171,14 +178,38 @@ export default function NodeContent() {
         setShowDeleteModal(false);
     };
 
+    // Summary Action Handlers
+    const handleAddSummary = () => {
+        setShowSummary(true);
+        setEditSummaryContent('');
+        setIsEditingSummary(true);
+    };
+
+    const handleEditSummaryClick = () => {
+        setEditSummaryContent(currentBaseVersion.ai_summary || '');
+        setIsEditingSummary(true);
+    };
+
+    const handleCancelSummaryEdit = () => {
+        setIsEditingSummary(false);
+        // If it was a new summary and we canceled, hide the box
+        if (!currentBaseVersion.ai_summary) {
+            setShowSummary(false);
+        }
+    };
+
+    const handleSaveSummary = () => {
+        updateSummaryMutation.mutate(editSummaryContent);
+    };
+
     return (
         <>
             {isEditing ? (
                 <Alert variant="info">
                     {isViewingOldVersion
-                        ? `Sie bearbeiten Inhalt basierend auf Version ${currentBaseVersion.version}.`
-                        : 'Sie bearbeiten den aktuellen Inhalt.'}
-                    <br />Beim Speichern wird eine neue, aktuelle Version erstellt.
+                        ? `You are editing content based on version ${currentBaseVersion.version}.`
+                        : 'You are editing the current content.'}
+                    <br />Saving will create a new, current version.
                 </Alert>
             ) : (
                 <ContentHeader
@@ -190,25 +221,57 @@ export default function NodeContent() {
                     onDeleteClick={() => setShowDeleteModal(true)}
                     showSummary={showSummary}
                     onToggleSummary={() => setShowSummary(!showSummary)}
+                    onAddSummary={handleAddSummary}
                 />
             )}
             <hr />
 
-             {!isEditing && currentBaseVersion?.ai_summary && (
+            {/* AI Summary Collapse Block */}
+            {!isEditing && (currentBaseVersion?.ai_summary || showSummary) && (
                 <Collapse in={showSummary}>
                     <div id="ai-summary-collapse" className="mb-4">
                         <div className="p-3 bg-light border border-info rounded text-dark shadow-sm" style={{ fontSize: '0.95rem' }}>
-                            <div className="fw-bold mb-1 text-info d-flex align-items-center">
-                                <i className="bx bx-brain me-1"></i> AI Zusammenfassung
+
+                            <div className="fw-bold mb-2 text-info d-flex align-items-center justify-content-between">
+                                <div><i className="bx bx-brain me-1"></i> AI Summary</div>
+                                {!isEditingSummary && (
+                                    <Button variant="link" size="sm" className="p-0 text-info text-decoration-none" onClick={handleEditSummaryClick}>
+                                        <i className="bx bx-pencil"></i> Edit
+                                    </Button>
+                                )}
                             </div>
-                            <div style={{ whiteSpace: 'pre-wrap' }}>
-                                {currentBaseVersion.ai_summary}
-                            </div>
-                            {!currentBaseVersion.summary_is_current && (
-                                <div className="text-warning mt-2" style={{ fontSize: '0.85rem' }}>
-                                    <i className="bx bx-error-circle me-1"></i>
-                                    Hinweis: Diese Zusammenfassung ist möglicherweise veraltet.
+
+                            {isEditingSummary ? (
+                                <div>
+                                    <Form.Control
+                                        as="textarea"
+                                        rows={4}
+                                        value={editSummaryContent}
+                                        onChange={(e) => setEditSummaryContent(e.target.value)}
+                                        placeholder="Write or edit the AI summary here..."
+                                        disabled={updateSummaryMutation.isPending}
+                                    />
+                                    <div className="d-flex justify-content-end mt-2">
+                                        <Button variant="secondary" size="sm" className="me-2" onClick={handleCancelSummaryEdit} disabled={updateSummaryMutation.isPending}>
+                                            Cancel
+                                        </Button>
+                                        <Button variant="info" size="sm" onClick={handleSaveSummary} disabled={updateSummaryMutation.isPending}>
+                                            {updateSummaryMutation.isPending ? 'Saving...' : 'Save'}
+                                        </Button>
+                                    </div>
                                 </div>
+                            ) : (
+                                <>
+                                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                                        {currentBaseVersion.ai_summary}
+                                    </div>
+                                    {!currentBaseVersion.summary_is_current && (
+                                        <div className="text-warning mt-2" style={{ fontSize: '0.85rem' }}>
+                                            <i className="bx bx-error-circle me-1"></i>
+                                            Note: This summary might be outdated.
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
@@ -219,9 +282,9 @@ export default function NodeContent() {
                 <>
                     <NodeEditor content={localContent} onContentChange={setLocalContent} />
                     <div className="d-flex justify-content-end mt-3">
-                        <Button variant="secondary" onClick={() => setIsEditing(false)} className="me-2" disabled={isSaving}>Abbrechen</Button>
+                        <Button variant="secondary" onClick={() => setIsEditing(false)} className="me-2" disabled={isSaving}>Cancel</Button>
                         <Button variant="primary" onClick={() => saveContentMutation.mutate({ nodeId, title: currentBaseVersion.title, content: localContent })} disabled={isSaving}>
-                            {isSaving ? 'Speichert...' : 'Als neue Version speichern'}
+                            {isSaving ? 'Saving...' : 'Save as new version'}
                         </Button>
                     </div>
                 </>
@@ -229,25 +292,26 @@ export default function NodeContent() {
                 <DiffViewer
                     oldContent={sortedOldVersion?.content || ''}
                     newContent={sortedNewVersion?.content || ''}
-                    oldTitle={`v${sortedOldVersion?.version}: ${new Date(sortedOldVersion.timestamp).toLocaleString('de-DE')}`}
-                    newTitle={`v${sortedNewVersion?.version}: ${new Date(sortedNewVersion.timestamp).toLocaleString('de-DE')}`}
+                    oldTitle={`v${sortedOldVersion?.version}: ${new Date(sortedOldVersion.timestamp).toLocaleString('en-US')}`}
+                    newTitle={`v${sortedNewVersion?.version}: ${new Date(sortedNewVersion.timestamp).toLocaleString('en-US')}`}
                 />
             ) : (
                 <div className="markdown-body">
                     <MarkdownRenderer content={currentBaseVersion.content || ''} />
                 </div>
             )}
+
             <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
                 <Modal.Header closeButton>
-                    <Modal.Title>Dokument löschen</Modal.Title>
+                    <Modal.Title>Delete Document</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    Sind Sie sicher, dass Sie "<strong>{currentBaseVersion.title}</strong>" endgültig löschen möchten?
+                    Are you sure you want to permanently delete "<strong>{currentBaseVersion.title}</strong>"?
                 </Modal.Body>
                 <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowDeleteModal(false)} disabled={deleteNodeMutation.isPending}>Abbrechen</Button>
+                    <Button variant="secondary" onClick={() => setShowDeleteModal(false)} disabled={deleteNodeMutation.isPending}>Cancel</Button>
                     <Button variant="danger" onClick={handleDeleteConfirm} disabled={deleteNodeMutation.isPending}>
-                        {deleteNodeMutation.isPending ? 'Löscht...' : 'Endgültig löschen'}
+                        {deleteNodeMutation.isPending ? 'Deleting...' : 'Permanently delete'}
                     </Button>
                 </Modal.Footer>
             </Modal>
