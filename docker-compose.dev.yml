@@ -1,0 +1,55 @@
+services:
+  # --- THE FRONTEND ---
+  frontend:
+    build: ./frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      # Map your code so live-reloading works
+      - ./frontend:/app
+      # Prevents local empty node_modules from overwriting container
+      - /app/node_modules
+      # Maps the custom remark plugin
+      - ./remark-internal-links:/remark-internal-links
+    environment:
+      # Tell React where the backend is so it can make API calls!
+      - VITE_API_URL=http://localhost:5001
+    depends_on:
+      - backend
+
+  # --- THE BACKEND ---
+  backend:
+    build: ./backend
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./backend:/backend
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    # Automatically migrate db, create admin, and start the server
+    command: >
+      bash -c "
+      flask db upgrade &&
+      flask create-admin admin defaultPassword123 &&
+      python app.py
+      "
+
+  # --- THE DATABASE ---
+  postgres:
+    image: postgres:18
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_INITDB_ARGS=--locale=C.UTF-8
+    ports:
+      - "5432:5432"
+    volumes:
+      # Correct PG18 path!
+      - nexidion-db-data:/var/lib/postgresql
+
+volumes:
+  nexidion-db-data:

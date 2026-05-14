@@ -1,0 +1,29 @@
+services:
+  nexidion:
+    build:
+      context: .               # IMPORTANT: Tells Docker to look at the main Nexidion folder
+      dockerfile: Dockerfile.prod
+    ports:
+      - "5001:5001"            # Everything (UI and API) is now served here!
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - APP_ENV=production
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:18
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_INITDB_ARGS=--locale=C.UTF-8
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexidion-db-data:/var/lib/postgresql
+
+volumes:
+  nexidion-db-data:

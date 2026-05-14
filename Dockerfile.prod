@@ -1,0 +1,42 @@
+# ==========================================
+# STAGE 1: Build the React Frontend
+# ==========================================
+FROM node:20-slim AS frontend-builder
+WORKDIR /workspace
+
+# Copy the custom plugin AND the frontend code
+# (This is why we build from the root directory)
+COPY remark-internal-links ./remark-internal-links
+COPY frontend ./frontend
+
+# Install dependencies and build the static files
+WORKDIR /workspace/frontend
+RUN npm install
+RUN npm run build
+
+# ==========================================
+# STAGE 2: Setup Python Backend & Run
+# ==========================================
+FROM python:3.13-slim
+WORKDIR /app
+
+# Install system dependencies (often needed for Postgres/psycopg2)
+RUN apt-get update && apt-get install -y libpq-dev gcc bash && rm -rf /var/lib/apt/lists/*
+
+# Copy the Python backend code
+COPY backend ./backend
+
+# MAGIC TRICK: Copy the compiled frontend from Stage 1 into the exact folder
+# your app.py expects to find it (../frontend/dist)!
+COPY --from=frontend-builder /workspace/frontend/dist ./frontend/dist
+
+# Install Python dependencies and Gunicorn
+WORKDIR /app/backend
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install gunicorn
+
+# Expose the single production port
+EXPOSE 5001
+
+# Run migrations, create the admin user, and start the high-performance Gunicorn server
+CMD ["bash", "-c", "flask db upgrade && flask create-admin admin defaultPassword123 && gunicorn -w 4 -b 0.0.0.0:5001 'app:create_app()'"]
