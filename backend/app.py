@@ -1,8 +1,7 @@
-# app.py
 import os
 import sys
 
-# Füge das Projekt-Hauptverzeichnis zum Python-Pfad hinzu
+# Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -15,13 +14,13 @@ from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 import click
 
-# Umgebungsvariablen laden
+# Load environment variables
 load_dotenv()
 
 from backend.config import Config
 from backend.models import db, User
 
-# API Blueprints importieren
+# Import API Blueprints
 from backend.api.auth import auth_bp
 from backend.api.vaults import vaults_bp
 from backend.api.nodes import nodes_bp
@@ -39,7 +38,7 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # CORS-Konfiguration für Entwicklung
+    # CORS configuration for development
     APP_ENV = os.getenv('APP_ENV', 'development')
 
     if APP_ENV == 'production':
@@ -48,8 +47,8 @@ def create_app(config_class=Config):
     else:
         print("----> Running in DEVELOPMENT mode with CORS")
 
-        # Holen Sie die IP aus der .env-Datei, wie es vorher war.
-        # Das ist wichtig, damit Ihr Frontend von einem anderen Gerät im LAN zugreifen kann.
+        # Get the IP from the .env file, as it was before.
+        # This is important so your frontend can be accessed from another device on the LAN.
         local_ip = os.getenv("LOCAL_IP", "192.168.2.59")
 
         allowed_origins = [
@@ -62,12 +61,12 @@ def create_app(config_class=Config):
     if not app.config['JWT_SECRET_KEY']:
         raise ValueError("JWT_SECRET_KEY must be set in your .env file.")
 
-    # Erweiterungen initialisieren
+    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     JWTManager(app)
 
-    # API Blueprints registrieren
+    # Register API Blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(vaults_bp)
     app.register_blueprint(nodes_bp)
@@ -75,17 +74,17 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp)
     app.register_blueprint(tasks_bp)
 
-    # --- CLI Befehle (bereinigt) ---
+    # --- CLI Commands (cleaned up) ---
     register_cli_commands(app)
 
-    # --- Frontend Serving (für Produktion) ---
+    # --- Frontend Serving (for production) ---
     register_frontend_serving(app)
 
     return app
 
 
 def register_frontend_serving(app):
-    """Kümmert sich um das Ausliefern des Frontend-Builds in Produktion."""
+    """Handles serving the frontend build in production."""
 
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
@@ -101,7 +100,7 @@ def register_frontend_serving(app):
 
 
 def register_cli_commands(app):
-    """Registriert die verbleibenden, nützlichen CLI-Befehle."""
+    """Registers the remaining useful CLI commands."""
 
     @app.cli.command('create-admin')
     @click.argument('username')
@@ -113,7 +112,7 @@ def register_cli_commands(app):
             print(f"🔥 Error: User '{username}' already exists.")
             return
 
-        # Wenn kein Anzeigename gegeben ist, den Benutzernamen verwenden
+        # If no display name is provided, use the username
         display_name = display_name or username.capitalize()
 
         user = User(username=username, display_name=display_name, user_type='human', is_admin=True)
@@ -123,8 +122,8 @@ def register_cli_commands(app):
         print(f"✅ Administrator '{username}' created successfully.")
 
 
-# --- App Ausführung (nur für lokale Entwicklung) ---
+# --- App Execution (for local development only) ---
 if __name__ == '__main__':
     app = create_app()
-    # debug=True wird durch FLASK_DEBUG=1 in .env gesteuert, was besser ist
+    # debug=True is controlled by FLASK_DEBUG=1 in .env, which is better
     app.run(host='0.0.0.0', port=5001)

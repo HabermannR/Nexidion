@@ -2,13 +2,13 @@
 
 > Nexidion is a private-first, self-hostable knowledge base for your most sensitive information. Self-host everything, trust no one.
 
-This repository contains the full source code for the Nexidion application, including the Python/Flask backend and the React frontend.
+This repository contains the full source code for the Nexidion application, including the Python/Flask backend, React frontend, and the optional AI task runner.
 
 ## The Mission: A Private Vault, Not Just a Second Brain
 
 Nexidion was born from a personal need for a knowledge management tool where privacy is not a feature, but the core architectural principle. Many tools aim to be your "second brain," focusing on productivity and interconnectivity. Nexidion's goal is different: to be your **private vault**.
 
-It was designed for managing highly sensitive information where trust in third-party services is not an option. Unlike cloud-based or sync-dependent applications, Nexidion is an open-source web application designed from the ground up to be self-hosted on your own server, under your absolute control. The entire system, from the database to the optional, locally-connected AI, runs within your network. It is not a 'better Obsidian,' but a secure haven for your knowledge, accessible from any device with a web browser.
+It was designed for managing highly sensitive information where trust in third-party services is not an option. Unlike cloud-based or sync-dependent applications, Nexidion is an open-source web application designed from the ground up to be self-hosted on your own server, under your absolute control. The entire system runs within your network. It is not a 'better Obsidian,' but a secure haven for your knowledge, accessible from any device with a web browser.
 
 ## Core Philosophy
 
@@ -19,107 +19,83 @@ It was designed for managing highly sensitive information where trust in third-p
 
 ## Key Features
 
-*   **Vaults:** Organize your knowledge into multiple, completely separate databases.
+*   **Vaults (Multi-User):** Organize your knowledge into multiple, completely separate databases with strict access controls.
 *   **Hierarchical Notes:** Structure your information in a familiar tree hierarchy.
 *   **Rich Text Editing:** Write and format content using a clean Markdown editor.
 *   **Full Version History:** Every change to a node is saved as a new version.
-*   **Context-Aware AI Chat:** Engage in conversations with an AI that has access to only the nodes you select.
-*   **Local LLM Support:** Connect to local LLMs (e.g., via Ollama) to ensure your sensitive documents and prompts never leave your local network.
-*   **Orchestrator Engine & Workflows:** Define complex, multi-step workflows to automate knowledge processing, transforming Nexidion from a reactive tool into a proactive knowledge processing platform.
-*   **Secure Multi-User Support:** Robust multi-user architecture using JWT for authentication and a full admin dashboard.
+*   **Optional AI Agent Runner:** An autonomous background worker that can reorganize notes, summarize subtrees, or execute bulk changes based on your instructions.
+*   **Secure Architecture:** Robust multi-user architecture using JWT for authentication, complete with an admin dashboard.
 
 ## Technical Architecture
 
-*   **Backend:** Python, Flask, SQLAlchemy
-*   **Asynchronous Tasks:** Celery and Redis for managing long-running AI operations.
-*   **Database:** SQLite (default), PostgreSQL compatible.
-*   **Frontend:** React.js, Vite
+*   **Backend:** Python, Flask, Gunicorn
+*   **Database:** PostgreSQL 18
+*   **Frontend:** React.js, Vite (Served statically in production)
+*   **Infrastructure:** Docker & Docker Compose
 
-## Project Status
+## Project Status (v4.1 Architecture Update)
 
-This project is under active development. The current focus is on implementing the **Orchestrator Engine (API 3.0)**, which represents a fundamental leap in capability from a reactive tool to a proactive, automated knowledge engine.
+Nexidion recently underwent a massive **v4 core architecture rewrite** to support multi-user Vaults, highly optimized V2 state loading (fetching only what is needed), and an integrated Task Runner for background AI operations. 
 
-## Getting Started
+---
 
-### Local Development Setup
+## Getting Started (1-Command Install)
 
-These instructions assume you are running both the backend and frontend on your local machine for development.
+Nexidion is built to be deployed easily using Docker. 
 
 **Prerequisites:**
+*   Docker & Docker Compose installed on your host machine.
 
-*   Python 3.10+
-*   Node.js 18+
-
-**1. Backend Setup**
-
-The backend is a Flask application.
-
+### 1. Clone the Repository
 ```bash
-# 1. Navigate to the backend directory
-cd backend
-
-# 2. Create and activate a virtual environment
-python -m venv venv
-# On Windows
-.\venv\Scripts\activate
-# On macOS/Linux
-source venv/bin/activate
-
-# 3. Install required packages
-pip install -r requirements.txt
-
-# 4. (Optional) Install development packages
-pip install -r requirements-dev.txt
-
-# 5. Initialize the database
-# This creates the initial SQLite database file.
-flask init-db
-
-# 6. Create an initial user
-# Replace <username> and <password> with your desired credentials.
-flask create-user <username> "Your Name" <password> --admin
-
-# 7. Run the backend server
-# The API will be available at http://127.0.0.1:5000
-flask run
+git clone https://github.com/HabermannR/Nexidion.git
+cd Nexidion
 ```
 
-Leave this terminal running.
+### 2. Configure Environment
+Copy the example environment file and fill in your secure credentials:
+```bash
+cp .env.example .env
+```
+Ensure you set your database passwords and the `JWT_SECRET_KEY` in the `.env` file.
 
-**2. Frontend Setup**
+### 3. Launch the App (Standard Mode)
+To boot the database, run the automated migrations, create the default users, and start the web server, simply run:
+```bash
+docker compose up -d --build
+```
+The application will be built and accessible at `http://localhost:5001`. 
 
-The frontend is a React application.
+Default Admin Login (unless changed in `docker-compose.yml`):
+*   **User:** `admin`
+*   **Pass:** `defaultPassword123` *(Change this immediately in the UI!)*
+
+### 4. Enable the AI Agent (Heavyweight Mode)
+Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the `worker` Docker profile:
 
 ```bash
-# 1. Open a new terminal and navigate to the frontend directory
-cd frontend
-
-# 2. Install dependencies
-npm install
-
-# 3. Run the frontend development server
-# The web application will be available at http://localhost:5173
-npm run dev
+docker compose --profile worker up -d --build
 ```
 
-You can now open `http://localhost:5173` in your browser and log in with the credentials you created.
+*(Note: If you do not want to use the AI features, simply run the standard command in Step 3. The worker will remain offline, and no external requests will be made).*
 
 ## Configuration
 
-The application is configured via environment variables, which can be placed in a `.env` file in the `backend` directory.
+The application is configured entirely via environment variables. Key options include:
 
-Key configuration options include:
-
-*   `SECRET_KEY`: A strong, random secret for signing sessions.
-*   `SQLALCHEMY_DATABASE_URI`: The connection string for your database (defaults to a local SQLite file).
-*   `LLM_PROVIDER_API_KEYS`: API keys for external services like OpenAI, Anthropic, or Google.
-
-Refer to `backend/config.py` for a full list of available configuration variables.
+*   `JWT_SECRET_KEY`: A strong, random secret for signing sessions.
+*   `DB_USER` / `DB_PASSWORD` / `DB_NAME`: PostgreSQL credentials.
+*   `OPENAI_API_KEY`: API key for the optional Agent Runner (Requires enabling the worker profile).
+*   `NEXIDION_POLL_INTERVAL`: How often the background worker checks for new tasks (default: 5s).
 
 ## Verifiable Privacy: Network Calls
 
-As part of the "Privacy First" philosophy, Nexidion is designed to make **zero external network calls by default** after installation. All fonts and libraries are bundled.
+As part of the "Privacy First" philosophy, Nexidion is designed to make **zero external network calls by default** after installation. All fonts, icons, and libraries are bundled directly into the Docker image.
 
-The only external calls the application can make are **opt-in connections to Large Language Models (LLMs)**, which you must explicitly configure.
+The only external calls the application can make are **opt-in connections to Large Language Models (LLMs)** for the Agent Runner. Currently, the agent requires an OpenAI-compatible API to function. To maintain 100% data privacy, you can configure the backend to point to a locally-hosted LLM (e.g., via LM Studio, Ollama, or llama.cpp) by overriding the Local LLM URL in your configuration. This ensures that your sensitive documents and prompts never leave your local hardware.
 
-To maintain 100% data privacy, you can configure the application to use a locally-hosted LLM (e.g., via llama.cpp) by setting the appropriate base URL in your configuration. This ensures that your sensitive documents and prompts are never sent to a third-party service.
+
+### A Quick Note on the Frontend UI:
+If a user does *not* boot up the worker, the AI Agent UI buttons will currently still appear in the frontend (they will just create tasks in the database that sit in `pending` status forever because no worker is running). 
+
+For the launch today, **this is totally fine**. You can just tell users "If you didn't boot the worker profile, just ignore the AI buttons." In a future update, you can add a simple `/api/config` endpoint that tells the React app whether the worker is enabled so it can hide the buttons dynamically!

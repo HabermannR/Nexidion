@@ -1,4 +1,4 @@
-# **Projektplan: Nexidion v4 – The Collaborative Engine (Aktualisiert)**
+ **Projektplan: Nexidion v4 – The Collaborative Engine (Aktualisiert)**
 
 ## **Phase 1 & 2: V4-Fundament & Feature-Parität**
 *(Abgeschlossen, bilden die stabile Basis für die aktuellen Arbeiten)*
