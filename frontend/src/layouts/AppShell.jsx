@@ -46,6 +46,7 @@ export default function AppShell() {
 
     const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
     const setLastValidPathForVault = useWorkspaceStore(state => state.setLastValidPathForVault);
+    const setLastActiveVaultId = useWorkspaceStore(state => state.setLastActiveVaultId);
 
     const isLoading = isLoadingVaults || isLoadingUser;
     const currentVault = vaults?.find(v => v.id.toString() === vaultId);
@@ -55,6 +56,12 @@ export default function AppShell() {
             setLastValidPathForVault(vaultId, location.pathname);
         }
     }, [vaultId, nodeId, location.pathname, setLastValidPathForVault]);
+
+    useEffect(() => {
+        if (vaultId) {
+            setLastActiveVaultId(vaultId);
+        }
+    }, [vaultId, setLastActiveVaultId]);
 
     const getVaultLink = (targetVaultId) => {
         return lastValidPaths[targetVaultId] || `/vaults/${targetVaultId}`;

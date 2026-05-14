@@ -1,29 +1,18 @@
 // src/features/settings/UserSettings.jsx
 
 import React, { useState, useRef } from 'react';
-// FIX: Import useParams to determine the context in case outlet-context is missing.
-import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Container, Card, Button, Form as BootstrapForm, Row, Col, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
-// FIX: Import the Workspace store to read the vault-specific path object.
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 
 export default function UserSettings() {
-    // FIX: useOutletContext is not always reliable, use useParams as a fallback.
-    const { activeVault } = useOutletContext() || {};
-    // The vaultId from the URL gives us the context we came from.
-    const { vaultId } = useParams();
     const formRef = useRef();
     const navigate = useNavigate();
 
-    // FIX: Read the vault-specific path object, not a single variable.
     const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
-
-    // FIX: Determine the correct path for the current vault context.
-    // We prioritize the `activeVault` from the context, but take the URL param as a fallback.
-    const currentVaultId = activeVault?.id || vaultId;
-    const lastValidPathForThisVault = lastValidPaths ? lastValidPaths[currentVaultId] : null;
+    const lastActiveVaultId = useWorkspaceStore(state => state.lastActiveVaultId);
 
     // --- LOCAL UI STATE ---
     const [alert, setAlert] = useState(null);
@@ -63,18 +52,17 @@ export default function UserSettings() {
         changePasswordMutation.mutate({ old_password, new_password });
     };
 
-    // FIX: Handler for the back button that uses the vault-specific path.
+    // Navigate back to the last visited node, or fall back to the vault root, or the app root.
     const handleBackClick = () => {
-        // Use the saved path. If there is none, use the fallback to the vault root.
-        // The final fallback to '/' handles the rare case where no vault context exists.
-        navigate(lastValidPathForThisVault || (currentVaultId ? `/vaults/${currentVaultId}` : '/'));
+        const lastPath = lastActiveVaultId ? lastValidPaths[lastActiveVaultId] : null;
+        navigate(lastPath || (lastActiveVaultId ? `/vaults/${lastActiveVaultId}` : '/'));
     };
 
     return (
         <Container className="py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>User Settings</h2>
-                {/* FIX: The button now uses the corrected onClick handler */}
+                {/* Back button navigates to the last visited vault location */}
                 <Button onClick={handleBackClick} variant="secondary">
                     Back to Workspace
                 </Button>

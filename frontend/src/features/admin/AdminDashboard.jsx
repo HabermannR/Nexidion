@@ -1,8 +1,10 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Container, Card, Button, Table, Alert, Spinner, Modal,
     Form as BootstrapForm, Row, Col, InputGroup
 } from 'react-bootstrap';
+import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/apiClient';
 import VaultAccessManager from './VaultAccessManager';
@@ -25,6 +27,9 @@ function PasswordInput({ name, label, required = true }) {
 
 export default function AdminDashboard() {
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
+    const lastActiveVaultId = useWorkspaceStore(state => state.lastActiveVaultId);
     const createUserFormRef = useRef();
     const passwordFormRef = useRef();
 
@@ -157,9 +162,19 @@ export default function AdminDashboard() {
         );
     };
 
+    const handleBackClick = () => {
+        const lastPath = lastActiveVaultId ? lastValidPaths[lastActiveVaultId] : null;
+        navigate(lastPath || (lastActiveVaultId ? `/vaults/${lastActiveVaultId}` : '/'));
+    };
+
     return (
         <Container className="p-4" style={{ height: '100%', overflowY: 'auto' }}>
-            <h1>Admin Dashboard</h1>
+            <div className="d-flex justify-content-between align-items-center mb-1">
+                <h1 className="mb-0">Admin Dashboard</h1>
+                <Button onClick={handleBackClick} variant="secondary">
+                    Back to Workspace
+                </Button>
+            </div>
             <p>Management of users and system settings.</p>
 
             {alert && <Alert variant={alert.type} onClose={() => setAlert(null)} dismissible>{alert.message}</Alert>}

@@ -13,6 +13,7 @@ export const useWorkspaceStore = create(
             // ===============================================
 
             lastValidPaths: {},
+            lastActiveVaultId: null,
 
             // Tree/selection state
             selectedNodeIds: new Set(),
@@ -33,6 +34,8 @@ export const useWorkspaceStore = create(
             setLastValidPathForVault: (vaultId, path) => set(state => ({
                 lastValidPaths: { ...state.lastValidPaths, [vaultId]: path },
             })),
+
+            setLastActiveVaultId: (vaultId) => set({ lastActiveVaultId: vaultId }),
 
             resetWorkspaceContext: () => set({
                 lastValidPaths: get().lastValidPaths,
@@ -130,6 +133,7 @@ export const useWorkspaceStore = create(
             }),
             partialize: (state) => ({
                 lastValidPaths: state.lastValidPaths,
+                lastActiveVaultId: state.lastActiveVaultId,
                 selectedNodeIds: state.selectedNodeIds,
                 collapsedNodes: state.collapsedNodes,
                 savedSets: state.savedSets,
