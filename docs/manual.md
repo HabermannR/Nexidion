@@ -10,7 +10,7 @@ To get started, Nexidion is easily deployable via Docker.
 Run the following command in your terminal where your `docker-compose.yml` is located:
 
 ```bash
-docker compose up -d --build
+docker compose --profile with-postgres up -d --build
 ```
 
 Once the container is running, open your web browser and navigate to:
@@ -22,7 +22,7 @@ Log in using the default admin credentials. *(Note: By default, these are usuall
 
 ## 2. Create Your First Vault
 
-When you first log in, you will be prompted to set up a workspace.
+When you first log in, you will be prompted to set up a Vault (a workspace).
 
 1. Navigate to the Vault Management screen.
 2. Enter a name for your new vault in the "Vault Name" field.
@@ -98,3 +98,22 @@ Simply hover your mouse over a node's icon in the tree—it will turn into a che
 
 ---
 *Enjoy building your secure, private second brain with Nexidion!*
+
+
+Here is the Todo list for your upcoming manual update, followed by some advice on how to balance the amount of information you include.
+
+### 📝 Todo List for the Manual Update
+
+**Navigation & Organization**
+*   [ ] **Add "How to Search" section:** Briefly explain where the search bar is located and how it filters the node tree.
+*   [ ] **Add "Moving & Reorganizing" section:** Explain the mechanism for moving nodes (e.g., drag-and-drop within the tree, or a "move to" menu option).
+*   [ ] **Add "Deleting Nodes" section:** Clarify how to delete nodes properly, and mention what happens to child nodes if a parent is deleted.
+
+**Content & Linking**
+*   [ ] **Add "How to Create Internal Links" section:** Explain the actual steps/keystrokes required to link to another node inside the text editor. 
+*   [ ] **Add "Link References & UUIDs" example:** Provide a quick, 1-sentence example showing why links don't break (e.g., *"If you link to a node called 'Project A' and later rename it to 'Completed Project', the link automatically updates because it's tracking the node's hidden ID, not its name."*).
+*   [ ] **Clarify Node Types/Icons:** Add a small callout box explaining that node types (Folder, Inbox, Document) are purely cosmetic for your own organization—with the specific exception of the "Lock" icon, which protects the node from AI edits.
+
+**Conclusion**
+*   [ ] **Add "Next Steps" section:** Give the user 2-3 fun or useful things to do now that they know the basics (e.g., "Create a daily inbox," "Explore the optional AI Worker," or "Try exporting your vault").
+

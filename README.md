@@ -1,8 +1,18 @@
 # Nexidion
 
+![Nexidion Main Interface](docs/images/start.jpg)
+
 > Nexidion is a private-first, self-hostable knowledge base for your most sensitive information. Self-host everything, trust no one.
 
 This repository contains the full source code for the Nexidion application, including the Python/Flask backend, React frontend, and the optional AI task runner.
+
+## 📖 Documentation
+
+Before diving in, check out our dedicated user guides to get the most out of your vault:
+*   [Getting Started & User Manual](docs/getting-started.md)
+*   [AI Agent Setup & Usage Guide](docs/agent.md)
+
+---
 
 ## The Mission: A Private Vault, Not Just a Second Brain
 
@@ -25,6 +35,8 @@ It was designed for managing highly sensitive information where trust in third-p
 *   **Full Version History:** Every change to a node is saved as a new version.
 *   **Optional AI Agent Runner:** An autonomous background worker that can reorganize notes, summarize subtrees, or execute bulk changes based on your instructions.
 *   **Secure Architecture:** Robust multi-user architecture using JWT for authentication, complete with an admin dashboard.
+
+![Vault Management](docs/images/vault.jpg)
 
 ## Technical Architecture
 
@@ -66,12 +78,15 @@ docker compose up -d --build
 ```
 The application will be built and accessible at `http://localhost:5001`. 
 
-Default Admin Login (unless changed in `docker-compose.yml`):
+**Default Admin Login** *(unless changed in `docker-compose.yml`)*:
 *   **User:** `admin`
 *   **Pass:** `defaultPassword123` *(Change this immediately in the UI!)*
 
 ### 4. Enable the AI Agent (Heavyweight Mode)
-Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the `worker` Docker profile:
+
+![AI Agent runner](docs/images/agent3.jpg)
+
+Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the worker Docker profile:
 
 ```bash
 docker compose --profile worker up -d --build
@@ -94,12 +109,22 @@ As part of the "Privacy First" philosophy, Nexidion is designed to make **zero e
 
 The only external calls the application can make are **opt-in connections to Large Language Models (LLMs)** for the Agent Runner. Currently, the agent requires an OpenAI-compatible API to function. To maintain 100% data privacy, you can configure the backend to point to a locally-hosted LLM (e.g., via LM Studio, Ollama, or llama.cpp) by overriding the Local LLM URL in your configuration. This ensures that your sensitive documents and prompts never leave your local hardware.
 
+---
 
-### A Quick Note on the Frontend UI:
-If a user does *not* boot up the worker, the AI Agent UI buttons will currently still appear in the frontend (they will just create tasks in the database that sit in `pending` status forever because no worker is running). 
+### ⚠️ A Quick Note on the Frontend UI
+If you do *not* boot up the worker, the AI Agent UI buttons will currently still appear in the frontend. Clicking them will simply create tasks in the database that sit in a `pending` status forever because no worker is running. 
 
-For the launch today, **this is totally fine**. You can just tell users "If you didn't boot the worker profile, just ignore the AI buttons." In a future update, you can add a simple `/api/config` endpoint that tells the React app whether the worker is enabled so it can hide the buttons dynamically!
+If you didn't boot the worker profile, simply ignore the AI buttons for now. (In a future update, we will add an endpoint that tells the React app whether the worker is enabled to hide the buttons dynamically).
 
+---
 
-How users run it:
-ScenarioCommandFull stack (default)./start.sh up -d or docker compose --profile with-postgres up -d+ Task runnerdocker compose --profile with-postgres --profile with-task-runner up -dOwn Postgres, no task runnerdocker compose up -dOwn Postgres, with task runnerdocker compose --profile with-task-runner up -d
+## Deployment Scenarios & Commands
+
+Depending on your existing infrastructure and whether you want the AI Task Runner, here are the commands to run Nexidion:
+
+| Scenario | Command |
+| :--- | :--- |
+| **Full stack (default)** | `./start.sh up -d` *or* `docker compose --profile with-postgres up -d` |
+| **Full stack + Task Runner** | `docker compose --profile with-postgres --profile with-task-runner up -d` |
+| **Own Postgres, no Task Runner** | `docker compose up -d` |
+| **Own Postgres + Task Runner** | `docker compose --profile with-task-runner up -d` |
