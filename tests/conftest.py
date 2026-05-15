@@ -30,8 +30,13 @@ class TestConfig(Config):
     # Grab user/pass from .env, but FORCE localhost and nexidion_test
     db_user = os.getenv("DB_USER", "nexidion_user")
     db_password = os.getenv("DB_PASSWORD", "")
+    db_host = os.getenv("DB_HOST", "localhost")
+    # If your .env says "postgres" but you are running locally (not in Docker),
+    # override it to localhost so your computer can find the exposed port.
+    if db_host == "postgres" and not os.path.exists("/.dockerenv"):
+        db_host = "localhost"
 
-    SQLALCHEMY_DATABASE_URI = f"postgresql://{db_user}:{db_password}@localhost:5432/nexidion_test"
+    SQLALCHEMY_DATABASE_URI = f"postgresql://{db_user}:{db_password}@{db_host}:5432/nexidion_test"
 
 
 # --- 2. Basis-Fixtures für App und Client ---

@@ -1,5 +1,6 @@
 services:
   nexidion:
+    image: rhabermann/nexidion:latest
     build:
       context: .
       dockerfile: Dockerfile.prod
@@ -16,6 +17,7 @@ services:
         required: false   # Won't fail if postgres profile is skipped
 
   task-runner:
+    image: rhabermann/nexidion:latest
     build:
       context: .
       dockerfile: Dockerfile.prod

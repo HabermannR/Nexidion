@@ -41,6 +41,32 @@ services:
       flask run --host=0.0.0.0 --port=5001 --debug
       "
 
+  # --- THE BACKEND TEST RUNNER ---
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    working_dir: /project
+    volumes:
+      # Mount the whole project root so pytest sees /backend AND /tests
+      - .:/project
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=postgres
+      # Tell Python that the root folder is the base module path
+      - PYTHONPATH=/project
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - test
+    command: >
+      bash -c "
+      PGPASSWORD=$$DB_PASSWORD psql -h postgres -U $$DB_USER -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname = 'nexidion_test'\" | grep -q 1 || PGPASSWORD=$$DB_PASSWORD psql -h postgres -U $$DB_USER -d postgres -c \"CREATE DATABASE nexidion_test\";
+      pytest
+      "
+
   # --- THE AI TASK RUNNER (Background Worker) ---
   task-runner:
     build:

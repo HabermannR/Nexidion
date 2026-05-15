@@ -77,3 +77,6 @@ kerntest.py
 /exports/
 /secure_images/
 backup/
+*:Zone.Identifier
+nexidion-runner.service
+remark-internal-links/

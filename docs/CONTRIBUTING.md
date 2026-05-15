@@ -32,7 +32,8 @@ Nexidion/
 │   ├── models.py             # SQLAlchemy ORM models
 │   ├── config.py             # App configuration loaded from env
 │   ├── app.py                # Application factory & blueprint registration
-│   └── task_runner.py        # Autonomous AI background worker
+│   ├── task_runner.py        # Autonomous AI background worker
+│   └── Dockerfile.test       # Dedicated Dockerfile for the test suite
 ├── frontend/                 # React / Vite SPA
 │   ├── src/
 │   └── Dockerfile
@@ -44,7 +45,7 @@ Nexidion/
 │   ├── api/
 │   └── models/
 ├── docker-compose.yml        # Production compose file
-├── docker-compose.dev.yml    # Development compose file (hot-reload)
+├── docker-compose.dev.yml    # Development compose file (hot-reload & testing)
 ├── .env.example              # Template for local environment config
 └── pyproject.toml            # Python project config, pytest settings, coverage
 ```
@@ -268,17 +269,26 @@ The Task Runner sleeps between polls. The interval defaults to 5 seconds and is 
 
 The test suite uses **pytest** with **pytest-cov** for coverage reporting.
 
-### Running tests
+### Running tests via Docker (Recommended)
 
-From the `backend/` directory (or with the backend venv active), or from the project root if `pyproject.toml` is there:
+We have a dedicated Docker service (`backend-test`) that automatically handles test database creation, configuration, and execution. Because it mounts your local directory, you can run tests continuously as you edit code.
 
+To run the entire test suite, run:
+```bash
+docker compose -f docker-compose.dev.yml --profile with-postgres --profile test up backend-test
+```
+*(Add `--build` to the end if you recently modified `requirements-dev.txt` or the test Dockerfile).*
+
+### Running tests locally (Without Docker)
+
+If you are running the backend directly on your host machine via a virtual environment, simply ensure your local PostgreSQL server is running and run:
 ```bash
 pytest
 ```
 
-This runs all 227 tests and prints a coverage report. HTML coverage output is written to `htmlcov/index.html`.
-
 ### Current coverage (v4.1)
+
+This runs all 227 tests and prints a coverage report. HTML coverage output is written to `htmlcov/index.html`.
 
 | Area | Coverage |
 | :--- | :--- |
@@ -288,7 +298,6 @@ This runs all 227 tests and prints a coverage report. HTML coverage output is wr
 | `app.py` | 65%  |
 | `images.py` | 54% |
 | Overall | **89%** |
-
 
 ### Test structure
 
@@ -339,8 +348,8 @@ In Docker dev mode, `flask db upgrade` runs automatically on backend container s
 Before opening a PR, please run:
 
 ```bash
-pytest                  # All tests must pass
-cd frontend && npm run lint   # No lint errors
+docker compose -f docker-compose.dev.yml --profile with-postgres --profile test up backend-test
+cd frontend && npm run lint
 ```
 
 ---

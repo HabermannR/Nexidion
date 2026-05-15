@@ -525,6 +525,24 @@ TOOLS =[
     },
     {
         "type": "function",
+        "name": "rename_node",
+        "description": (
+            "Change the title of an existing node without modifying its content. "
+            "Use this when a node's title is inaccurate or needs to be more descriptive."
+        ),
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "UUID of the node to rename."},
+                "title":   {"type": "string", "description": "The new title for the node."},
+            },
+            "required": ["node_id", "title"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
         "name": "move_node",
         "description": (
             "Move a node to a different parent. "
@@ -612,7 +630,7 @@ You have been given a task by the vault owner. Execute it fully and independentl
 
 TOOLS AT YOUR DISPOSAL:
   READ  : get_subtree (free), get_node_summary, get_node_content, search_nodes (free)
-  WRITE : write_node, patch_node, move_node, create_node
+  WRITE : write_node, patch_node, rename_node, move_node, create_node
   DONE  : finish
 
 HOW TO WORK:
@@ -798,6 +816,28 @@ def run_agent(task_row: dict, audit: Audit) -> str:
                 audit.record_tool(name, args, "ok",
                                   f"Found {result.get('count', 0)} results")
 
+            # ── rename_node ───────────────────────────────────────────
+            elif name == "rename_node":
+                node_id = args["node_id"]
+                title = args["title"].strip()
+
+                # Don't allow changing titles on protected nodes
+                if is_blacklisted(vault_id, node_id):
+                    msg = "Node is protected (bxs-lock-alt) — title cannot be modified."
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "blocked", msg)
+                    continue
+
+                res = svc_update_node(vault_id, node_id, title=title)
+                if res["ok"]:
+                    _log(f"  ✅ rename_node: {node_id} -> '{title}'")
+                    msg = f"Node {node_id} renamed to '{title}'."
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "ok", msg)
+                    audit.record_write("rename_node", node_id, {"title": title})
+                else:
+                    _append(input_list, item.call_id, f"Rename failed: {res['error']}")
+                    audit.record_tool(name, args, "error", res["error"])
             # ── write_node ────────────────────────────────────────────
             elif name == "write_node":
                 node_id    = args["node_id"]

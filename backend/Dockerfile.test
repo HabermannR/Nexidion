@@ -1,0 +1,20 @@
+# backend/Dockerfile.test
+FROM python:3.13-slim
+
+WORKDIR /backend
+
+# Install postgresql-client (so we can run 'psql' to create the test DB automatically)
+RUN apt-get update && apt-get install -y postgresql-client
+
+# Install uv
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install uv
+
+# Copy both requirements files
+COPY requirements.txt requirements-dev.txt ./
+
+# Install all dependencies using uv extremely fast
+RUN uv pip install --system --no-cache -r requirements.txt -r requirements-dev.txt
+
+# Copy the rest of your code
+COPY . .
