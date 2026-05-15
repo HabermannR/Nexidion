@@ -121,6 +121,30 @@ def register_cli_commands(app):
         db.session.commit()
         print(f"✅ Administrator '{username}' created successfully.")
 
+    @app.cli.command('create-llm-agent')
+    def create_llm_agent_command():
+        """Creates the default LLM agent user with a fixed ID of 2, if it doesn't exist."""
+        existing = User.query.filter_by(username='default-llm').first()
+        if existing:
+            print(f"✅ LLM agent already exists (ID: {existing.id}).")
+            return
+
+        agent = User(
+            username='default-llm',
+            display_name='LLM Assistant',
+            user_type='llm_assistant',
+            is_admin=False,
+        )
+        db.session.add(agent)
+        db.session.flush()  # assigns the ID before commit
+
+        if agent.id != 2:
+            print(f"⚠️  Warning: LLM agent got ID {agent.id}, expected 2. "
+                  "Make sure admin (ID 1) is created first.")
+
+        db.session.commit()
+        print(f"✅ LLM agent '{agent.username}' created (ID: {agent.id}).")
+
 
 # --- App Execution (for local development only) ---
 if __name__ == '__main__':

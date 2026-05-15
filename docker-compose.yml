@@ -1,17 +1,37 @@
 services:
   nexidion:
     build:
-      context: .               # IMPORTANT: Tells Docker to look at the main Nexidion folder
+      context: .
       dockerfile: Dockerfile.prod
     ports:
-      - "5001:5001"            # Everything (UI and API) is now served here!
+      - "5001:5001"
     env_file:
       - .env
     environment:
       - FLASK_ENV=production
       - APP_ENV=production
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+        required: false   # Won't fail if postgres profile is skipped
+
+  task-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - APP_ENV=production
+    command: ["python", "task_runner.py"]
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    profiles:
+      - with-task-runner   # opt-in: only starts when explicitly requested
 
   postgres:
     image: postgres:18
@@ -24,6 +44,13 @@ services:
       - "5432:5432"
     volumes:
       - nexidion-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - with-postgres   # opt-in, but used in the default start script
 
 volumes:
   nexidion-db-data:

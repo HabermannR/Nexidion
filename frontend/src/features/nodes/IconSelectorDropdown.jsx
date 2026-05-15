@@ -8,106 +8,106 @@ import apiClient from '../../api/apiClient.js'; // NEU
 // Datenstruktur für die Icons, gruppiert nach Kategorien
 const iconGroups = [
     {
-        title: 'Ordner & Container',
+        title: 'Folders & Containers',
         icons: [
-            {id: 'bxs-folder', name: 'Ordner'},
-            {id: 'bx-folder-open', name: 'Offener Ordner'},
-            {id: 'bxs-inbox', name: 'Eingang'},
-            {id: 'bxs-archive', name: 'Archiv'},
-            {id: 'bxs-box', name: 'Sammlung'}, // Für generische Sammlungen
-            {id: 'bxs-component', name: 'Baustein'}, // Für wiederverwendbare Inhalte
+            {id: 'bxs-folder', name: 'Folder'},
+            {id: 'bx-folder-open', name: 'Open Folder'},
+            {id: 'bxs-inbox', name: 'Inbox'},
+            {id: 'bxs-archive', name: 'Archive'},
+            {id: 'bxs-box', name: 'Collection'}, // For generic collections
+            {id: 'bxs-component', name: 'Component'}, // For reusable content
         ],
     },
     {
-        title: 'Dokumente & Notizen',
+        title: 'Documents & Notes',
         icons: [
-            {id: 'bxs-file-doc', name: 'Dokument'},
-            {id: 'bxs-note', name: 'Notiz'},
+            {id: 'bxs-file-doc', name: 'Document'},
+            {id: 'bxs-note', name: 'Note'},
             {id: 'bx-code-block', name: 'Code'},
             {id: 'bxs-file-pdf', name: 'PDF'},
-            {id: 'bxs-copy-alt', name: 'Vorlage'},
-            {id: 'bxs-edit-alt', name: 'Entwurf'}, // Für Dokumente in Arbeit
+            {id: 'bxs-copy-alt', name: 'Template'},
+            {id: 'bxs-edit-alt', name: 'Draft'}, // For documents in progress
         ],
     },
     {
-        title: 'Konzepte & Planung',
+        title: 'Concepts & Planning',
         icons: [
-            {id: 'bxs-bulb', name: 'Idee'},
-            {id: 'bxs-brain', name: 'Konzept'},
-            {id: 'bx-sitemap', name: 'Struktur'},
-            {id: 'bxs-bullseye', name: 'Ziel'},
-            {id: 'bxs-flag-alt', name: 'Meilenstein'},
-            {id: 'bxs-network-chart', name: 'Beziehungen'}, // Um Verknüpfungen darzustellen
+            {id: 'bxs-bulb', name: 'Idea'},
+            {id: 'bxs-brain', name: 'Concept'},
+            {id: 'bx-sitemap', name: 'Structure'},
+            {id: 'bxs-bullseye', name: 'Goal'},
+            {id: 'bxs-flag-alt', name: 'Milestone'},
+            {id: 'bxs-network-chart', name: 'Relationships'}, // To represent connections
         ],
     },
     {
-        title: 'Personen & Teams',
+        title: 'People & Teams',
         icons: [
             {id: 'bxs-user', name: 'Person'},
             {id: 'bxs-group', name: 'Team'},
-            {id: 'bxs-contact', name: 'Kontakt'},
-            {id: 'bxs-user-detail', name: 'Profil'},
+            {id: 'bxs-contact', name: 'Contact'},
+            {id: 'bxs-user-detail', name: 'Profile'},
             {id: 'bxs-user-voice', name: 'Feedback'},
-            {id: 'bxs-user-plus', name: 'Benutzer hinzufügen'},
+            {id: 'bxs-user-plus', name: 'Add User'},
         ],
     },
     {
-        title: 'Listen & Aufgaben',
+        title: 'Lists & Tasks',
         icons: [
-            {id: 'bx-list-ul', name: 'Liste'},
-            {id: 'bx-check-square', name: 'Aufgabe'},
-            {id: 'bxs-hourglass-top', name: 'In Bearbeitung'},
-            {id: 'bxs-calendar', name: 'Termin'},
-            {id: 'bxs-time-five', name: 'Frist'},
-            {id: 'bxs-calendar-check', name: 'Abgeschlossen'},
-            {id: 'bxs-calendar-x', name: 'Verpasst'},
+            {id: 'bx-list-ul', name: 'List'},
+            {id: 'bx-check-square', name: 'Task'},
+            {id: 'bxs-hourglass-top', name: 'In Progress'},
+            {id: 'bxs-calendar', name: 'Appointment'},
+            {id: 'bxs-time-five', name: 'Deadline'},
+            {id: 'bxs-calendar-check', name: 'Completed'},
+            {id: 'bxs-calendar-x', name: 'Missed'},
         ],
     },
     {
-        title: 'Struktur & Metadaten',
+        title: 'Structure & Metadata',
         icons: [
-            {id: 'bxs-tag-alt', name: 'Schlagwort'},
+            {id: 'bxs-tag-alt', name: 'Tag'},
             {id: 'bx-link', name: 'Link'},
-            {id: 'bx-link-external', name: 'Externer Link'},
-            {id: 'bxs-pin', name: 'Angepinnt'},
-            {id: 'bxs-star', name: 'Favorit'},
-            {id: 'bxs-bookmark', name: 'Lesezeichen'},
-            {id: 'bxs-bookmark-star', name: 'Favoriten-Lesezeichen'}, // Name leicht gekürzt
+            {id: 'bx-link-external', name: 'External Link'},
+            {id: 'bxs-pin', name: 'Pinned'},
+            {id: 'bxs-star', name: 'Favorite'},
+            {id: 'bxs-bookmark', name: 'Bookmark'},
+            {id: 'bxs-bookmark-star', name: 'Favorite Bookmark'}, // Name slightly shortened
         ],
     },
     {
-        title: 'Medien & Anhänge',
+        title: 'Media & Attachments',
         icons: [
-            {id: 'bxs-image-alt', name: 'Bild'},
+            {id: 'bxs-image-alt', name: 'Image'},
             {id: 'bxs-video', name: 'Video'},
             {id: 'bxs-music', name: 'Audio'},
-            {id: 'bxs-file-archive', name: 'ZIP-Archiv'},
+            {id: 'bxs-file-archive', name: 'ZIP Archive'},
             {id: 'bxs-cloud-upload', name: 'Upload'},
-            {id: 'bxs-file-find', name: 'Dateisuche'}, // Besserer Name für das Icon
+            {id: 'bxs-file-find', name: 'File Search'}, // Better name for the icon
         ],
     },
     {
-        title: 'Daten & Visualisierung',
+        title: 'Data & Visualization',
         icons: [
-            {id: 'bx-table', name: 'Tabelle'},
-            {id: 'bxs-bar-chart-alt-2', name: 'Balkendiagramm'},
-            {id: 'bxs-pie-chart-alt-2', name: 'Kreisdiagramm'},
-            {id: 'bxs-data', name: 'Datenquelle'},
-            {id: 'bxs-map', name: 'Karte'},
-            {id: 'bxs-map-pin', name: 'Ort'},
+            {id: 'bx-table', name: 'Table'},
+            {id: 'bxs-bar-chart-alt-2', name: 'Bar Chart'},
+            {id: 'bxs-pie-chart-alt-2', name: 'Pie Chart'},
+            {id: 'bxs-data', name: 'Data Source'},
+            {id: 'bxs-map', name: 'Map'},
+            {id: 'bxs-map-pin', name: 'Location'},
         ],
     },
     {
-        title: 'Status & Kommunikation',
+        title: 'Status & Communication',
         icons: [
             {id: 'bxs-info-circle', name: 'Info'},
-            {id: 'bxs-help-circle', name: 'Frage'},
-            {id: 'bxs-error-circle', name: 'Warnung'},
-            {id: 'bxs-check-circle', name: 'Bestätigt'},
-            {id: 'bxs-comment-detail', name: 'Diskussion'},
-            {id: 'bxs-bell', name: 'Benachrichtigung'},
-            {id: 'bxs-lock-alt', name: 'Gesperrt / Privat'},
-            {id: 'bx-trash', name: 'Papierkorb'},
+            {id: 'bxs-help-circle', name: 'Question'},
+            {id: 'bxs-error-circle', name: 'Warning'},
+            {id: 'bxs-check-circle', name: 'Confirmed'},
+            {id: 'bxs-comment-detail', name: 'Discussion'},
+            {id: 'bxs-bell', name: 'Notification'},
+            {id: 'bxs-lock-alt', name: 'Locked / Private'},
+            {id: 'bx-trash', name: 'Trash'},
         ],
     },
 ];

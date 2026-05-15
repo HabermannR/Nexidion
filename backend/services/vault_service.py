@@ -195,6 +195,8 @@ def create_vault(name: str, owner_id: int) -> Vault:
 
 def rename_vault(vault_id: int, new_name: str, user_id: int) -> Vault:
     vault = _verify_vault_access(vault_id, user_id)
+    if vault.owner_id != user_id:
+        raise PermissionError("Only the vault owner can rename it.")
     new_name_stripped = new_name.strip()
     if not new_name_stripped:
         raise ValueError("New vault name cannot be empty.")

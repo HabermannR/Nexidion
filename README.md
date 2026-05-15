@@ -99,3 +99,7 @@ The only external calls the application can make are **opt-in connections to Lar
 If a user does *not* boot up the worker, the AI Agent UI buttons will currently still appear in the frontend (they will just create tasks in the database that sit in `pending` status forever because no worker is running). 
 
 For the launch today, **this is totally fine**. You can just tell users "If you didn't boot the worker profile, just ignore the AI buttons." In a future update, you can add a simple `/api/config` endpoint that tells the React app whether the worker is enabled so it can hide the buttons dynamically!
+
+
+How users run it:
+ScenarioCommandFull stack (default)./start.sh up -d or docker compose --profile with-postgres up -d+ Task runnerdocker compose --profile with-postgres --profile with-task-runner up -dOwn Postgres, no task runnerdocker compose up -dOwn Postgres, with task runnerdocker compose --profile with-task-runner up -d
