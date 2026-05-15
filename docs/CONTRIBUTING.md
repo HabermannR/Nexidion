@@ -24,7 +24,7 @@ Thank you for your interest in contributing! This document covers everything you
 
 ## 1. Project structure
 
-```
+```text
 Nexidion/
 ├── backend/                  # Python / Flask API
 │   ├── api/                  # Route blueprints (nodes, vaults, auth, tasks, images, admin)
@@ -89,11 +89,11 @@ docker compose -f docker-compose.dev.yml --profile with-postgres up --build
 
 This starts three services:
 
-| Service | Port | Description |
-| :--- | :--- | :--- |
-| `frontend` | 5173 | Vite dev server with HMR |
+| Service | Port | Description                                        |
+| :--- | :--- |:---------------------------------------------------|
+| `frontend` | 5173 | Vite dev server with HMR                           |
 | `backend` | 5001 | Flask in debug mode, auto-restarts on file changes |
-| `postgres` | 5432 | PostgreSQL 18 (exposed locally for DB clients) |
+| `postgres` | 5432 | PostgreSQL 18 (exposed locally for DB clients)     |
 
 Open **[http://localhost:5173](http://localhost:5173)** in your browser. The Vite dev server proxies API calls to the backend automatically.
 
@@ -148,7 +148,7 @@ flask create-admin admin defaultPassword123
 flask run --host=0.0.0.0 --port=5001 --debug
 ```
 
-You will need a running PostgreSQL 18 instance reachable at the `DB_HOST`/`DB_PORT` configured in your `.env`.
+You will need a running PostgreSQL 16-18 instance reachable at the `DB_HOST`/`DB_PORT` configured in your `.env`.
 
 ### Frontend
 
@@ -164,20 +164,20 @@ VITE_API_URL=http://localhost:5001 npm run dev
 
 Copy `.env.example` to `.env` and adjust the values. All variables are loaded by Flask via `python-dotenv` and by Docker Compose automatically.
 
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `JWT_SECRET_KEY` | Yes | — | Secret for signing JWT tokens. Use a long random string in production. |
-| `DB_HOST` | Yes | `postgres` | Hostname of the PostgreSQL server. Use `localhost` when running outside Docker. |
-| `DB_PORT` | Yes | `5432` | PostgreSQL port. |
-| `DB_NAME` | Yes | `nexidion` | Database name. |
-| `DB_USER` | Yes | — | Database user. |
-| `DB_PASSWORD` | Yes | — | Database password. |
-| `FLASK_ENV` | No | `production` | Set to `development` to enable Flask debug mode outside Docker. |
-| `OPENAI_API_KEY` | No | — | API key for the AI Task Runner. Leave blank to disable. |
-| `OPENAI_MODEL` | No | `gpt-4o` | Model name passed to the OpenAI-compatible API. |
+| Variable | Required | Default        | Description |
+| :--- | :--- |:---------------| :--- |
+| `JWT_SECRET_KEY` | Yes | —              | Secret for signing JWT tokens. Use a long random string in production. |
+| `DB_HOST` | Yes | `postgres`     | Hostname of the PostgreSQL server. Use `localhost` when running outside Docker. |
+| `DB_PORT` | Yes | `5432`         | PostgreSQL port. |
+| `DB_NAME` | Yes | `nexidion`     | Database name. |
+| `DB_USER` | Yes | —              | Database user. |
+| `DB_PASSWORD` | Yes | —              | Database password. |
+| `FLASK_ENV` | No | `production`   | Set to `development` to enable Flask debug mode outside Docker. |
+| `OPENAI_API_KEY` | No | —              | API key for the AI Task Runner. Leave blank to disable. |
+| `OPENAI_MODEL` | No | `gpt-5.4`      | Model name passed to the OpenAI-compatible API. |
 | `OPENAI_BASE_URL` | No | OpenAI default | Override to point at a local LLM (e.g. Ollama). |
-| `NEXIDION_POLL_INTERVAL` | No | `5` | How often (seconds) the Task Runner polls for new tasks. |
-| `SECURE_IMAGE_FOLDER` | No | — | Absolute path to the folder from which `/api/image/<filename>` serves images. |
+| `NEXIDION_POLL_INTERVAL` | No | `5`            | How often (seconds) the Task Runner polls for new tasks. |
+| `SECURE_IMAGE_FOLDER` | No | —              | Absolute path to the folder from which `/api/image/<filename>` serves images. |
 
 ---
 
@@ -292,7 +292,7 @@ This runs all 227 tests and prints a coverage report. HTML coverage output is wr
 
 ### Test structure
 
-```
+```text
 tests/
 ├── Services/       # Unit tests for business logic (no HTTP, no DB)
 ├── agent/          # Task Runner behaviour

@@ -1,16 +1,16 @@
 # Start with a lightweight Node.js image
 FROM node:24
 
-# Set the working directory inside the container
-WORKDIR /
+# 1. Set the working directory FIRST
+WORKDIR /app
 
-# Copy ONLY the package.json and package-lock.json first
-COPY package*.json ./
+# 2. Copy package files
+COPY package.json package-lock.json ./
 
-# Install the dependencies inside the container
+# 3. Install dependencies (this puts them safely in /app/node_modules)
 RUN npm install
 
-# Copy the rest of the frontend code
+# 4. Copy the rest of the code
 COPY . .
 
 # Start the React app!

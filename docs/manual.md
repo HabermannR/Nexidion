@@ -54,28 +54,34 @@ Once updated, click "Back to Workspace" or switch back to your vault via the top
 
 ---
 
-## 4. Navigation & Organization
+### 4. Navigation & Organization
 
 When you open your vault, you will see the main interface.
+![Main Interface](images/start.jpg)
 
-### The Summary Node
+#### The Summary Node
 On the left-hand side, there is the navigation tree. By default, every vault has a pre-existing root node (usually named **Summary**).
 * **Note:** This root node cannot be deleted, as it acts as the foundation of your vault.
-* **However, you can rename it!** Click the dropdown arrow next to the "Edit" button to access options like Rename, Print, or Delete (for non-root nodes).
+* **However, you can rename it!** Click the **dropdown arrow** next to the **Edit** button to access options like Rename, Print, or Delete (for non-root nodes).
+#### Deleting Nodes
+To delete a node, click the **dropdown arrow** next to the **Edit** button and select **Delete**.
+![Node Options](images/rename.jpg)
+> **⚠️ Warning: Permanent Content Deletion**
+> Deleting a node permanently destroys its content with no recycle bin. There is no undo. If you are unsure, consider locking or renaming the node instead.
 
-### Searching
+> **💡 What happens to child nodes?**
+> Deleting a parent node **does not** delete its children! All child nodes are safely preserved. They will automatically move up one level in the hierarchy and attach themselves to the deleted node's parent.
+
+
+![Node Options](images/rename.jpg)
+
+#### Searching
 Directly above the navigation tree on the left, you will find the search bar. Nexidion uses **full-text search (FTS)** powered by PostgreSQL, supporting both **English and German** out of the box. Results are ranked by relevance using PostgreSQL's built-in text ranking, which weights matches by frequency and position. Typing keywords here will return the 20 highest-scoring matches. You can quickly cycle through these top results using the arrow buttons next to the search bar to instantly jump to specific notes.
+![Node Options](images/search.jpg)
 
-### Moving & Reorganizing
+#### Moving & Reorganizing
 Your knowledge base will grow over time, and you'll likely need to restructure it. You can move any node (and all of its child sub-nodes) to a new location in the tree. Simply drag and drop the node you want to move to its new parent node in the tree.
 
-### Deleting Nodes
-To delete a node, click the dropdown menu next to its "Edit" button and select **Delete**.
-
-> **⚠️ Warning:** Deleting a node permanently destroys its content with no recycle bin. There is no undo. Child nodes are preserved — they move up one level in the hierarchy — but the deleted node's own content is gone. If you are unsure, consider locking or renaming the node instead.
-
-![Main Interface](images/start.jpg)
-![Node Options](images/rename.jpg)
 
 ---
 
@@ -83,6 +89,7 @@ To delete a node, click the dropdown menu next to its "Edit" button and select *
 
 To add information to your vault, click the **Edit** button on any node. Write your new content into the text area, and when you are finished, click **Save as new version**.
 You can also manually create and edit short summaries; even though this feature was designed for the AI agent, it is fully functional without any AI enabled.
+![Node Options](images/edit.jpg)
 
 ### Creating Internal Links
 Connecting your thoughts is easy with Nexidion's robust internal linking.
@@ -113,7 +120,7 @@ To add new nodes, click on the **green plus (`+`) icon** next to an existing nod
 > Icons like Folder, Inbox, or Document are entirely cosmetic and are just there to help you visually organize your tree.
 > **Two icons are functional:**
 > - **Lock** (`bxs-lock-alt`) — the AI agent cannot edit this node's content, but can still read it and update its summary.
-> - **Private** (`bxs-no-entry`) — the AI agent cannot read or write this node's content at all, and it won't appear in agent search results.
+> - **Private** (`bxs-no-entry`) — the AI agent cannot read or write this node's content at all.
 
 ![Adding a Node](images/icons.jpg)
 

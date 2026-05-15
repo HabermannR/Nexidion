@@ -37,24 +37,25 @@ services:
       bash -c "
       flask db upgrade &&
       flask create-admin admin defaultPassword123 &&
+      flask create-llm-agent &&
       flask run --host=0.0.0.0 --port=5001 --debug
       "
 
   # --- THE AI TASK RUNNER (Background Worker) ---
   task-runner:
-    build: ./backend
-    working_dir: /backend
-    volumes:
-      # Map local code so worker changes reflect on restart
-      - ./backend:/backend
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
     env_file:
       - .env
-    command: ["python", "task_runner.py"]
+    command: [ "python", "task_runner.py" ]
+    working_dir: /app
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
     profiles:
-      - with-task-runner   # Opt-in for dev testing as well
+      - with-task-runner   # opt-in: only starts when explicitly requested
 
   # --- THE DATABASE ---
   postgres:

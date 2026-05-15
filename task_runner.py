@@ -43,6 +43,8 @@ flask_app = create_app()
 
 GPT_TOKEN = os.environ.get("OPENAI_API_KEY")
 GPT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4")
+LOCAL_LLM_URL = os.environ.get("LOCAL_LLM_URL")
+LOCAL_LLM_API_KEY = os.environ.get("LOCAL_LLM_API_KEY", "not-needed")
 
 POLL_INTERVAL = int(os.environ.get("NEXIDION_POLL_INTERVAL", "5"))
 AUDIT_DIR     = os.environ.get("NEXIDION_AUDIT_DIR", "./audit_logs")
@@ -63,8 +65,8 @@ READ_LOCK_ICON = "bxs-no-entry"
 # Store the ETag in memory
 _agent_tree_etags = {}
 _cached_agent_trees = {}
-if not GPT_TOKEN:
-    print("ERROR: OPENAI_API_KEY is missing from .env", flush=True)
+if not GPT_TOKEN and not LOCAL_LLM_URL:
+    print("ERROR: Neither OPENAI_API_KEY nor LOCAL_LLM_URL is set in .env", flush=True)
     sys.exit(1)
 
 
@@ -677,10 +679,16 @@ def run_agent(task_row: dict, audit: Audit) -> str:
 
     system_prompt = build_system_prompt(instruction, context_nodes_block, overview_node)
 
-    client = OpenAI(
-        api_key=GPT_TOKEN,
-        http_client=httpx.Client(verify=False),
-    )
+    client_kwargs = {
+        # Fall back to the local API key (or "not-needed") if GPT_TOKEN is empty
+        "api_key": GPT_TOKEN if GPT_TOKEN else LOCAL_LLM_API_KEY,
+        "http_client": httpx.Client(verify=False),
+    }
+
+    if LOCAL_LLM_URL:
+        client_kwargs["base_url"] = LOCAL_LLM_URL
+
+    client = OpenAI(**client_kwargs)
 
     input_list =[
         {"role": "system", "content": system_prompt},

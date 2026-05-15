@@ -31,7 +31,7 @@ You can give the agent specific nodes to focus on by selecting them in the navig
 
 ### Step 2: Write Your Instruction
 Write what you want the agent to do using plain natural language. You can ask it to:
-*   *"Write an introduction to Obsidian."*
+*   *"Write an introduction to zero-trust architecture."*
 *   *"Summarize all the child nodes and put the summary in the parent node."*
 *   *"Reorganize these selected nodes into folders based on topic."*
 *   *"Read my meeting notes and extract a list of action items into a new node."*
@@ -57,7 +57,7 @@ All UUIDs listed in the operations log are **clickable links**. You can click ri
 ## 4. Track Changes & AI Summaries
 
 **Full Version Control:**
-You never have to worry about the AI ruining your notes. Whenever the agent modifies a node, it creates a new version. In the **Versions** tab, you will clearly see edits attributed to the "LLM Assistant". If you don't like what the agent wrote, you can easily revert back to your previous human-written version.
+You never have to worry about the AI ruining your notes. Whenever the agent modifies a node, it creates a new version. In the **Versions** tab, you will clearly see edits attributed to the "LLM Assistant". If you don't like what the agent wrote, you can easily revert to your previous human-written version.
 
 ![LLM Version History](images/llm_version.jpg)
 
@@ -104,3 +104,4 @@ OPENAI_API_KEY=ollama
 *(The key value is arbitrary when using Ollama or LM Studio — it just cannot be empty.)*
 
 With a local LLM configured, **no data ever leaves your machine**. Your notes, prompts, and AI responses all stay within your own network.
+![Result of aLocal LLM](images/local_llm.jpg)

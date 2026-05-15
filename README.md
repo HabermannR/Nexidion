@@ -42,10 +42,18 @@ It was designed for managing highly sensitive information where trust in third-p
 
 ![Vault Management](docs/images/vault.jpg)
 
+## How Nexidion Compares
+
+There are hundreds of note-taking apps. Here is why Nexidion exists and where it fits in the ecosystem:
+
+*   **Vs. Obsidian & Logseq:** Local markdown apps are fantastic, but syncing vaults across your PC, phone, and work laptop can be tedious (requiring paid sync services or complex Git/Syncthing setups). Nexidion is **server-first**. Host it securely on your home NAS or VPS, and access your vault from *any* web browser. Furthermore, Nexidion supports true multi-user isolation, whereas local apps are strictly single-user.
+*   **Vs. Notion & Cloud Services:** Cloud workspaces require you to surrender your most sensitive data to third-party servers, where it may be subject to telemetry, lock-in, or AI scraping. Nexidion provides a modern, fluid workspace but enforces **100% data sovereignty**. You hold the database, you hold the keys.
+*   **Vs. DokuWiki, MediaWiki & BookStack:** Traditional wikis are great for enterprise documentation, but they can feel rigid for personal thought-dumping. Nexidion offers a modern "second brain" architecture with highly resilient UUID-based linking (links never break when renaming) and a built-in **autonomous AI Task Runner** that works in the background to reorganize and summarize your notes—something traditional wikis do not have.
+
 ## Technical Architecture
 
 *   **Backend:** Python, Flask, Gunicorn
-*   **Database:** PostgreSQL 18 *(intentional — verify against your deployment environment if needed)*
+*   **Database:** PostgreSQL 16-18 
 *   **Frontend:** React.js, Vite (Served statically in production)
 *   **Infrastructure:** Docker & Docker Compose
 
