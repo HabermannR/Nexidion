@@ -7,6 +7,8 @@ from backend.models import db, User
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
+VALID_ROLES = {'editor', 'viewer'}
+
 
 # ---------------------------------------------------------------------------
 # Auth decorator
@@ -18,9 +20,11 @@ def admin_required(fn):
     def wrapper(*args, **kwargs):
         current_user_id = int(get_jwt_identity())
         user = db.session.get(User, current_user_id)
-        if user and user.is_admin:
-            return fn(*args, **kwargs)
-        return jsonify({"error": "Admin privileges required"}), 403
+        if not user:
+            return jsonify({"error": "User not found"}), 401
+        if not user.is_admin:
+            return jsonify({"error": "Admin privileges required"}), 403
+        return fn(*args, **kwargs)
     return wrapper
 
 
@@ -42,7 +46,7 @@ def list_users():
 @admin_required
 def list_all_users():
     """[ADMIN] List all users including llm_assistant accounts."""
-    users = User.query.order_by(User.display_name).all()
+    users = user_service.get_all_users_including_llm()
     return jsonify([u.to_dict() for u in users])
 
 
@@ -51,7 +55,7 @@ def list_all_users():
 @admin_required
 def create_user():
     """[ADMIN] Create a new user."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     username = data.get('username')
     password = data.get('password')
     display_name = data.get('display_name')
@@ -87,7 +91,7 @@ def delete_user(user_id):
 @admin_required
 def set_user_password(user_id):
     """[ADMIN] Set or change a user's password."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     new_password = data.get('new_password')
 
     if not new_password:
@@ -106,7 +110,7 @@ def set_user_password(user_id):
 @admin_required
 def update_user_details(user_id):
     """[ADMIN] Update user details (display_name, is_admin, etc.)."""
-    updates = request.get_json()
+    updates = request.get_json(silent=True) or {}
     if not updates:
         return jsonify({"error": "Request body cannot be empty."}), 400
 
@@ -153,12 +157,15 @@ def get_vault_access(vault_id):
 @admin_required
 def grant_vault_access(vault_id):
     """[ADMIN] Grant a user access to a vault. Body: { user_id, role? }"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     user_id = data.get('user_id')
     role = data.get('role', 'editor')
 
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
+
+    if role not in VALID_ROLES:
+        return jsonify({"error": f"Invalid role. Must be one of: {', '.join(sorted(VALID_ROLES))}"}), 400
 
     try:
         vault_service.grant_vault_access(vault_id, int(user_id), role)

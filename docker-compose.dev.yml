@@ -1,5 +1,5 @@
 services:
-  # --- THE FRONTEND ---
+  # --- THE FRONTEND (Vite with Hot-Reloading) ---
   frontend:
     build: ./frontend
     working_dir: /app
@@ -18,24 +18,43 @@ services:
     depends_on:
       - backend
 
-  # --- THE BACKEND ---
+  # --- THE BACKEND (Flask API) ---
   backend:
     build: ./backend
+    working_dir: /backend
     ports:
       - "5001:5001"
     volumes:
+      # Maps local backend code so Python changes reflect instantly
       - ./backend:/backend
     env_file:
       - .env
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     # Automatically migrate db, create admin, and start the server
     command: >
       bash -c "
       flask db upgrade &&
       flask create-admin admin defaultPassword123 &&
-      python app.py
+      flask run --host=0.0.0.0 --port=5001 --debug
       "
+
+  # --- THE AI TASK RUNNER (Background Worker) ---
+  task-runner:
+    build: ./backend
+    working_dir: /backend
+    volumes:
+      # Map local code so worker changes reflect on restart
+      - ./backend:/backend
+    env_file:
+      - .env
+    command: ["python", "task_runner.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - with-task-runner   # Opt-in for dev testing as well
 
   # --- THE DATABASE ---
   postgres:
@@ -48,8 +67,12 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      # Correct PG18 path!
       - nexidion-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   nexidion-db-data:

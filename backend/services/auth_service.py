@@ -2,6 +2,7 @@
 
 from backend.models import db, User
 
+
 def login_user(username: str, password: str) -> User | None:
     """
     Authenticates a user based on username and password.
@@ -19,7 +20,7 @@ def login_user(username: str, password: str) -> User | None:
     if not username or not password:
         return None
 
-    # Wir suchen nur nach menschlichen Benutzern, die sich einloggen können.
+    # Only human users can log in.
     user = User.query.filter_by(username=username, user_type='human').first()
 
     if user and user.check_password(password):
@@ -27,38 +28,36 @@ def login_user(username: str, password: str) -> User | None:
 
     return None
 
+
 def get_user_by_id(user_id: int) -> User | None:
-    """
-    Holt einen Benutzer anhand seiner ID aus der Datenbank.
-    """
     return db.session.get(User, user_id)
 
 
 def change_password(user_id: int, old_password: str, new_password: str) -> bool:
     """
-    Ändert das Passwort eines Benutzers nach Überprüfung des alten Passworts.
+    Changes a user's password after verifying the old one.
 
     Args:
-        user_id: Die ID des Benutzers.
-        old_password: Das aktuelle Passwort zur Verifizierung.
-        new_password: Das neue zu setzende Passwort.
+        user_id: The user's ID.
+        old_password: The current password for verification.
+        new_password: The new password to set.
 
     Returns:
-        True bei Erfolg, False wenn das alte Passwort falsch war.
+        True on success, False if the old password was wrong.
 
     Raises:
-        ValueError: Wenn der Benutzer nicht gefunden wird.
+        ValueError: If the user is not found or the new password is too short.
     """
     user = get_user_by_id(user_id)
     if not user:
         raise ValueError("User not found.")
 
-    if not user.check_password(old_password):
-        return False  # Altes Passwort stimmt nicht überein
-
-    # Validierungsregeln für das neue Passwort (Beispiel)
+    # Validate the new password before doing the expensive bcrypt compare.
     if not new_password or len(new_password) < 8:
         raise ValueError("New password must be at least 8 characters long.")
+
+    if not user.check_password(old_password):
+        return False
 
     user.set_password(new_password)
     db.session.commit()

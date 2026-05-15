@@ -788,25 +788,26 @@ def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[s
 def delete_node(node_id: str, vault_id: int, user_id: int):
     """
     Löscht einen Node. Kind-Nodes werden dabei an den Parent des gelöschten
-    Nodes weitergereicht ("adoptiert"). Wenn der gelöschte Node ein Top-Level-Node
-    war, werden seine Kinder ebenfalls zu Top-Level-Nodes.
+    Nodes weitergereicht ("adoptiert").
     """
     _verify_vault_access(vault_id, user_id)
     node_to_delete = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
+
     if not node_to_delete:
         raise ValueError("Node not found in the specified vault")
 
-    # Bestimme den neuen Parent für die Kinder: Es ist der Parent des zu löschenden Nodes.
-    # Wenn der gelöschte Node selbst ein Top-Level-Node war, wird dieser Wert `None` sein.
+    # +++ NEU: Verhindere das Löschen des Root-Nodes (Parent = None) +++
+    if node_to_delete.parent_id is None:
+        raise PermissionError("The root summary node cannot be deleted.")
+
+    # Bestimme den neuen Parent für die Kinder
     new_parent_for_children = node_to_delete.parent_id
 
-    # Aktualisiere die Kinder, sodass sie auf den neuen Parent zeigen.
-    # Ihre parent_id wird zur parent_id des gelöschten Nodes.
+    # Aktualisiere die Kinder...
     Node.query.filter_by(parent_id=node_id, vault_id=vault_id).update(
         {"parent_id": new_parent_for_children}, synchronize_session='fetch'
     )
 
-    # Den Node selbst löschen. Versionen werden durch 'cascade' automatisch mitgelöscht.
     db.session.delete(node_to_delete)
     db.session.commit()
     rebuild_vault_tree_cache(vault_id)
