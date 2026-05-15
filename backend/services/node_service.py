@@ -112,7 +112,8 @@ icon_groups: List[Dict[str, Any]] = [
             {"id": "bxs-check-circle", "name": "Confirmed"},
             {"id": "bxs-comment-detail", "name": "Discussion"},
             {"id": "bxs-bell", "name": "Notification"},
-            {"id": "bxs-lock-alt", "name": "Locked / Private"},
+            {"id": "bxs-lock-alt", "name": "Locked"},
+            {"id": "bxs-no-entry", "name": "Private"},
             {"id": "bx-trash", "name": "Trash"},
         ],
     },
@@ -443,7 +444,6 @@ def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] |
         .outerjoin(User, Version.author_id == User.id)
         .where(Version.node_id == node_id)
         .order_by(Version.version.desc())
-        # ToDo: Für sehr alte Nodes könnte man künftig ein limit/offset hier einbauen.
     )
     rows = db.session.execute(stmt).all()
 

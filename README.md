@@ -9,8 +9,11 @@ This repository contains the full source code for the Nexidion application, incl
 ## 📖 Documentation
 
 Before diving in, check out our dedicated user guides to get the most out of your vault:
-*   [Getting Started & User Manual](docs/getting-started.md)
-*   [AI Agent Setup & Usage Guide](docs/agent.md)
+
+*   **[User Manual & Getting Started](docs/manual.md)** - Installation, basic usage, and how to build your vault.
+*   **[The Internal Link System](docs/links.md)** - How Nexidion's robust UUID-based linking keeps your knowledge connected, even when you rename things.
+*   **[Navigation, Tools & Export](docs/tools.md)** - How to search, bulk-select, and export your vault.
+*   **[AI Agent Setup & Usage Guide](docs/agent.md)** - How to configure and use the autonomous background Task Runner.
 
 ---
 
@@ -34,6 +37,7 @@ It was designed for managing highly sensitive information where trust in third-p
 *   **Rich Text Editing:** Write and format content using a clean Markdown editor.
 *   **Full Version History:** Every change to a node is saved as a new version.
 *   **Optional AI Agent Runner:** An autonomous background worker that can reorganize notes, summarize subtrees, or execute bulk changes based on your instructions.
+*   **Robust Internal Linking:** A highly resilient UUID-based internal linking system that never breaks when renaming nodes.
 *   **Secure Architecture:** Robust multi-user architecture using JWT for authentication, complete with an admin dashboard.
 
 ![Vault Management](docs/images/vault.jpg)
@@ -41,7 +45,7 @@ It was designed for managing highly sensitive information where trust in third-p
 ## Technical Architecture
 
 *   **Backend:** Python, Flask, Gunicorn
-*   **Database:** PostgreSQL 18
+*   **Database:** PostgreSQL 18 *(intentional — verify against your deployment environment if needed)*
 *   **Frontend:** React.js, Vite (Served statically in production)
 *   **Infrastructure:** Docker & Docker Compose
 
@@ -74,7 +78,7 @@ Ensure you set your database passwords and the `JWT_SECRET_KEY` in the `.env` fi
 ### 3. Launch the App (Standard Mode)
 To boot the database, run the automated migrations, create the default users, and start the web server, simply run:
 ```bash
-docker compose up -d --build
+docker compose --profile with-postgres up -d --build
 ```
 The application will be built and accessible at `http://localhost:5001`. 
 
@@ -86,10 +90,10 @@ The application will be built and accessible at `http://localhost:5001`.
 
 ![AI Agent runner](docs/images/agent3.jpg)
 
-Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the worker Docker profile:
+Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the full stack + Task Runner profile:
 
 ```bash
-docker compose --profile worker up -d --build
+docker compose --profile with-postgres --profile with-task-runner up -d --force-recreate --build
 ```
 
 *(Note: If you do not want to use the AI features, simply run the standard command in Step 3. The worker will remain offline, and no external requests will be made).*

@@ -54,8 +54,11 @@ AGENT_USER_ID = 2
 MAX_LOOP_TURNS   = 25
 MAX_TOOL_FETCHES = 20
 
-# Nodes with this icon are protected — agent may MOVE but never edit content.
+# Nodes with this icon are write-protected — agent may MOVE but never edit content.
 BLACKLIST_ICON = "bxs-lock-alt"
+
+# Nodes with this icon are fully private — agent cannot read OR write content.
+READ_LOCK_ICON = "bxs-no-entry"
 
 # Store the ETag in memory
 _agent_tree_etags = {}
@@ -327,16 +330,34 @@ def get_children_from_tree(parent_id: str, tree: list) -> list:
     return find(tree, parent_id) or[]
 
 
+def _redact_if_private(vault_id: int, node_summary: dict) -> dict:
+    """Replace summary content with a privacy notice for bxs-no-entry nodes."""
+    if node_summary and node_summary.get("icon") == READ_LOCK_ICON:
+        return {
+            "id":        node_summary["id"],
+            "title":     node_summary["title"],
+            "parent_id": node_summary.get("parent_id"),
+            "icon":      READ_LOCK_ICON,
+            "ai_summary": "[private — content not accessible to agent]",
+        }
+    return node_summary
+
+
 def get_subtree_summary(vault_id: int, node_id: str) -> dict:
     node = svc_get_node_summary(vault_id, node_id)
     if "error" in node:
         return node
-    
+
+    node = _redact_if_private(vault_id, node)
+
     # Fetch updated tree securely with caching enabled directly here
     tree = svc_get_tree(vault_id)
-    
+
     children_stubs = get_children_from_tree(node_id, tree)
-    children =[svc_get_node_summary(vault_id, stub["id"]) for stub in children_stubs]
+    children = [
+        _redact_if_private(vault_id, svc_get_node_summary(vault_id, stub["id"]))
+        for stub in children_stubs
+    ]
     return {**node, "children": children}
 
 
@@ -354,9 +375,18 @@ def find_root_for_node(node_id: str, tree: list) -> dict | None:
     return path[0] if path else None
 
 
-def is_blacklisted(vault_id: int, node_id: str) -> bool:
+def is_read_locked(vault_id: int, node_id: str) -> bool:
+    """Returns True for bxs-no-entry nodes — agent cannot read or write content."""
     node = svc_get_node(vault_id, node_id)
-    return node.get("icon") == BLACKLIST_ICON if node else False
+    return node.get("icon") == READ_LOCK_ICON if node else False
+
+
+def is_blacklisted(vault_id: int, node_id: str) -> bool:
+    """Returns True for bxs-lock-alt (write-lock) OR bxs-no-entry (full lock)."""
+    node = svc_get_node(vault_id, node_id)
+    if not node:
+        return False
+    return node.get("icon") in (BLACKLIST_ICON, READ_LOCK_ICON)
 
 
 # ==========================================
@@ -598,8 +628,10 @@ HOW TO WORK:
 - ai_summary must ALWAYS be exactly 3 bullet points starting with '- '.
 - Internal links use the format: [[Display Text|UUID]]
 - Only link to UUIDs you have confirmed. Never guess a UUID.
-- PROTECTED NODES: nodes with icon 'bxs-lock-alt' are protected. You MAY move them.
-  You MAY use write_node or patch_node to update their AI summary (any content changes will be safely ignored).
+- PROTECTED NODES (bxs-lock-alt): write-protected. You MAY move them and read their content.
+  You MAY use write_node or patch_node to update their AI summary (content changes will be safely ignored).
+- PRIVATE NODES (bxs-no-entry): fully private. You cannot read OR write their content.
+  get_node_summary and get_node_content will be blocked. You MAY still move them.
 - When all changes are applied, call finish() with a clear summary of what was done.
 
 FETCH BUDGET: {MAX_TOOL_FETCHES} total calls for get_node_summary + get_node_content.
@@ -710,6 +742,11 @@ def run_agent(task_row: dict, audit: Audit) -> str:
             # ── get_node_summary ──────────────────────────────────────
             elif name == "get_node_summary":
                 node_id = args["node_id"]
+                if is_read_locked(vault_id, node_id):
+                    msg = "Node is private (bxs-no-entry) — content is not accessible to the agent."
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "blocked", msg)
+                    continue
                 err = _check_budget(node_id, seen_uuids, fetch_call_count)
                 if err:
                     _append(input_list, item.call_id, err)
@@ -727,6 +764,11 @@ def run_agent(task_row: dict, audit: Audit) -> str:
             # ── get_node_content ──────────────────────────────────────
             elif name == "get_node_content":
                 node_id = args["node_id"]
+                if is_read_locked(vault_id, node_id):
+                    msg = "Node is private (bxs-no-entry) — content is not accessible to the agent."
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "blocked", msg)
+                    continue
                 err = _check_budget(node_id, seen_uuids, fetch_call_count)
                 if err:
                     _append(input_list, item.call_id, err)
