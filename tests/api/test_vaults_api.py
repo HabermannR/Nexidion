@@ -170,3 +170,80 @@ def test_delete_vault_not_found(client, auth_headers_1):
     """Fehlerfall: Versuch, einen nicht existierenden Vault zu löschen."""
     response = client.delete('/api/vaults/999', headers=auth_headers_1)
     assert response.status_code == 404  # Not Found
+
+
+def test_export_vault_endpoint_success(client, auth_headers_1, test_vault_1_obj):
+    """Happy Path: Erfolgreicher Export über die API. Überprüft File-Headers und Content."""
+    # Act
+    response = client.get(f'/api/vaults/{test_vault_1_obj.id}/export', headers=auth_headers_1)
+
+    # Assert: Status und Mimetypes
+    assert response.status_code == 200
+    assert response.mimetype == 'application/json'
+
+    # Assert: Download-Headers prüfen (Content-Disposition mit sicherem Dateinamen)
+    content_disposition = response.headers.get('Content-Disposition')
+    assert content_disposition is not None
+    assert 'attachment;' in content_disposition
+    assert 'filename=' in content_disposition
+    assert '.nexidion' in content_disposition
+
+    # Assert: Payload als JSON validieren
+    data = response.get_json()
+    assert data["nexidion_export_version"] == 1
+    assert data["vault"]["name"] == test_vault_1_obj.name
+
+
+def test_export_vault_endpoint_permission_denied(client, auth_headers_2, test_vault_1_obj):
+    """Fehlerfall: Anderer User (nicht Owner) versucht den Vault zu exportieren."""
+    # Act: Authentifiziert als User 2, greift aber auf den Vault von User 1 zu
+    response = client.get(f'/api/vaults/{test_vault_1_obj.id}/export', headers=auth_headers_2)
+
+    # Assert
+    assert response.status_code == 403
+    assert "Only the vault owner" in response.get_json()['error']
+
+
+def test_export_vault_endpoint_not_found(client, auth_headers_1):
+    """Fehlerfall: Versuch, einen nicht existierenden Vault zu exportieren."""
+    # Act
+    response = client.get('/api/vaults/9999/export', headers=auth_headers_1)
+
+    # Assert
+    assert response.status_code == 404
+    assert "not found" in response.get_json()['error']
+
+
+# === TESTS für GET /api/vaults/<id> (Vault Details) ===
+
+def test_get_vault_details_success(client, auth_headers_1, test_vault_1_obj):
+    """Happy Path: Erfolgreicher Abruf der Details eines Vaults."""
+    # Act
+    response = client.get(f'/api/vaults/{test_vault_1_obj.id}', headers=auth_headers_1)
+
+    # Assert
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['id'] == test_vault_1_obj.id
+    assert data['name'] == test_vault_1_obj.name
+    assert 'created_at' in data
+
+
+def test_get_vault_details_not_found(client, auth_headers_1):
+    """Fehlerfall: Versuch, die Details eines nicht existierenden Vaults abzurufen."""
+    # Act
+    response = client.get('/api/vaults/9999', headers=auth_headers_1)
+
+    # Assert
+    assert response.status_code == 404
+    assert "not found" in response.get_json()['error'].lower()
+
+
+def test_get_vault_details_permission_denied(client, auth_headers_2, test_vault_1_obj):
+    """Fehlerfall: User 2 versucht, die Details des Vaults von User 1 abzurufen."""
+    # Act: Authentifiziert als User 2, greift aber auf den Vault von User 1 zu
+    response = client.get(f'/api/vaults/{test_vault_1_obj.id}', headers=auth_headers_2)
+
+    # Assert
+    assert response.status_code == 403
+    assert "permission" in response.get_json()['error'].lower()

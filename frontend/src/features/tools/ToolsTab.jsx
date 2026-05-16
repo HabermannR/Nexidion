@@ -28,6 +28,9 @@ export default function ToolsTab() {
     const [printStatus, setPrintStatus] = useState('idle'); // idle | preparing | preparing_all | error
     const [printError, setPrintError] = useState(null);
 
+    const [exportStatus, setExportStatus] = useState('idle'); // idle | exporting | success | error
+    const [exportError, setExportError] = useState(null);
+
     // Toggles for Copy Tree
     const [includeUuid, setIncludeUuid] = useState(true);
     const [includeSummary, setIncludeSummary] = useState(false);
@@ -168,6 +171,56 @@ export default function ToolsTab() {
         }
     }, [treeData, allNodesFlat, vaultId, openPrintPreview, hasNodes]);
 
+    const handleExportVault = useCallback(async () => {
+        setExportStatus('exporting');
+        setExportError(null);
+        try {
+            const response = await apiClient.get(`/api/vaults/${vaultId}/export`, {
+                responseType: 'blob' // Needed to handle the file download properly
+            });
+
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+
+            let filename = `vault-${vaultId}.nexidion`;
+            const disposition = response.headers['content-disposition'];
+            if (disposition && disposition.indexOf('filename=') !== -1) {
+                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                const matches = filenameRegex.exec(disposition);
+                if (matches != null && matches[1]) {
+                    filename = matches[1].replace(/['"]/g, '');
+                }
+            }
+
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+            setExportStatus('success');
+            setTimeout(() => setExportStatus('idle'), 2000);
+        } catch (error) {
+            let errorMsg = 'Failed to export vault.';
+            if (error.response?.data instanceof Blob) {
+                try {
+                    const text = await error.response.data.text();
+                    const json = JSON.parse(text);
+                    if (json.error) errorMsg = json.error;
+                } catch (e) {
+                    // Ignore blob parsing error
+                }
+            } else if (error.response?.data?.error) {
+                errorMsg = error.response.data.error;
+            } else if (error.message) {
+                errorMsg = error.message;
+            }
+            setExportError(errorMsg);
+            setExportStatus('error');
+        }
+    }, [vaultId]);
+
     const isPrinting = printStatus === 'preparing' || printStatus === 'preparing_all';
 
     return (
@@ -214,6 +267,18 @@ export default function ToolsTab() {
                     >
                         <i className="bx bxs-book-content me-1"></i>
                         {printStatus === 'preparing_all' ? 'Preparing Entire Vault...' : 'Print Entire Vault'}
+                    </Button>
+
+                    <Button
+                        variant="outline-primary"
+                        size="sm"
+                        onClick={handleExportVault}
+                        disabled={exportStatus === 'exporting'}
+                    >
+                        <i className="bx bx-download me-1"></i>
+                        {exportStatus === 'exporting' && 'Exporting...'}
+                        {exportStatus === 'success' && '✓ Exported!'}
+                        {(exportStatus === 'idle' || exportStatus === 'error') && 'Export Vault'}
                     </Button>
 
                     <hr className="my-2 text-muted" />
@@ -267,6 +332,11 @@ export default function ToolsTab() {
             {printError && (
                 <Alert variant="danger" className="mt-2 small p-2">
                     <strong>Error:</strong> {printError}
+                </Alert>
+            )}
+            {exportError && (
+                <Alert variant="danger" className="mt-2 small p-2">
+                    <strong>Error:</strong> {exportError}
                 </Alert>
             )}
             {copyContentError && (
