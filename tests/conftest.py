@@ -13,6 +13,13 @@ if project_root not in sys.path:
 # Load the .env file
 load_dotenv(os.path.join(project_root, 'backend', '.env'))
 
+# --- OVERRIDE ENV VARS FOR TESTS BEFORE MODULES ARE IMPORTED ---
+if os.getenv("DB_HOST") == "postgres" and not os.path.exists("/.dockerenv"):
+    os.environ["DB_HOST"] = "localhost"
+
+# Always use the test database for everything that runs in this process
+os.environ["DB_NAME"] = "nexidion_test"
+
 from backend.app import create_app
 from backend.models import db, User, Vault, Node, Version, Task, VaultAccess, UserType, VaultRole
 from backend.config import Config

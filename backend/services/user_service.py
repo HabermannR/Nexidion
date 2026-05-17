@@ -1,3 +1,4 @@
+# backend/services/user_service.py
 """
 Service-Schicht für die Benutzerverwaltung.
 
@@ -6,7 +7,7 @@ von einem Administrator ausgeführt werden, wie das Erstellen, Auflisten, Lösch
 und Verwalten von Benutzern. Sie interagiert direkt mit dem User-Model.
 """
 
-from backend.models import db, User, UserType
+from backend.models import db, User, UserType, Vault, Version, VaultAccess
 
 
 def get_all_users() -> list[User]:
@@ -61,7 +62,8 @@ def create_user(username: str, password: str, display_name: str | None = None, i
 
 def delete_user(user_id_to_delete: int, acting_user_id: int):
     """
-    Deletes a user with safety guards.
+    Deletes a user with safety guards. Reassigns their Vaults and Versions
+    to an administrator to prevent data loss.
 
     Args:
         user_id_to_delete: ID of the user to delete.
@@ -83,6 +85,33 @@ def delete_user(user_id_to_delete: int, acting_user_id: int):
         if admin_count <= 1:
             raise PermissionError("Cannot delete the last remaining administrator.")
 
+    # --- DATA REASSIGNMENT (Inheritance) ---
+    
+    # 1. Determine which Admin inherits the data (prefer the acting admin)
+    acting_user = db.session.get(User, acting_user_id)
+    if acting_user and acting_user.is_admin:
+        heir_admin_id = acting_user_id
+    else:
+        # Fallback in case the actor isn't an admin, find the first available admin
+        fallback_admin = User.query.filter_by(is_admin=True).filter(User.id != user_id_to_delete).first()
+        if not fallback_admin:
+            raise PermissionError("Cannot delete user: No admin available to inherit their data.")
+        heir_admin_id = fallback_admin.id
+
+    # 2. Reassign their owned Vaults
+    Vault.query.filter_by(owner_id=user_id_to_delete).update(
+        {"owner_id": heir_admin_id}, synchronize_session='fetch'
+    )
+
+    # 3. Reassign their authored Versions
+    Version.query.filter_by(author_id=user_id_to_delete).update(
+        {"author_id": heir_admin_id}, synchronize_session='fetch'
+    )
+
+    # 4. Delete their Vault Access rules (No inheritance needed here)
+    VaultAccess.query.filter_by(user_id=user_id_to_delete).delete(synchronize_session='fetch')
+
+    # 5. Delete the User
     db.session.delete(user_to_delete)
     db.session.commit()
 

@@ -5,28 +5,29 @@ import json
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-# Importiere die Services
+# Import the services and the new exceptions +++
 from backend.services import node_service
+from backend.exceptions import DemoLockError, InsufficientVaultRoleError
 
-# Der Blueprint enthält die vault_id als dynamischen Teil des Präfixes.
-# Alle Routen sind relativ zu diesem Prefix.
+# The blueprint contains the vault_id as a dynamic part of the prefix.
+# All routes are relative to this prefix.
 nodes_bp = Blueprint('nodes_v2', __name__, url_prefix='/api/vaults/<int:vault_id>/nodes')
 
 
 # ========================================================================
-# HILFSFUNKTIONEN FÜR ETAG-CACHING
+# HELPER FUNCTIONS FOR ETAG CACHING
 # ========================================================================
 
 def generate_etag(data: dict | list) -> str:
-    """Generiert einen stabilen MD5-Hash für ein Python-Datenobjekt."""
+    """Generates a stable MD5 hash for a Python data object."""
     encoded_data = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('utf-8')
     return hashlib.md5(encoded_data).hexdigest()
 
 
 def cached_jsonify(data: dict | list) -> 'Response':
     """
-    Erstellt eine JSON-Response, setzt den ETag und macht sie konditional.
-    Gibt bei einem Cache-Hit automatisch eine 304 Not Modified Antwort zurück.
+    Creates a JSON response, sets the ETag, and makes it conditional.
+    Automatically returns a 304 Not Modified response on a cache hit.
     """
     response = jsonify(data)
     response.set_etag(generate_etag(data))
@@ -34,15 +35,15 @@ def cached_jsonify(data: dict | list) -> 'Response':
 
 
 # ========================================================================
-# API-ROUTEN (LESENDE OPERATIONEN)
+# API ROUTES (READ OPERATIONS)
 # ========================================================================
 
 @nodes_bp.route('/', methods=['GET'], strict_slashes=False)
 @jwt_required()
 def get_nodes(vault_id: int):
     """
-    Holt Nodes eines Vaults. Unterstützt Baum-Format (UI/Agent),
-    Listen-Format und Titelsuche.
+    Fetches nodes of a vault. Supports tree format (UI/Agent),
+    list format, and title search.
     """
     user_id = int(get_jwt_identity())
     format_type = request.args.get('format', 'tree').lower()
@@ -92,33 +93,29 @@ def get_nodes(vault_id: int):
 @jwt_required()
 def search_nodes_by_title(vault_id: int):
     """
-    Sucht nach Nodes basierend auf einem Titel-Fragment für eine Autocomplete-UI.
-    Gibt eine schlanke Liste von bis zu 10 passenden Nodes zurück.
+    Searches for nodes based on a title fragment for an autocomplete UI.
+    Returns a lean list of up to 10 matching nodes.
 
-    Query-Parameter:
-        q (str): Der Suchbegriff, nach dem im Titel gesucht wird.
+    Query parameters:
+        q (str): The search term to look for in the title.
     """
     user_id = int(get_jwt_identity())
-    # Hole den Suchbegriff aus den Query-Parametern. 'q' ist eine gängige Konvention.
+    # Fetch the search term from the query parameters. 'q' is a common convention.
     query = request.args.get('q', '').strip()
 
-    # Optional: Eine Suche erst starten, wenn der Nutzer mindestens 2 Zeichen getippt hat.
-    # Das schont die Datenbank und verhindert zu viele unspezifische Ergebnisse.
+    # Optional: Only start a search if the user has typed at least 2 characters.
+    # This saves database resources and prevents too many unspecific results.
     if len(query) < 2:
         return jsonify([])
 
     try:
-        # Rufe die dedizierte Service-Funktion auf, die die Logik enthält.
+        # Call the dedicated service function containing the logic.
         nodes = node_service.search_nodes_for_autocomplete(query, vault_id, user_id)
-        # Die Service-Funktion gibt bereits das korrekte Format zurück.
         return jsonify(nodes)
-
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
     except Exception as e:
-        # Logge den eigentlichen Fehler für die Fehlersuche.
         logging.error(f"Error during node search in vault {vault_id}: {e}", exc_info=True)
-        # Gib eine generische Fehlermeldung an den Client zurück.
         return jsonify({"error": "An internal server error occurred during search"}), 500
 
 
@@ -126,12 +123,12 @@ def search_nodes_by_title(vault_id: int):
 @jwt_required()
 def full_text_search(vault_id: int):
     """
-    Volltextsuche speziell für LLM-Agenten.
-    Sucht in Titel, Inhalt und der AI-Zusammenfassung.
+    Full-text search specifically for LLM agents.
+    Searches within title, content, and the AI summary.
 
-    Query-Parameter:
-        q (str): Der Suchbegriff.
-        limit (int): Maximale Anzahl der Ergebnisse (Standard: 20).
+    Query parameters:
+        q (str): The search term.
+        limit (int): Maximum number of results (default: 20).
     """
     user_id = int(get_jwt_identity())
     query = request.args.get('q', '').strip()
@@ -139,7 +136,6 @@ def full_text_search(vault_id: int):
 
     if not query:
         return jsonify({"error": "Missing search query parameter 'q'."}), 400
-
     if limit < 1 or limit > 100:
         return jsonify({"error": "Parameter 'limit' must be between 1 and 100."}), 400
 
@@ -156,12 +152,13 @@ def full_text_search(vault_id: int):
     except Exception as e:
         return jsonify({"error": "An unexpected error occurred.", "details": str(e)}), 500
 
+
 @nodes_bp.route('/resolve-links', methods=['POST'], strict_slashes=False)
 @jwt_required()
 def resolve_internal_links(vault_id: int):
     """
-    Nimmt eine Liste von Link-Zielen (UUIDs oder Titel) entgegen und versucht,
-    sie aufzulösen. Gibt den Status für jedes Ziel zurück.
+    Takes a list of link targets (UUIDs or titles) and attempts
+    to resolve them. Returns the status for each target.
     """
     user_id = int(get_jwt_identity())
     data = request.json
@@ -171,21 +168,20 @@ def resolve_internal_links(vault_id: int):
         return jsonify({"error": "Request body must contain a list of 'targets'."}), 400
 
     try:
-        # Hier rufen wir eine neue Service-Funktion auf, die die ganze Logik kapselt.
         results = node_service.resolve_link_targets(targets, vault_id, user_id)
         return jsonify({"results": results})
-
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
     except Exception as e:
         logging.error(f"Error resolving links in vault {vault_id}: {e}", exc_info=True)
         return jsonify({"error": "An internal server error occurred"}), 500
 
+
 @nodes_bp.route('/bulk-get', methods=['POST'], strict_slashes=False)
 @jwt_required()
 def get_multiple_nodes(vault_id: int):
     """
-    Holt die Details für eine Liste von Node-IDs auf einmal.
+    Fetches the details for a list of node IDs all at once.
     """
     user_id = int(get_jwt_identity())
     data = request.json
@@ -204,8 +200,6 @@ def get_multiple_nodes(vault_id: int):
         for node in nodes:
             version = node.current_version_object
             if version:
-                # Use the model's built-in method — avoids duplication and
-                # ensures consistent field names and timestamp formatting.
                 response_data.append(version.to_dict())
         return jsonify(response_data)
     except PermissionError as e:
@@ -218,12 +212,10 @@ def get_multiple_nodes(vault_id: int):
 @jwt_required()
 def get_single_node(vault_id: int, node_id: str):
     """
-    Holt die Details eines einzelnen Nodes.
-    Akzeptiert optional einen ?version= Parameter.
+    Fetches the details of a single node.
+    Optionally accepts a ?version= parameter.
     """
     user_id = int(get_jwt_identity())
-
-    # +++ NEU: Version strikt parsen für HTTP 400 +++
     version_param = request.args.get('version')
     target_version = None
     if version_param is not None:
@@ -283,13 +275,12 @@ def get_single_version_route(vault_id: int, node_id: str, version_id: int):
 
 
 # ========================================================================
-# API-ROUTEN (SCHREIBENDE OPERATIONEN)
+# API ROUTES (WRITE OPERATIONS)
 # ========================================================================
 
 @nodes_bp.route('/', methods=['POST'], strict_slashes=False)
 @jwt_required()
 def create_node(vault_id: int):
-    """Erstellt einen neuen Node im angegebenen Vault."""
     user_id = int(get_jwt_identity())
     data = request.json
     title = data.get('title')
@@ -297,7 +288,6 @@ def create_node(vault_id: int):
         return jsonify({"error": "title is required and cannot be empty"}), 400
 
     try:
-        # Service returns a Node object; API layer converts it to a dict.
         new_node = node_service.create_node(
             title=title.strip(),
             content=data.get('content', ''),
@@ -307,8 +297,12 @@ def create_node(vault_id: int):
         )
         return jsonify(new_node.to_dict()), 201
 
-    except (PermissionError, ValueError) as e:
-        return jsonify({"error": str(e)}), 403 if isinstance(e, PermissionError) else 400
+    except DemoLockError as e:
+        return jsonify({"error": str(e)}), 423
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logging.error(f"Error creating node in vault {vault_id}: {e}", exc_info=True)
         return jsonify({"error": "An internal server error occurred"}), 500
@@ -318,7 +312,7 @@ def create_node(vault_id: int):
 @jwt_required()
 def update_node(vault_id: int, node_id: str):
     """
-    Aktualisiert einen Node (Titel und/oder Inhalt) und erstellt IMMER eine neue Version.
+    Updates a node (title and/or content) and ALWAYS creates a new version.
     """
     user_id = int(get_jwt_identity())
     data = request.json
@@ -327,7 +321,6 @@ def update_node(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'title' or 'content' for an update."}), 400
 
     try:
-        # Service returns a Node object; API layer converts it to a dict.
         updated_node = node_service.update_node(
             node_id=node_id,
             vault_id=vault_id,
@@ -337,16 +330,17 @@ def update_node(vault_id: int, node_id: str):
         )
         return jsonify(updated_node.to_dict())
 
+    except DemoLockError as e:
+        return jsonify({"error": str(e)}), 423
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
 
 
 @nodes_bp.route('/<string:node_id>/move', methods=['PATCH'], strict_slashes=False)
 @jwt_required()
 def move_node_route(vault_id: int, node_id: str):
-    """Verschiebt einen Node zu einem neuen Parent."""
     user_id = int(get_jwt_identity())
     data = request.json
 
@@ -354,53 +348,56 @@ def move_node_route(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'parent_id' (can be null)."}), 400
 
     try:
-        # Service returns a Node object; API layer converts it to a dict.
         updated_node = node_service.move_node(node_id, data['parent_id'], vault_id, user_id)
         return jsonify(updated_node.to_dict())
 
+    except DemoLockError as e:
+        return jsonify({"error": str(e)}), 423
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
 
 
 @nodes_bp.route('/<string:node_id>/icon', methods=['PATCH'], strict_slashes=False)
 @jwt_required()
 def set_node_icon_route(vault_id: int, node_id: str):
-    """Ändert das Icon eines Nodes."""
     user_id = int(get_jwt_identity())
     data = request.json
 
     if 'icon' not in data:
         return jsonify({"error": "Request body must contain 'icon' (can be a string or null)."}), 400
     try:
-        # Service returns a Node object; API layer converts it to a dict.
         updated_node = node_service.update_node_icon(node_id, vault_id, user_id, data['icon'])
         return jsonify(updated_node.to_dict())
 
+    except DemoLockError as e:
+        return jsonify({"error": str(e)}), 423
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
 
 
 @nodes_bp.route('/<string:node_id>', methods=['DELETE'], strict_slashes=False)
 @jwt_required()
 def delete_node(vault_id: int, node_id: str):
-    """Löscht einen Node."""
     user_id = int(get_jwt_identity())
     try:
         node_service.delete_node(node_id, vault_id, user_id)
         return jsonify({"message": "Node deleted successfully"}), 200
+
+    except DemoLockError as e:
+        return jsonify({"error": str(e)}), 423
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
+
 
 @nodes_bp.route('/<string:node_id>/summary', methods=['PATCH'], strict_slashes=False)
 @jwt_required()
 def update_ai_summary(vault_id: int, node_id: str):
-    """Updates the AI summary for a node."""
     user_id = int(get_jwt_identity())
     data = request.json
 
@@ -410,19 +407,22 @@ def update_ai_summary(vault_id: int, node_id: str):
     try:
         updated_node = node_service.update_node_ai_summary(node_id, vault_id, user_id, data['ai_summary'])
         return jsonify(updated_node.to_dict())
+
+    except DemoLockError as e:
+        return jsonify({"error": str(e)}), 423
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
+
 
 # ========================================================================
-# API-ROUTEN (SPEZIAL-ENDPUNKTE)
+# API ROUTES (SPECIAL ENDPOINTS)
 # ========================================================================
 
 @nodes_bp.route('/content', methods=['POST'], strict_slashes=False)
 @jwt_required()
 def post_nodes_content(vault_id: int):
-    """Holt den zusammengefassten Inhalt für eine Liste von Node-IDs."""
     user_id = int(get_jwt_identity())
     data = request.json
     if not data or 'node_ids' not in data:

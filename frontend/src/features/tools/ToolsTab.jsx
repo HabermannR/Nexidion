@@ -1,6 +1,6 @@
 // src/features/workspace/ToolsTab.jsx
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { Button, Alert, Form } from 'react-bootstrap';
 import { useParams } from 'react-router-dom';
 
@@ -31,9 +31,14 @@ export default function ToolsTab() {
     const [exportStatus, setExportStatus] = useState('idle'); // idle | exporting | success | error
     const [exportError, setExportError] = useState(null);
 
+    const [importStatus, setImportStatus] = useState('idle'); // idle | importing | success | error
+    const [importError, setImportError] = useState(null);
+
     // Toggles for Copy Tree
     const [includeUuid, setIncludeUuid] = useState(true);
     const [includeSummary, setIncludeSummary] = useState(false);
+
+    const fileInputRef = useRef(null);
 
     const { data } = useVaultTreeQuery(vaultId);
     const treeData = data?.tree || [];
@@ -221,6 +226,49 @@ export default function ToolsTab() {
         }
     }, [vaultId]);
 
+    const handleImportClick = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setImportStatus('importing');
+        setImportError(null);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            await apiClient.post('/api/vaults/import', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+            setImportStatus('success');
+
+            // Allow the user to see the success message before resetting
+            setTimeout(() => {
+                setImportStatus('idle');
+                // Reload or invalidate to show the new vault in the UI
+                window.location.reload();
+            }, 2500);
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || error.message || 'Failed to import vault.';
+            setImportError(errorMsg);
+            setImportStatus('error');
+        } finally {
+            // Reset the input so the same file can be selected again if needed
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
+
     const isPrinting = printStatus === 'preparing' || printStatus === 'preparing_all';
 
     return (
@@ -269,16 +317,40 @@ export default function ToolsTab() {
                         {printStatus === 'preparing_all' ? 'Preparing Entire Vault...' : 'Print Entire Vault'}
                     </Button>
 
+                    <hr className="my-2 text-muted" />
+
+                    <h6 className="text-muted mb-2">Vault Data</h6>
+
                     <Button
                         variant="outline-primary"
                         size="sm"
                         onClick={handleExportVault}
                         disabled={exportStatus === 'exporting'}
                     >
-                        <i className="bx bx-download me-1"></i>
+                        <i className="bx bx-export me-1"></i>
                         {exportStatus === 'exporting' && 'Exporting...'}
                         {exportStatus === 'success' && '✓ Exported!'}
                         {(exportStatus === 'idle' || exportStatus === 'error') && 'Export Vault'}
+                    </Button>
+
+                    <input
+                        type="file"
+                        accept=".nexidion,.json"
+                        style={{ display: 'none' }}
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                    />
+
+                    <Button
+                        variant="outline-primary"
+                        size="sm"
+                        onClick={handleImportClick}
+                        disabled={importStatus === 'importing'}
+                    >
+                        <i className="bx bx-import me-1"></i>
+                        {importStatus === 'importing' && 'Importing...'}
+                        {importStatus === 'success' && '✓ Imported! Reloading...'}
+                        {(importStatus === 'idle' || importStatus === 'error') && 'Import Vault'}
                     </Button>
 
                     <hr className="my-2 text-muted" />
@@ -336,17 +408,22 @@ export default function ToolsTab() {
             )}
             {exportError && (
                 <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Error:</strong> {exportError}
+                    <strong>Export Error:</strong> {exportError}
+                </Alert>
+            )}
+            {importError && (
+                <Alert variant="danger" className="mt-2 small p-2">
+                    <strong>Import Error:</strong> {importError}
                 </Alert>
             )}
             {copyContentError && (
                 <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Error:</strong> {copyContentError}
+                    <strong>Copy Error:</strong> {copyContentError}
                 </Alert>
             )}
             {copyTreeError && (
                 <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Error:</strong> {copyTreeError}
+                    <strong>Copy Error:</strong> {copyTreeError}
                 </Alert>
             )}
         </div>

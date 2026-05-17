@@ -2,10 +2,8 @@
 
 import pytest
 from backend.services import user_service
-from backend.models import User
+from backend.models import User, Vault, Version, VaultAccess
 
-
-# --- Tests für get_all_users ---
 
 def test_get_all_users_empty(db_session):
     """Testet, dass eine leere Liste zurückgegeben wird, wenn keine Benutzer existieren."""
@@ -23,8 +21,6 @@ def test_get_all_users_returns_list_sorted(db_session, test_user_1_obj, test_use
     assert users[2].username == 'user2'
 
 
-# --- Tests für create_user ---
-
 def test_create_user_success(db_session):
     """Testet die erfolgreiche Erstellung eines Standardbenutzers."""
     new_user = user_service.create_user(
@@ -33,7 +29,6 @@ def test_create_user_success(db_session):
         display_name="New Bie"
     )
 
-    # Aus der DB holen, um Persistenz zu prüfen
     user_in_db = User.query.filter_by(username="newbie").one()
 
     assert user_in_db is not None
@@ -72,8 +67,6 @@ def test_create_user_fails_on_short_password(db_session):
         user_service.create_user(username="someuser", password="short")
 
 
-# --- Tests für delete_user ---
-
 def test_delete_user_success(db_session, test_admin_obj, test_user_1_obj):
     """Testet das erfolgreiche Löschen eines Benutzers durch einen Admin."""
     user_id_to_delete = test_user_1_obj.id
@@ -105,7 +98,56 @@ def test_delete_user_fails_on_not_found(db_session, test_admin_obj):
         user_service.delete_user(user_id_to_delete=999, acting_user_id=test_admin_obj.id)
 
 
-# --- Tests für set_user_password ---
+def test_delete_user_reassigns_data_to_admin(db_session, test_admin_obj, test_user_1_obj):
+    """
+    Tests that deleting a user who owns vaults and versions correctly
+    transfers ownership of that data to an admin, rather than crashing
+    with a ForeignKeyViolation or losing data.
+    """
+    user_id = test_user_1_obj.id
+    admin_id = test_admin_obj.id
+
+    # 1. SETUP: Give the user some data
+    test_vault = Vault(name="User's Vault", owner_id=user_id)
+    db_session.session.add(test_vault)
+    db_session.session.flush()  # flush to get the vault ID
+
+    test_access = VaultAccess(user_id=user_id, vault_id=test_vault.id, role=2)
+    db_session.session.add(test_access)
+
+    # Create a dummy node to attach the version to (requires vault_id)
+    from backend.models import Node
+    test_node = Node(vault_id=test_vault.id)
+    db_session.session.add(test_node)
+    db_session.session.flush()
+
+    test_version = Version(title="V1", version=1, node_id=test_node.id, author_id=user_id)
+    db_session.session.add(test_version)
+
+    db_session.session.commit()
+
+    # 2. ACT: Delete the user
+    user_service.delete_user(user_id, acting_user_id=admin_id)
+
+    # 3. ASSERT: The user is gone
+    deleted_user = db_session.session.get(User, user_id)
+    assert deleted_user is None
+
+    # 4. ASSERT: Data was reassigned to the Admin, not deleted
+    # The vault should still exist, but now belong to the admin
+    reassigned_vault = db_session.session.get(Vault, test_vault.id)
+    assert reassigned_vault is not None
+    assert reassigned_vault.owner_id == admin_id
+
+    # The version should still exist, but now be authored by the admin
+    reassigned_version = db_session.session.get(Version, test_version.id)
+    assert reassigned_version is not None
+    assert reassigned_version.author_id == admin_id
+
+    # The VaultAccess rules for the deleted user SHOULD be gone
+    deleted_access = VaultAccess.query.filter_by(user_id=user_id).first()
+    assert deleted_access is None
+
 
 def test_set_user_password_success(db_session, test_user_1_obj):
     """Testet das erfolgreiche Zurücksetzen eines Passworts durch einen Admin."""
@@ -133,8 +175,6 @@ def test_set_user_password_fails_new_password_too_short(db_session, test_user_1_
     with pytest.raises(ValueError, match="New password must be at least 8 characters long."):
         user_service.set_user_password(test_user_1_obj.id, "short")
 
-
-# --- Tests für update_user_details ---
 
 def test_update_user_details_success(db_session, test_user_1_obj):
     """Testet die erfolgreiche Aktualisierung von Benutzerdetails."""
@@ -173,7 +213,6 @@ def test_update_user_details_fails_empty_username(db_session, test_user_1_obj):
         user_service.update_user_details(test_user_1_obj.id, {"username": "  "})
 
 
-# GEÄNDERT: test_llm_user_obj -> test_llm_agent_obj
 def test_get_all_users_returns_only_humans_sorted(db_session, test_user_1_obj, test_user_2_obj, test_admin_obj,
                                                   test_llm_agent_obj):
     """

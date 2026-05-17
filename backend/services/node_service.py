@@ -7,9 +7,9 @@ import hashlib
 import json
 import re
 
-# Importiere die Services und Modelle
-from .vault_service import _verify_vault_access
-from ..models import db, Node, Version, Vault, User
+# Importiere die Services und Modelle (inkl. _verify_vault_access für Lesevorgänge!)
+from backend.services.vault_service import get_vault_access, assert_write_allowed, _verify_vault_access
+from backend.models import db, Node, Version, Vault, User
 
 DEFAULT_NODE_ICON = "bxs-file-doc"
 icon_groups: List[Dict[str, Any]] = [
@@ -126,6 +126,7 @@ ALLOWED_ICONS: Set[str] = {
     for group in icon_groups
     for icon in group["icons"]
 }
+
 
 # ========================================================================
 # PRIVATE HELPER FUNCTIONS
@@ -252,7 +253,6 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
     ui_etag = hashlib.md5(json.dumps(ui_roots, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
     agent_etag = hashlib.md5(json.dumps(agent_roots, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
 
-
     vault = db.session.get(Vault, vault_id)
     if vault:
         vault.cached_ui_tree = ui_roots
@@ -375,7 +375,6 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
 
     node_dict = node.to_dict(include_content=True)
 
-    # +++ NEU: Überschreibe den Payload, wenn eine spezifische Version angefragt wurde +++
     if target_version is not None and node.current_version != target_version:
         stmt = (
             select(Version)
@@ -386,12 +385,9 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
         if not specific_version:
             raise ValueError("Version not found")
 
-        # Patche das Dictionary auf die angefragte Version
         node_dict['title'] = specific_version.title
         node_dict['content'] = specific_version.content
         node_dict['version'] = specific_version.version
-
-        # KI-Zusammenfassung bei alten Versionen ausblenden, um Widersprüche zu vermeiden
         node_dict['ai_summary'] = None
         node_dict['summary_is_current'] = False
 
@@ -402,7 +398,6 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
             node_dict['author_id'] = specific_version.author_id
             node_dict['author_name'] = specific_version.author.display_name
     else:
-        # Konsistenz: version Feld immer setzen
         node_dict['version'] = node.current_version
         if node.current_version_object:
             if node.current_version_object.timestamp:
@@ -411,7 +406,6 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
                 node_dict['author_id'] = node.current_version_object.author_id
                 node_dict['author_name'] = node.current_version_object.author.display_name
 
-    # --- Zähler für das Frontend ---
     count_stmt = select(func.count()).select_from(Version).where(with_parent(node, Node.versions))
     version_count = db.session.execute(count_stmt).scalar_one()
 
@@ -421,16 +415,12 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
 
 
 def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] | None:
-    """
-    Returns the version metadata history for a node.
-    No content is returned, pure stubs for maximum performance without N+1 loops.
-    """
+    """Returns the version metadata history for a node."""
     _verify_vault_access(vault_id, user_id)
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         return None
 
-    # Vermeidet N+1 und unnötige Payloads durch gezielten Select der Spalten.
     stmt = (
         select(
             Version.id,
@@ -482,18 +472,15 @@ def get_version_by_id(version_id: int, node_id: str, vault_id: int, user_id: int
 
 
 def get_nodes_by_ids(node_ids: list[str], vault_id: int, user_id: int) -> list[dict]:
-    """Holt mehrere Nodes nach IDs und prüft den Zugriff."""
     nodes = _get_nodes_by_ids_and_verify_access(node_ids, vault_id, user_id)
     return [node.to_dict(include_content=True) for node in nodes]
 
 
 def get_nodes_by_ids_for_user(node_ids: List[str], vault_id: int, user_id: int) -> List[Node]:
-    """Holt die vollständigen Node-Objekte für eine Liste von IDs."""
     return _get_nodes_by_ids_and_verify_access(node_ids, vault_id, user_id)
 
 
 def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int) -> Dict[str, Any]:
-    """Holt und formatiert Inhalte für mehrere Nodes, nachdem der Zugriff verifiziert wurde."""
     if not node_ids:
         raise ValueError("Es muss mindestens eine Node-ID angegeben werden.")
     nodes = _get_nodes_by_ids_and_verify_access(node_ids, vault_id, user_id)
@@ -514,31 +501,20 @@ def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int) -> D
     return {"titles": ordered_titles, "content": full_content}
 
 
-# Ein kompilierter Regex zur schnellen Unterscheidung von UUIDs und Titeln.
-# Er wird außerhalb der Funktion definiert, damit er nicht bei jedem Aufruf neu kompiliert wird.
 UUID_REGEX = re.compile(r'^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$', re.IGNORECASE)
 
 
 def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dict:
-    """
-    Löst eine Liste von Link-Zielen (UUIDs oder Titel) auf und gibt deren Status zurück.
-    Dies ist eine hocheffiziente "Batch"-Operation.
-    """
     _verify_vault_access(vault_id, user_id)
     if not targets:
         return {}
 
-    # Trenne die Ziele in potenzielle UUIDs und Titel für separate Abfragen.
-    # Wir verwenden Sets für eine effiziente Verarbeitung und zur Vermeidung von Duplikaten.
     potential_uuids = {t for t in targets if UUID_REGEX.match(t)}
     potential_titles = {t for t in targets if t not in potential_uuids}
 
     results = {}
 
-    # 1. Verarbeite starke Links (UUIDs)
     if potential_uuids:
-        # Führe eine "sanfte" Abfrage durch: Gib mir alle Nodes, die du mit diesen UUIDs
-        # im richtigen Vault finden kannst. Ignoriere die, die nicht existieren.
         found_nodes = (
             Node.query
             .filter(
@@ -558,28 +534,15 @@ def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dic
             else:
                 results[uuid] = {"status": "unresolved"}
 
-    # 2. Verarbeite schwache Links (Titel)
     if potential_titles:
-        # Finde alle Nodes im Vault, deren aktueller Versionstitel (case-insensitive)
-        # einem der gesuchten Titel entspricht.
-        # SQLAlchemy's `ilike` ist perfekt für case-insensitive exakte Treffer.
         found_nodes_by_title = (
             db.session.query(Node)
             .join(Node.current_version_object)
             .filter(
                 Node.vault_id == vault_id,
-                # Wir konvertieren sowohl den Spaltenwert als auch die Suchbegriffe
-                # in Kleinbuchstaben, um einen case-insensitive Vergleich zu erzwingen.
                 func.lower(Version.title).in_([t.lower() for t in potential_titles])
             ).all()
         )
-        # Für eine garantierte Case-Insensitive-Suche:
-        # .filter(
-        #     Node.vault_id == vault_id,
-        #     func.lower(Version.title).in_([t.lower() for t in potential_titles])
-        # ).all()
-
-        # Gruppiere die gefundenen Nodes nach ihrem Titel (lower-case zur Normalisierung)
         matches_by_title = {}
         for node in found_nodes_by_title:
             title_lower = node.title.lower()
@@ -588,7 +551,6 @@ def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dic
             matches_by_title[title_lower].append(node)
 
         for title in potential_titles:
-            # Suche nach den normalisierten Matches
             matches = matches_by_title.get(title.lower(), [])
             if len(matches) == 1:
                 node = matches[0]
@@ -602,41 +564,29 @@ def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dic
                     "matchCount": len(matches)
                 }
             else:
-                # Wenn kein Match gefunden wurde, ist der Status "unresolved"
                 results[title] = {"status": "unresolved"}
     return results
 
 
 def search_nodes_for_autocomplete(query: str, vault_id: int, user_id: int) -> list[dict]:
-    """
-    Sucht nach Nodes für die Autocomplete-Funktion im Editor.
-    Gibt eine vereinfachte Liste von Nodes (ID und Titel) zurück.
-    """
     _verify_vault_access(vault_id, user_id)
     search_pattern = f"%{query}%"
-
-    # Suche nach Titeln in der `versions`-Tabelle, die zum `current_version` des Nodes gehören
-    # und dem Suchmuster entsprechen. Limitiere die Ergebnisse für gute Performance.
     nodes = (
         db.session.query(Node)
         .join(Node.current_version_object)
         .filter(
             Node.vault_id == vault_id,
-            Version.title.ilike(search_pattern)  # case-insensitive "contains"
+            Version.title.ilike(search_pattern)
         )
-        .order_by(Version.title)  # Sortiere alphabetisch
-        .limit(10)  # Sehr wichtig für die UI-Performance!
+        .order_by(Version.title)
+        .limit(10)
         .all()
     )
+    return [{"id": node.id, "title": node.title} for node in nodes]
 
-    # Formatiere die Antwort in ein schlankes Format für die UI
-    return [
-        {"id": node.id, "title": node.title}
-        for node in nodes
-    ]
 
 # ========================================================================
-# WRITE OPERATIONS
+# WRITE OPERATIONS (NOW PROTECTED BY assert_write_allowed)
 # ========================================================================
 def create_node(
         title: str,
@@ -647,7 +597,10 @@ def create_node(
         icon: Optional[str] = None
 ) -> Node:
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
-    _verify_vault_access(vault_id, author_id)
+    vault, role = get_vault_access(vault_id, author_id)
+    user = db.session.get(User, author_id)
+    assert_write_allowed(role, user)
+
     if not title or not title.strip():
         raise ValueError("Title cannot be empty.")
     if parent_id:
@@ -657,11 +610,8 @@ def create_node(
         if parent_node.vault_id != vault_id:
             raise PermissionError("Cannot assign a parent from a different vault.")
 
-    # ### KORREKTUR ###
-    # Bestimme den Icon-Wert. Wenn keiner übergeben wird, nimm den Standard.
     final_icon = icon if icon is not None else DEFAULT_NODE_ICON
 
-    # Erstelle den Node jetzt MIT dem Icon.
     new_node = Node(
         parent_id=parent_id,
         current_version=1,
@@ -688,7 +638,10 @@ def create_node(
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,
                 content: Optional[str] = None) -> Node:
     """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt IMMER eine neue Version."""
-    _verify_vault_access(vault_id, user_id)
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).options(joinedload(Node.current_version_object)).first()
     if not node:
         raise ValueError("Node not found in the specified vault")
@@ -698,17 +651,14 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     current_title = last_version.title
     current_content = last_version.content
 
-    # Wenn weder Titel noch Inhalt übergeben wurden, gibt es nichts zu tun.
     if title is None and content is None:
         return node
     new_title = title if title is not None else current_title
     new_content = content if content is not None else current_content
 
-    # Wir erstellen keine neue Version, wenn sich absolut nichts geändert hat.
     if new_title == current_title and new_content == current_content:
         return node
 
-    # Der Titel darf nicht leer sein.
     if not new_title or not new_title.strip():
         raise ValueError("Title cannot be empty.")
 
@@ -724,7 +674,6 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     node.current_version = next_version_number
     db.session.commit()
 
-    # Reload with current_version_object eagerly so the caller can call .to_dict()
     updated_node = Node.query.options(joinedload(Node.current_version_object)).filter_by(
         id=node_id).one()
     rebuild_vault_tree_cache(vault_id)
@@ -733,7 +682,10 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
 
 def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary: str) -> Node:
     """Updates the ai_summary field and marks it as current. No new version created."""
-    _verify_vault_access(vault_id, user_id)
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         raise ValueError("Node not found in the specified vault.")
@@ -747,7 +699,10 @@ def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary
 
 def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: int) -> Node:
     """Bewegt einen Node zu einem neuen Parent (keine neue Version)."""
-    _verify_vault_access(vault_id, user_id)
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
     if str(node_id) == str(new_parent_id):
         raise ValueError("Cannot move a node into itself.")
     node_to_move = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
@@ -767,8 +722,11 @@ def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: i
 
 
 def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[str]) -> Node:
-    """Aktualisiert das Icon eines Nodes. Das Icon muss ein gültiger, vordefinierter String oder None sein."""
-    _verify_vault_access(vault_id, user_id)
+    """Aktualisiert das Icon eines Nodes."""
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         raise ValueError("Node not found in the specified vault.")
@@ -790,20 +748,20 @@ def delete_node(node_id: str, vault_id: int, user_id: int):
     Löscht einen Node. Kind-Nodes werden dabei an den Parent des gelöschten
     Nodes weitergereicht ("adoptiert").
     """
-    _verify_vault_access(vault_id, user_id)
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
     node_to_delete = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
 
     if not node_to_delete:
         raise ValueError("Node not found in the specified vault")
 
-    # +++ NEU: Verhindere das Löschen des Root-Nodes (Parent = None) +++
     if node_to_delete.parent_id is None:
         raise PermissionError("The root summary node cannot be deleted.")
 
-    # Bestimme den neuen Parent für die Kinder
     new_parent_for_children = node_to_delete.parent_id
 
-    # Aktualisiere die Kinder...
     Node.query.filter_by(parent_id=node_id, vault_id=vault_id).update(
         {"parent_id": new_parent_for_children}, synchronize_session='fetch'
     )

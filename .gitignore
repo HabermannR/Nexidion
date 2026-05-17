@@ -51,6 +51,7 @@ instance/
 *.db
 *.sqlite
 *.sqlite3
+audit_logs/
 
 # Credentials
 secrets.json

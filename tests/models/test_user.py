@@ -53,3 +53,25 @@ def test_user_check_password_on_user_with_no_hash():
 
     # ACT & ASSERT: Rufe check_password auf. Es muss False zurückgeben.
     assert user_without_password.check_password("any-password") is False
+
+
+def test_user_guest_defaults(db_session):
+    """Testet, dass neue User standardmäßig keine Gäste sind."""
+    user = User(username="guest_test_user", display_name="Guest Test")
+    db_session.session.add(user)
+    db_session.session.commit()
+    assert user.is_guest is False
+    assert user.demo_state is None
+    assert user.expires_at is None
+    assert user.guest_token is None
+
+
+def test_user_to_dict_includes_guest_fields():
+    """Testet, dass to_dict() die neuen Demo-Felder enthält."""
+    user = User(id=1, username="test", display_name="Test", is_guest=True, demo_state=1)
+    data = user.to_dict()
+
+    assert 'is_guest' in data
+    assert data['is_guest'] is True
+    assert 'demo_state' in data
+    assert data['demo_state'] == 1

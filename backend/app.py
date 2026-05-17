@@ -1,24 +1,16 @@
 import os
-import sys
-
-# Add the project root directory to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
 import logging
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
-import click
 
 # Load environment variables
 load_dotenv()
 
 from backend.config import Config
-from backend.models import db, User, UserType
+from backend.models import db
 
 # Import API Blueprints
 from backend.api.auth import auth_bp
@@ -27,6 +19,7 @@ from backend.api.nodes import nodes_bp
 from backend.api.images import image_bp
 from backend.api.admin import admin_bp
 from backend.api.tasks import tasks_bp
+from backend.cli import register_commands
 
 migrate = Migrate()
 
@@ -63,7 +56,12 @@ def create_app(config_class=Config):
 
     # Initialize extensions
     db.init_app(app)
-    migrate.init_app(app, db)
+
+    # --- CRITICAL FIX: Explicitly set the migrations directory ---
+    backend_dir = os.path.abspath(os.path.dirname(__file__))
+    migrations_dir = os.path.join(backend_dir, 'migrations')
+    migrate.init_app(app, db, directory=migrations_dir)
+
     JWTManager(app)
 
     # Register API Blueprints
@@ -75,7 +73,7 @@ def create_app(config_class=Config):
     app.register_blueprint(tasks_bp)
 
     # --- CLI Commands (cleaned up) ---
-    register_cli_commands(app)
+    register_commands(app)
 
     # --- Frontend Serving (for production) ---
     register_frontend_serving(app)
@@ -97,58 +95,3 @@ def register_frontend_serving(app):
             return send_from_directory(static_folder_path, path)
         else:
             return send_from_directory(static_folder_path, 'index.html')
-
-
-def register_cli_commands(app):
-    """Registers the remaining useful CLI commands."""
-
-    @app.cli.command('create-admin')
-    @click.argument('username')
-    @click.argument('password')
-    @click.option('--display-name', default=None, help='Optional display name for the user.')
-    def create_admin_command(username, password, display_name):
-        """Creates a new administrator user."""
-        if User.query.filter_by(username=username).first():
-            print(f"🔥 Error: User '{username}' already exists.")
-            return
-
-        # If no display name is provided, use the username
-        display_name = display_name or username.capitalize()
-
-        user = User(username=username, display_name=display_name, user_type=UserType.HUMAN, is_admin=True)
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
-        print(f"✅ Administrator '{username}' created successfully.")
-
-    @app.cli.command('create-llm-agent')
-    def create_llm_agent_command():
-        """Creates the default LLM agent user with a fixed ID of 2, if it doesn't exist."""
-        existing = User.query.filter_by(username='default-llm').first()
-        if existing:
-            print(f"✅ LLM agent already exists (ID: {existing.id}).")
-            return
-
-        agent = User(
-            username='default-llm',
-            display_name='LLM Assistant',
-            # Update user_type here to use the Enum
-            user_type=UserType.LLM_ASSISTANT,
-            is_admin=False,
-        )
-        db.session.add(agent)
-        db.session.flush()  # assigns the ID before commit
-
-        if agent.id != 2:
-            print(f"⚠️  Warning: LLM agent got ID {agent.id}, expected 2. "
-                  "Make sure admin (ID 1) is created first.")
-
-        db.session.commit()
-        print(f"✅ LLM agent '{agent.username}' created (ID: {agent.id}).")
-
-
-# --- App Execution (for local development only) ---
-if __name__ == '__main__':
-    app = create_app()
-    # debug=True is controlled by FLASK_DEBUG=1 in .env, which is better
-    app.run(host='0.0.0.0', port=5001)

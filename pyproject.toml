@@ -23,10 +23,11 @@ dependencies = [
     "Flask-Migrate",         # This automatically includes 'alembic'
     "Flask-SQLAlchemy",
 
+    # Database driver (Required for the runner)
+    "psycopg2-binary",
+
     # AI Interfaces
     "openai",
-    "anthropic",
-    "google-genai",
 
     # Utilities
     "python-dotenv",
@@ -48,8 +49,6 @@ dev = [
     "line-profiler",
     "sqlite-utils",
     "tabulate",
-    "black",              # Recommended: A code formatter
-    "ruff",               # Recommended: A very fast linter
 ]
 
 
@@ -58,7 +57,7 @@ dev = [
 # This tells setuptools what code to include in the package.
 # ==========================================================
 [tool.setuptools]
-packages = ["backend"]
+packages = ["backend", "runner"]
 
 
 # ==========================================================
@@ -66,15 +65,14 @@ packages = ["backend"]
 # ==========================================================
 [tool.pytest.ini_options]
 # These options are now applied to EVERY pytest run automatically.
-# The --cov flags are handled here.
-addopts = "--cov=backend --cov-report=html --cov-report=term-missing"
-markers = [
-    "llm: marks tests as requiring an LLM connection (can be slow and costly)",
-]
+# The --cov flags are handled here. Added --cov=runner
+addopts = "--cov=backend --cov=runner --cov-report=html --cov-report=term-missing"
+
 
 [tool.coverage.run]
-source = ["backend"]
-omit = ["backend/scripts/*"]
+# Tells coverage to track BOTH directories
+source = ["backend", "runner"]
+omit = ["backend/scripts/*", "backend/cli.py"]
 
 [tool.coverage.report]
 show_missing = true

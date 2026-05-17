@@ -1,6 +1,7 @@
 # tests/api/v2/test_nodes_api.py
 import pytest
 from backend.services import node_service
+from backend.models import VaultAccess, VaultRole, DemoState
 
 
 # --- Helper-Funktion für diese Testdatei ---
@@ -595,6 +596,49 @@ class TestInternalLinkingAPI:
                                json=invalid_payload)
         assert response.status_code == 400
 
+
+def test_node_write_as_viewer_returns_403(client, db_session, test_user_2_obj, test_vault_1_obj, auth_headers_2):
+    """Testet, dass ein User mit VIEWER-Rechten keine Nodes anlegen/ändern darf."""
+
+    # ARRANGE: Grant User 2 VIEWER access to Vault 1
+    access = VaultAccess(
+        vault_id=test_vault_1_obj.id,
+        user_id=test_user_2_obj.id,
+        role=VaultRole.VIEWER
+    )
+    db_session.session.add(access)
+    db_session.session.commit()
+
+    # ACT: User 2 (Viewer) versucht, einen Node in Vault 1 zu erstellen
+    response = client.post(
+        f'/api/vaults/{test_vault_1_obj.id}/nodes/',
+        headers=auth_headers_2,
+        json={'title': 'Viewer Node', 'content': 'Should be blocked'}
+    )
+
+    # ASSERT
+    assert response.status_code == 403
+    assert "read-only access" in response.get_json()['error']
+
+
+def test_node_write_as_demo_locked_returns_423(client, db_session, test_user_1_obj, test_vault_1_obj, auth_headers_1):
+    """Testet, dass ein Guest im READ_ONLY Modus keine Nodes ändern darf (HTTP 423)."""
+
+    # ARRANGE: Wir machen den Vault-Besitzer (User 1) für diesen Test zu einem gelockten Guest
+    test_user_1_obj.is_guest = True
+    test_user_1_obj.demo_state = DemoState.READ_ONLY
+    db_session.session.commit()
+
+    # ACT: User 1 versucht, einen Node zu erstellen
+    response = client.post(
+        f'/api/vaults/{test_vault_1_obj.id}/nodes/',
+        headers=auth_headers_1,
+        json={'title': 'Locked Node', 'content': 'Should be blocked by demo lock'}
+    )
+
+    # ASSERT
+    assert response.status_code == 423
+    assert "Complete the demo task" in response.get_json()['error']
 
 # ========================================================================
 # Tests für neue Endpunkte (AI Summary, Versions, Full-Search, Content)

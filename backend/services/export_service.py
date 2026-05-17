@@ -23,7 +23,8 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.models import db, Node, Vault, VaultAccess, Version
+from backend.models import db, Node, Vault, Version, User, DemoState
+from backend.exceptions import DemoLockError
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ def export_vault(vault_id: int, user_id: int) -> str:
     Raises:
         ValueError:      vault not found.
         PermissionError: caller is not the vault owner.
+        DemoLockError:   caller is locked in demo mode.
     """
     vault = db.session.get(Vault, vault_id)
     if vault is None:
@@ -51,6 +53,11 @@ def export_vault(vault_id: int, user_id: int) -> str:
         # Shared members (even EDITORs) may not export — exporting is an
         # owner-only action because it includes the full version history.
         raise PermissionError("Only the vault owner may export this vault.")
+
+    # New security: restrict users trapped in Demo Lock from scraping the full demo setup.
+    user = db.session.get(User, user_id)
+    if user and user.is_guest and user.demo_state == DemoState.READ_ONLY:
+        raise DemoLockError("Complete the demo task to unlock exporting.")
 
     payload = _build_export(vault)
     return json.dumps(payload, ensure_ascii=False, indent=2)

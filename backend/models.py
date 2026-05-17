@@ -15,22 +15,25 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects import postgresql
 from werkzeug.security import generate_password_hash, check_password_hash
 
-
 # Create the SQLAlchemy database instance.
 # This will be initialized with the Flask app in the main application file.
 db = SQLAlchemy()
 
+
 class UserType(enum.IntEnum):
-    HUMAN         = 1
+    HUMAN = 1
     LLM_ASSISTANT = 2
+
 
 class VaultRole(enum.IntEnum):
     VIEWER = 1
     EDITOR = 2
 
+
 class DemoState(enum.IntEnum):
     READ_ONLY = 1
-    UNLOCKED  = 2
+    UNLOCKED = 2
+
 
 class User(db.Model):
     """
@@ -42,13 +45,21 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     username = db.Column(db.String(80), unique=True, nullable=False)  # z.B. 'richard', 'claude-3-opus'
     display_name = db.Column(db.String(120), nullable=False)  # z.B. 'Richard', 'Claude 3 Opus'
-    password_hash = db.Column(db.String(256), nullable=True) # String-Länge sicherheitshalber erhöhen
+    password_hash = db.Column(db.String(256), nullable=True)  # String-Länge sicherheitshalber erhöhen
     user_type = db.Column(db.SmallInteger, nullable=False, default=UserType.HUMAN)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Updated to Timezone Aware
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    is_guest = db.Column(db.Boolean, nullable=False, default=False, server_default=sa.text('false'))
+    demo_state = db.Column(db.SmallInteger, nullable=True)
+
+    # Updated to Timezone Aware
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    guest_token = db.Column(db.String(64), nullable=True, unique=True)
 
     # Cached vault list for fast GET /api/vaults/ responses
-    cached_vault_list      = db.Column(db.JSON,       nullable=True)
+    cached_vault_list = db.Column(db.JSON, nullable=True)
     cached_vault_list_etag = db.Column(db.String(32), nullable=True)
 
     # Relationships
@@ -75,8 +86,11 @@ class User(db.Model):
             'username': self.username,
             'display_name': self.display_name,
             'user_type': self.user_type,
-            'is_admin': self.is_admin
+            'is_admin': self.is_admin,
+            'is_guest': self.is_guest,
+            'demo_state': self.demo_state
         }
+
 
 class Vault(db.Model):
     """
@@ -86,10 +100,19 @@ class Vault(db.Model):
     __tablename__ = 'vaults'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(255), nullable=False, unique=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    name = db.Column(db.String(255), nullable=False)
+
+    # Updated to Timezone Aware
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+
+    tasks = db.relationship('Task', backref='vault', cascade="all, delete-orphan")
+    access_rules = db.relationship('VaultAccess', backref='vault', cascade="all, delete-orphan")
+
+    __table_args__ = (
+        db.UniqueConstraint('owner_id', 'name', name='uq_vault_name_per_user'),
+    )
 
     # 1. Ultra-lightweight tree for the Frontend
     cached_ui_tree = db.Column(db.JSON, nullable=True)
@@ -100,10 +123,7 @@ class Vault(db.Model):
     cached_agent_tree_etag = db.Column(db.String(32), nullable=True)
 
     # Relationships to nodes and sessions within this vault.
-    # The cascade rule ensures that when a vault is deleted, all its
-    # associated nodes and chat sessions are also automatically deleted.
     nodes = db.relationship('Node', back_populates='vault', lazy='dynamic', cascade="all, delete-orphan")
-    # Add explicitly for the User relationship
     owner = db.relationship('User', back_populates='owned_vaults')
 
     def to_dict(self):
@@ -147,7 +167,9 @@ class Node(db.Model):
 
     # --- Relationships ---
     parent_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=True, index=True)
-    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), nullable=False, index=True)
+
+    # DB-Level cascade for fast Vault deletion
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id', ondelete='CASCADE'), nullable=False, index=True)
 
     versions = db.relationship('Version', back_populates='node', lazy=True, cascade="all, delete-orphan")
     vault = db.relationship('Vault', back_populates='nodes')
@@ -202,7 +224,9 @@ class Version(db.Model):
     title = db.Column(db.String(255), nullable=False)
     version = db.Column(db.Integer, nullable=False)
     content = db.Column(db.Text, nullable=True)  # Matches schema where content can be NULL
-    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Updated to Timezone Aware
+    timestamp = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     fts_en = db.Column(postgresql.TSVECTOR(), sa.Computed(
         "setweight(to_tsvector('english', coalesce(title,'')), 'A') || "
@@ -221,8 +245,8 @@ class Version(db.Model):
     )
 
     # --- Relationships ---
-    # Foreign key linking this version back to its parent Node.
-    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id'), nullable=False, index=True)
+    # Added DB-Level cascade
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id', ondelete='CASCADE'), nullable=False, index=True)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     node = db.relationship('Node', back_populates='versions')
     author = db.relationship('User', back_populates='authored_versions')
@@ -230,21 +254,17 @@ class Version(db.Model):
     def to_dict(self, include_content=True):
         """
         Gibt eine Dictionary-Repräsentation der Version zurück.
-        Enthält jetzt alle für die UI notwendigen Daten, um den "Single API Call"-Ansatz zu unterstützen.
         """
         data = {
             'id': self.id,
             'node_id': self.node_id,
-            # Node-Metadaten für die UI ---
-            'vault_id': self.node.vault_id,  # Wird für Aktionen (save, delete) benötigt
-            'icon': self.node.icon,  # Kosmetisch, aber nützlich für die Anzeige
-            # Die AI Summary vom übergeordneten Node holen +++
+            'vault_id': self.node.vault_id,
+            'icon': self.node.icon,
             'ai_summary': self.node.ai_summary,
             'summary_is_current': self.node.summary_is_current,
-            # --- Versions-spezifische Daten ---
-            'title': self.title,  # Das neue, versionierte Titelfeld
+            'title': self.title,
             'version': self.version,
-            'timestamp': self.timestamp.isoformat() + 'Z',
+            'timestamp': self.timestamp.isoformat(),  # Removed the +'Z' hack, native output is standard compliant
             'author_id': self.author_id,
             'author_name': self.author.display_name if self.author else "Unknown",
         }
@@ -259,53 +279,50 @@ class Version(db.Model):
 
 class VaultAccess(db.Model):
     __tablename__ = 'vault_access'
-    user_id  = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
-    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), primary_key=True)
-    role     = db.Column(db.SmallInteger, nullable=False, default=VaultRole.EDITOR)
-    # 'editor' is all you need for now. 'viewer' can come later if ever.
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id', ondelete='CASCADE'), primary_key=True)
+    role = db.Column(db.SmallInteger, nullable=False, default=VaultRole.EDITOR)
+
 
 class Task(db.Model):
     __tablename__ = 'tasks'
 
-    id               = db.Column(db.String(36), primary_key=True,
-                                 default=lambda: str(uuid.uuid4()))
-    vault_id         = db.Column(db.Integer, db.ForeignKey('vaults.id'),
-                                 nullable=False, index=True)
-    instruction      = db.Column(db.Text, nullable=False)
-    status           = db.Column(db.String(20), nullable=False,
-                                 default='pending', index=True)
-                                 # 'pending' | 'processing' | 'completed' | 'failed'
+    id = db.Column(db.String(36), primary_key=True,
+                   default=lambda: str(uuid.uuid4()))
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id', ondelete='CASCADE'), nullable=False, index=True)
+    instruction = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False,
+                       default='pending', index=True)
     context_node_ids = db.Column(db.JSON, nullable=False, default=list)
-    created_at       = db.Column(db.DateTime, nullable=False,
-                                 default=lambda: datetime.now(timezone.utc))
 
-    finish_summary   = db.Column(db.Text, nullable=True)
-    operations       = db.Column(db.JSON, nullable=True)
-    completed_at     = db.Column(db.DateTime, nullable=True)
+    # Updated to Timezone Aware
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False,
+                           default=lambda: datetime.now(timezone.utc))
+
+    finish_summary = db.Column(db.Text, nullable=True)
+    operations = db.Column(db.JSON, nullable=True)
+
+    # Updated to Timezone Aware
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     def to_dict(self, short=False):
         if short:
-            # 1. Determine which text to show based on status
             if self.status == 'completed' and self.finish_summary:
                 text_to_show = self.finish_summary
             else:
                 text_to_show = self.instruction
 
-            # 2. Truncate to max ~200 chars
             if text_to_show and len(text_to_show) > 200:
                 text_to_show = text_to_show[:197] + '...'
 
-            # 3. Return a highly optimized dictionary for the list UI
             return {
                 'id': self.id,
                 'status': self.status,
                 'created_at': self.created_at.isoformat(),
                 'preview_text': text_to_show,
-                # Optional: include completed_at if your UI wants to show completion time
                 'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             }
 
-        # Full detail for the GET /api/tasks/<task_id> route
         return {
             'id': self.id,
             'vault_id': self.vault_id,
@@ -317,3 +334,4 @@ class Task(db.Model):
             'operations': self.operations,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
+

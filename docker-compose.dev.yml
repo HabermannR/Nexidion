@@ -20,19 +20,22 @@ services:
 
   # --- THE BACKEND (Flask API) ---
   backend:
-    build: ./backend
-    working_dir: /backend
+    build:
+      context: .                      # <-- Changed: build from root
+      dockerfile: backend/Dockerfile  # <-- Point to dev Dockerfile
+    working_dir: /app                 # <-- Changed: work from root
     ports:
       - "5001:5001"
     volumes:
-      # Maps local backend code so Python changes reflect instantly
-      - ./backend:/backend
+      - .:/app                        # <-- Changed: Mount whole root so Python sees run.py AND backend/
     env_file:
       - .env
+    environment:
+      - FLASK_APP=run.py              # <-- Tell Flask CLI where the app is
+      - FLASK_ENV=development
     depends_on:
       postgres:
         condition: service_healthy
-    # Automatically migrate db, create admin, and start the server
     command: >
       bash -c "
       flask db upgrade &&

@@ -3,7 +3,9 @@
 import pytest
 from unittest.mock import patch
 from backend.services import vault_service
-from backend.models import Vault, Node, Version, User, VaultRole
+from backend.models import Vault, Node, Version, User, VaultRole, DemoState
+from backend.exceptions import InsufficientVaultRoleError, DemoLockError
+from backend.services.vault_service import assert_write_allowed, get_vault_access
 
 
 def test_create_vault_success(db_session, test_user_1_obj):
@@ -35,11 +37,14 @@ def test_create_vault_with_empty_name_fails(test_user_1_obj):
         vault_service.create_vault(name="  ", owner_id=test_user_1_obj.id)
 
 
-def test_create_vault_with_duplicate_name_fails(test_user_1_obj, test_vault_1_obj):
+def test_create_vault_with_duplicate_name_fails(db_session, test_user_1_obj):
     """Testet, dass die Erstellung eines Vaults mit gleichem Namen für denselben User fehlschlägt."""
-    # Arrange: Die Fixture 'test_vault_1_obj' hat bereits einen Vault 'Vault For User 1' erstellt.
-    with pytest.raises(ValueError, match="You already own a vault named 'Vault For User 1'."):
-        vault_service.create_vault(name="Vault For User 1", owner_id=test_user_1_obj.id)
+    # Create the first 'Personal' vault
+    vault_service.create_vault(name="Personal", owner_id=test_user_1_obj.id)
+
+    # Attempting to create a second 'Personal' vault for the same user should fail
+    with pytest.raises(ValueError, match="You already own a vault named 'Personal'."):
+        vault_service.create_vault(name="Personal", owner_id=test_user_1_obj.id)
 
 
 def test_create_vault_with_nonexistent_owner_fails(db_session):
@@ -66,17 +71,16 @@ def test_rename_vault_to_empty_name_fails(test_user_1_obj, test_vault_1_obj):
         vault_service.rename_vault(test_vault_1_obj.id, "   ", test_user_1_obj.id)
 
 
-def test_rename_vault_to_existing_name_fails(test_user_1_obj):
-    """Testet, dass das Umbenennen eines Vaults zu einem bereits existierenden Namen fehlschlägt."""
-    # Arrange: Erstelle zwei Vaults
-    vault1 = vault_service.create_vault("Vault One", test_user_1_obj.id)
-    vault2 = vault_service.create_vault("Vault Two", test_user_1_obj.id)
+def test_rename_vault_to_existing_name_fails(db_session, test_user_1_obj):
+    """Testet, dass das Umbenennen eines Vaults zu einem bereits existierenden Namen (desselben Users) fehlschlägt."""
+    vault1 = vault_service.create_vault("Personal", test_user_1_obj.id)
+    vault2 = vault_service.create_vault("Work", test_user_1_obj.id)
 
     # Act & Assert
-    with pytest.raises(ValueError, match="You already own another vault named 'Vault One'."):
+    with pytest.raises(ValueError, match="You already own another vault named 'Personal'."):
         vault_service.rename_vault(
             vault_id=vault2.id,
-            new_name="Vault One",
+            new_name="Personal",
             user_id=test_user_1_obj.id
         )
 
@@ -222,7 +226,7 @@ def test_get_vault_access_list_success(db_session, test_user_1_obj, test_user_2_
 
 def test_get_vault_access_list_not_found(db_session):  # <--- HIER FEHLTE DAS 'db_session' !
     """[Admin] Testet, dass bei einem ungültigen Vault ein Fehler geworfen wird."""
-    with pytest.raises(ValueError, match="Vault 9999 not found."):
+    with pytest.raises(ValueError, match="Vault with ID 9999 not found."):
         vault_service.get_vault_access_list(9999)
 
 
@@ -259,10 +263,10 @@ def test_grant_vault_access_fails_on_owner(test_user_1_obj, test_vault_1_obj):
 
 def test_grant_vault_access_fails_invalid_entities(test_user_2_obj, test_vault_1_obj):
     """[Admin] Testet fehlerhafte IDs beim Gewähren von Rechten."""
-    with pytest.raises(ValueError, match="Vault 9999 not found"):
+    with pytest.raises(ValueError, match="Vault with ID 9999 not found"):
         vault_service.grant_vault_access(9999, test_user_2_obj.id)
 
-    with pytest.raises(ValueError, match="User 9999 not found"):
+    with pytest.raises(ValueError, match="User with ID 9999 not found"):
         vault_service.grant_vault_access(test_vault_1_obj.id, 9999)
 
 
@@ -296,3 +300,64 @@ def test_revoke_vault_access_fails_invalid_vault(test_user_2_obj):
     """[Admin] Testet fehlerhafte Vault-IDs beim Entziehen."""
     with pytest.raises(ValueError, match="not found"):
         vault_service.revoke_vault_access(9999, test_user_2_obj.id)
+
+
+def test_create_vault_same_name_different_users(db_session, test_user_1_obj, test_user_2_obj):
+    """Testet, dass zwei verschiedene User Vaults mit demselben Namen ('Personal') erstellen können."""
+    # Act
+    vault1 = vault_service.create_vault(name="Personal", owner_id=test_user_1_obj.id)
+    vault2 = vault_service.create_vault(name="Personal", owner_id=test_user_2_obj.id)
+
+    # Assert
+    assert vault1.name == "Personal"
+    assert vault2.name == "Personal"
+    assert vault1.owner_id == test_user_1_obj.id
+    assert vault2.owner_id == test_user_2_obj.id
+    assert vault1.id != vault2.id  # Verify they are actually different vaults
+
+
+def test_rename_vault_same_name_different_users(db_session, test_user_1_obj, test_user_2_obj):
+    """Testet, dass ein User seinen Vault unbeschadet auf einen Namen umbenennen kann, den ein anderer User bereits nutzt."""
+    # Arrange: User 1 owns "Personal", User 2 owns "Work"
+    vault_service.create_vault("Personal", test_user_1_obj.id)
+    vault2 = vault_service.create_vault("Work", test_user_2_obj.id)
+
+    # Act: User 2 renames "Work" to "Personal"
+    renamed_vault = vault_service.rename_vault(
+        vault_id=vault2.id,
+        new_name="Personal",
+        user_id=test_user_2_obj.id
+    )
+
+    # Assert
+    assert renamed_vault.name == "Personal"
+    assert renamed_vault.owner_id == test_user_2_obj.id
+
+
+def test_assert_write_allowed_permissions():
+    """Testet die Durchsetzung der Schreibrechte und des Demo-Locks."""
+
+    # 1. Editor passes
+    user_normal = User(is_guest=False)
+    assert_write_allowed(VaultRole.EDITOR, user_normal)  # Should not raise any error
+
+    # 2. Viewer raises InsufficientVaultRoleError
+    with pytest.raises(InsufficientVaultRoleError, match="read-only access"):
+        assert_write_allowed(VaultRole.VIEWER, user_normal)
+
+    # 3. Guest in READ_ONLY raises DemoLockError (even if they have EDITOR role)
+    user_guest_locked = User(is_guest=True, demo_state=DemoState.READ_ONLY)
+    with pytest.raises(DemoLockError, match="Complete the demo task"):
+        assert_write_allowed(VaultRole.EDITOR, user_guest_locked)
+
+    # 4. Guest in UNLOCKED passes
+    user_guest_unlocked = User(is_guest=True, demo_state=DemoState.UNLOCKED)
+    assert_write_allowed(VaultRole.EDITOR, user_guest_unlocked)
+
+
+def test_get_vault_access_owner_always_editor(test_user_1_obj, test_vault_1_obj):  # <--- test_vault_1_obj
+    """Testet, dass der Vault-Besitzer immer EDITOR-Rechte erhält."""
+    vault, role = get_vault_access(test_vault_1_obj.id, test_user_1_obj.id)
+
+    assert vault.id == test_vault_1_obj.id
+    assert role == VaultRole.EDITOR

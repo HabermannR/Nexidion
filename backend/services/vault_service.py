@@ -12,35 +12,35 @@ Enthält:
 import hashlib
 import json
 
-from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version
+from backend.exceptions import InsufficientVaultRoleError, DemoLockError
+from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version, DemoState
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+def assert_write_allowed(role: VaultRole, user: User):
+    if role < VaultRole.EDITOR:
+        raise InsufficientVaultRoleError("You have read-only access to this vault.")
+    if user.is_guest and user.demo_state == DemoState.READ_ONLY:
+        raise DemoLockError("Complete the demo task to unlock editing.")
 
-def _verify_vault_access(vault_id: int, user_id: int) -> Vault:
-    """
-    Verifies that a user has access to a vault.
-    Access is granted if the user is the owner OR has a row in the VaultAccess table.
-    Returns the Vault object or raises an error.
-    """
+def get_vault_access(vault_id: int, user_id: int) -> tuple[Vault, VaultRole]:
     vault = db.session.get(Vault, vault_id)
     if not vault:
         raise ValueError(f"Vault with ID {vault_id} not found.")
-
     if vault.owner_id == user_id:
-        return vault
-
-    access_row = db.session.execute(
+        return vault, VaultRole.EDITOR
+    row = db.session.execute(
         db.select(VaultAccess).filter_by(vault_id=vault_id, user_id=user_id)
     ).scalar_one_or_none()
-
-    if access_row is not None:
-        return vault
-
+    if row:
+        return vault, VaultRole(row.role)
     raise PermissionError("You do not have permission to access this vault.")
 
+def _verify_vault_access(vault_id: int, user_id: int) -> Vault:
+    vault, _ = get_vault_access(vault_id, user_id)
+    return vault
 
 def _build_vault_list(user_id: int) -> list:
     """Raw query — owned + granted vaults, no cache. Returns list of dicts."""
@@ -105,7 +105,7 @@ def get_vaults_for_user_cached(user_id: int, client_etag=None):
     """
     user = db.session.get(User, user_id)
     if not user:
-        raise ValueError(f"User {user_id} not found.")
+        raise ValueError(f"User with ID {user_id} not found.")
 
     if user.cached_vault_list is None:
         data = _build_vault_list(user_id)
@@ -154,14 +154,18 @@ def create_vault(name: str, owner_id: int) -> Vault:
     if not name_stripped:
         raise ValueError("Vault name cannot be empty.")
 
-    if not db.session.get(User, owner_id):
+    user = db.session.get(User, owner_id)
+    if not user:
         raise ValueError(f"Owner with ID {owner_id} not found.")
+
+    # +++ NEU: Check für Demo-Lock (Vaults erstellen) +++
+    if user.is_guest and user.demo_state == DemoState.READ_ONLY:
+        raise DemoLockError("Complete the demo task to unlock editing.")
 
     if db.session.execute(
         db.select(Vault).filter_by(name=name_stripped, owner_id=owner_id)
     ).first():
         raise ValueError(f"You already own a vault named '{name_stripped}'.")
-
     try:
         new_vault = Vault(name=name_stripped, owner_id=owner_id)
         db.session.add(new_vault)
@@ -194,7 +198,11 @@ def create_vault(name: str, owner_id: int) -> Vault:
 
 
 def rename_vault(vault_id: int, new_name: str, user_id: int) -> Vault:
-    vault = _verify_vault_access(vault_id, user_id)
+    # +++ NEU: 3-line check +++
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
     if vault.owner_id != user_id:
         raise PermissionError("Only the vault owner can rename it.")
     new_name_stripped = new_name.strip()
@@ -216,7 +224,15 @@ def rename_vault(vault_id: int, new_name: str, user_id: int) -> Vault:
 
 
 def delete_vault(vault_id: int, user_id: int):
-    vault = _verify_vault_access(vault_id, user_id)
+    # +++ NEU: 3-line check +++
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+
+    # Optional but highly recommended: explicitly ensure ONLY the owner can delete the vault!
+    if vault.owner_id != user_id:
+        raise PermissionError("Only the vault owner can delete it.")
+
     if Vault.query.filter_by(owner_id=user_id).count() <= 1:
         raise ValueError("You cannot delete your last remaining vault.")
 
@@ -258,7 +274,7 @@ def get_vault_access_list(vault_id: int) -> dict:
     """[Admin] Vault metadata + current access list + available users to grant."""
     vault = db.session.get(Vault, vault_id)
     if not vault:
-        raise ValueError(f"Vault {vault_id} not found.")
+        raise ValueError(f"Vault with ID {vault_id} not found.")
 
     owner = db.session.get(User, vault.owner_id)
 
@@ -308,11 +324,11 @@ def grant_vault_access(vault_id: int, user_id: int, role: int = VaultRole.EDITOR
     """[Admin] Idempotent upsert. Raises if target is the vault owner."""
     vault = db.session.get(Vault, vault_id)
     if not vault:
-        raise ValueError(f"Vault {vault_id} not found.")
+        raise ValueError(f"Vault with ID {vault_id} not found.")
     if vault.owner_id == user_id:
         raise ValueError("Cannot grant explicit access to the vault owner — they already have full access.")
     if not db.session.get(User, user_id):
-        raise ValueError(f"User {user_id} not found.")
+        raise ValueError(f"User with ID {user_id} not found.")
 
     existing = db.session.execute(
         db.select(VaultAccess).filter_by(vault_id=vault_id, user_id=user_id)
@@ -331,7 +347,7 @@ def revoke_vault_access(vault_id: int, user_id: int) -> None:
     """[Admin] Delete the access row. Raises if target is the vault owner."""
     vault = db.session.get(Vault, vault_id)
     if not vault:
-        raise ValueError(f"Vault {vault_id} not found.")
+        raise ValueError(f"Vault with ID {vault_id} not found.")
     if vault.owner_id == user_id:
         raise ValueError("Cannot revoke access from the vault owner.")
 
@@ -340,7 +356,7 @@ def revoke_vault_access(vault_id: int, user_id: int) -> None:
     ).scalar_one_or_none()
 
     if not row:
-        raise ValueError(f"User {user_id} does not have explicit access to vault {vault_id}.")
+        raise ValueError(f"User with ID {user_id} does not have explicit access to vault {vault_id}.")
 
     db.session.delete(row)
     invalidate_vault_list_cache(user_id)
