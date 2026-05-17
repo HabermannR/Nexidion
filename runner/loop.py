@@ -123,7 +123,7 @@ def claim_oldest_task(conn):
                 LIMIT  1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id, vault_id, instruction, context_node_ids, created_at, status, meta
+            RETURNING id, vault_id, instruction, context_node_ids, created_at, status
         """)
         row = cur.fetchone()
         conn.commit()

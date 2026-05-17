@@ -80,6 +80,8 @@ def _validate_version(data: dict[str, Any]):
         raise ValueError("Invalid export format: missing 'vault' or 'nodes'.")
 
 
+# In backend/services/import_service.py
+
 def _create_node_from_export(
         node_data: dict[str, Any],
         vault_id: int,
@@ -102,7 +104,8 @@ def _create_node_from_export(
         parent_id=new_parent_id,
         icon=node_data.get('icon'),
         current_version=current_version_num,
-        # AI Summaries are generally generated contextually, left out here to regen
+        ai_summary=node_data.get('ai_summary'),                           # <-- ADDED
+        summary_is_current=node_data.get('summary_is_current', False),    # <-- ADDED
     )
     db.session.add(node)
     db.session.flush()
@@ -123,7 +126,10 @@ def _create_node_from_export(
             # Parse imported timestamp, handling ISO Z format
             ts_str = v_data.get('created_at')
             if ts_str:
-                ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                # Remove Z and attach actual timezone info for python 3.10 compat, or use fromisoformat if upgraded
+                if ts_str.endswith('Z'):
+                    ts_str = ts_str[:-1] + '+00:00'
+                ts = datetime.fromisoformat(ts_str)
             else:
                 ts = datetime.now(timezone.utc)
 

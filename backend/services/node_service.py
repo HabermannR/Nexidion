@@ -392,7 +392,7 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
         node_dict['summary_is_current'] = False
 
         if specific_version.timestamp:
-            node_dict['timestamp'] = specific_version.timestamp.isoformat() + 'Z'
+            node_dict['timestamp'] = specific_version.timestamp.isoformat()
 
         if specific_version.author:
             node_dict['author_id'] = specific_version.author_id
@@ -401,7 +401,7 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
         node_dict['version'] = node.current_version
         if node.current_version_object:
             if node.current_version_object.timestamp:
-                node_dict['timestamp'] = node.current_version_object.timestamp.isoformat() + 'Z'
+                node_dict['timestamp'] = node.current_version_object.timestamp.isoformat()
             if node.current_version_object.author:
                 node_dict['author_id'] = node.current_version_object.author_id
                 node_dict['author_name'] = node.current_version_object.author.display_name
@@ -444,7 +444,7 @@ def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] |
             'node_id': row.node_id,
             'version': row.version,
             'title': row.title,
-            'timestamp': row.timestamp.isoformat() + 'Z',
+            'timestamp': row.timestamp.isoformat(),
             'author_id': row.author_id,
             'author_name': row.author_name or 'Unknown',
             'is_stub': True,

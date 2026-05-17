@@ -113,6 +113,8 @@ def _export_nodes_bfs(vault_id: int) -> list[dict[str, Any]]:
     return ordered
 
 
+# In backend/services/export_service.py
+
 def _serialise_node(node: Node) -> dict[str, Any]:
     """Convert a single Node (with all its versions) to a dict."""
     # Load versions ordered oldest-first so the importer can replay history
@@ -127,6 +129,8 @@ def _serialise_node(node: Node) -> dict[str, Any]:
         "id": node.id,
         "parent_id": node.parent_id,
         "icon": node.icon,
+        "ai_summary": node.ai_summary,                           # <-- ADDED
+        "summary_is_current": node.summary_is_current,           # <-- ADDED
         # title and content come from the current version
         "title": versions[-1].title if versions else "",
         "content": versions[-1].content if versions else "",
@@ -134,7 +138,6 @@ def _serialise_node(node: Node) -> dict[str, Any]:
         "updated_at": versions[-1].timestamp.isoformat() + "Z" if versions else None,
         "versions": [_serialise_version(v) for v in versions],
     }
-
 
 def _serialise_version(version: Version) -> dict[str, Any]:
     """Serialise a single version. Uses display_name instead of author_id."""
