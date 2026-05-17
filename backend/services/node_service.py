@@ -599,6 +599,11 @@ def create_node(
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     vault, role = get_vault_access(vault_id, author_id)
     user = db.session.get(User, author_id)
+    user = db.session.get(User, author_id)
+    if user and user.is_guest:
+        count = Node.query.filter_by(vault_id=vault_id).count()
+        if count >= 500:
+            raise ValueError("Demo accounts are limited to 500 nodes.")
     assert_write_allowed(role, user)
 
     if not title or not title.strip():

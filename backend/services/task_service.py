@@ -8,7 +8,7 @@ Sie wird von der API-Schicht (Blueprints) aufgerufen und interagiert
 direkt mit den Datenbank-Models.
 """
 
-from backend.models import db, Task
+from backend.models import db, Task, User, DemoState
 from backend.services.vault_service import _verify_vault_access
 
 # Valid status values, used for validation across create and filter operations.
@@ -20,6 +20,21 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
     Erstellt einen neuen Task für einen Vault, nachdem der Zugriff überprüft wurde.
     Wirft Fehler bei ungültigen Daten oder fehlenden Berechtigungen.
     """
+    user = db.session.get(User, user_id)
+    if user and user.is_guest:
+        if user.demo_state == DemoState.READ_ONLY:
+            task = Task(
+                vault_id=vault_id,
+                instruction=instruction,
+                context_node_ids=context_node_ids,
+                status='pending_demo',
+            )
+            db.session.add(task)
+            db.session.commit()
+            return task
+        else:
+            raise PermissionError("Demo accounts cannot submit agent tasks.")
+
     instruction_stripped = instruction.strip()
     if not instruction_stripped:
         raise ValueError("Instruction cannot be empty.")

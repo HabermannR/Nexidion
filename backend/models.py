@@ -48,13 +48,10 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=True)  # String-Länge sicherheitshalber erhöhen
     user_type = db.Column(db.SmallInteger, nullable=False, default=UserType.HUMAN)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
-
-    # Updated to Timezone Aware
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     is_guest = db.Column(db.Boolean, nullable=False, default=False, server_default=sa.text('false'))
     demo_state = db.Column(db.SmallInteger, nullable=True)
-
-    # Updated to Timezone Aware
+    demo_remap = db.Column(db.JSON, nullable=True)
     expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     guest_token = db.Column(db.String(64), nullable=True, unique=True)
 

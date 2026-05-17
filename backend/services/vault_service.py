@@ -158,9 +158,11 @@ def create_vault(name: str, owner_id: int) -> Vault:
     if not user:
         raise ValueError(f"Owner with ID {owner_id} not found.")
 
-    # +++ NEU: Check für Demo-Lock (Vaults erstellen) +++
-    if user.is_guest and user.demo_state == DemoState.READ_ONLY:
-        raise DemoLockError("Complete the demo task to unlock editing.")
+    if user.is_guest:
+        limit = 1 if user.demo_state == DemoState.READ_ONLY else 3
+        vault_count = Vault.query.filter_by(owner_id=owner_id).count()
+        if vault_count >= limit:
+            raise DemoLockError(f"Demo accounts are limited to {limit} vault(s).")
 
     if db.session.execute(
         db.select(Vault).filter_by(name=name_stripped, owner_id=owner_id)

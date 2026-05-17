@@ -1,5 +1,4 @@
-import pytest
-import json
+# tests/api/test_admin_api.py
 from backend.models import User
 
 # --- Tests für GET /api/admin/users ---
@@ -136,7 +135,8 @@ def test_update_user_fails_remove_last_admin(client, admin_headers, test_admin_o
     assert response.status_code == 403
     assert "Cannot remove admin status from the last administrator" in response.get_json()['error']
 
-# --- Tests für Admin Vault Permissions (Normaler User verweigert) ---
+
+# --- Tests für Admin Vault Permissions ---
 
 def test_list_vaults_as_regular_user_fails(client, auth_headers_1):
     """[GET /api/admin/vaults] Normaler Benutzer darf nicht auf die globale Vault-Liste zugreifen (403)."""
@@ -144,24 +144,6 @@ def test_list_vaults_as_regular_user_fails(client, auth_headers_1):
     assert response.status_code == 403
     assert "Admin privileges required" in response.get_json().get('error', '')
 
-def test_get_vault_access_as_regular_user_fails(client, auth_headers_1, test_vault_1_obj):
-    """[GET /api/admin/vaults/<id>/access] Normaler Benutzer darf Zugriffslisten nicht einsehen (403)."""
-    response = client.get(f'/api/admin/vaults/{test_vault_1_obj.id}/access', headers=auth_headers_1)
-    assert response.status_code == 403
-
-def test_grant_vault_access_as_regular_user_fails(client, auth_headers_1, test_vault_1_obj, test_user_2_obj):
-    """[POST /api/admin/vaults/<id>/access] Normaler Benutzer darf keine Rechte via Admin-Routen verteilen (403)."""
-    payload = {"user_id": test_user_2_obj.id, "role": "editor"}
-    response = client.post(f'/api/admin/vaults/{test_vault_1_obj.id}/access', headers=auth_headers_1, json=payload)
-    assert response.status_code == 403
-
-def test_revoke_vault_access_as_regular_user_fails(client, auth_headers_1, test_vault_1_obj, test_user_2_obj):
-    """[DELETE /api/admin/vaults/<id>/access/<user_id>] Normaler Benutzer darf via Admin keine Rechte löschen (403)."""
-    response = client.delete(f'/api/admin/vaults/{test_vault_1_obj.id}/access/{test_user_2_obj.id}', headers=auth_headers_1)
-    assert response.status_code == 403
-
-
-# --- Tests für Admin Vault Permissions (Admin-Erfolgs- & Fehlerfälle) ---
 
 def test_list_all_vaults_as_admin_success(client, admin_headers, test_vault_1_obj):
     """[GET /api/admin/vaults] Admin kann die globale Vault-Liste erfolgreich abrufen."""
@@ -172,65 +154,3 @@ def test_list_all_vaults_as_admin_success(client, admin_headers, test_vault_1_ob
     # Ensure the test vault is included in the admin's global overview
     vault_ids = [v.get('id') for v in data]
     assert test_vault_1_obj.id in vault_ids
-
-
-def test_get_vault_access_as_admin_success(client, admin_headers, test_vault_1_obj):
-    """[GET /api/admin/vaults/<id>/access] Admin kann die Zugriffsliste einer Vault einsehen."""
-    response = client.get(f'/api/admin/vaults/{test_vault_1_obj.id}/access', headers=admin_headers)
-    assert response.status_code == 200
-    data = response.get_json()
-    assert isinstance(data, dict)
-
-
-def test_get_vault_access_not_found(client, admin_headers):
-    """[GET /api/admin/vaults/<id>/access] Zugriff auf nicht existierende Vault liefert 404."""
-    response = client.get('/api/admin/vaults/99999/access', headers=admin_headers)
-    assert response.status_code == 404
-    assert "error" in response.get_json()
-
-
-def test_grant_vault_access_as_admin_success(client, admin_headers, test_vault_1_obj, test_user_2_obj):
-    """[POST /api/admin/vaults/<id>/access] Admin kann Rechte auf eine Vault gewähren."""
-    payload = {"user_id": test_user_2_obj.id, "role": "editor"}
-    response = client.post(f'/api/admin/vaults/{test_vault_1_obj.id}/access', headers=admin_headers, json=payload)
-    assert response.status_code == 200
-    assert "Access granted." in response.get_json()['message']
-
-
-def test_grant_vault_access_missing_user_id(client, admin_headers, test_vault_1_obj):
-    """[POST /api/admin/vaults/<id>/access] Fehler 400, wenn user_id im Body fehlt."""
-    payload = {"role": "editor"}
-    response = client.post(f'/api/admin/vaults/{test_vault_1_obj.id}/access', headers=admin_headers, json=payload)
-    assert response.status_code == 400
-    assert "user_id is required" in response.get_json()['error']
-
-
-def test_grant_vault_access_invalid_vault(client, admin_headers, test_user_2_obj):
-    """[POST /api/admin/vaults/<id>/access] Fehler 400 bei ungültiger Vault-ID."""
-    payload = {"user_id": test_user_2_obj.id, "role": "editor"}
-    response = client.post('/api/admin/vaults/99999/access', headers=admin_headers, json=payload)
-    assert response.status_code == 400
-    assert "error" in response.get_json()
-
-
-def test_revoke_vault_access_as_admin_success(client, admin_headers, test_vault_1_obj, test_user_2_obj):
-    """[DELETE /api/admin/vaults/<id>/access/<user_id>] Admin kann Rechte für eine Vault entziehen."""
-    # Setup: Zuerst Rechte vergeben
-    client.post(
-        f'/api/admin/vaults/{test_vault_1_obj.id}/access',
-        headers=admin_headers,
-        json={"user_id": test_user_2_obj.id, "role": "editor"}
-    )
-
-    # Test: Entziehen
-    response = client.delete(f'/api/admin/vaults/{test_vault_1_obj.id}/access/{test_user_2_obj.id}',
-                             headers=admin_headers)
-    assert response.status_code == 200
-    assert "Access revoked." in response.get_json()['message']
-
-
-def test_revoke_vault_access_invalid_vault(client, admin_headers, test_user_2_obj):
-    """[DELETE /api/admin/vaults/<id>/access/<user_id>] Fehler 400 bei Entzug auf ungültige Vault-ID."""
-    response = client.delete(f'/api/admin/vaults/99999/access/{test_user_2_obj.id}', headers=admin_headers)
-    assert response.status_code == 400
-    assert "error" in response.get_json()

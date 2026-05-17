@@ -1,16 +1,20 @@
 import os
 import logging
+from datetime import datetime, timezone
+
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
+from backend.extensions import limiter
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Load environment variables
 load_dotenv()
 
 from backend.config import Config
-from backend.models import db
+from backend.models import db, User, VaultAccess, Vault
 
 # Import API Blueprints
 from backend.api.auth import auth_bp
@@ -19,10 +23,10 @@ from backend.api.nodes import nodes_bp
 from backend.api.images import image_bp
 from backend.api.admin import admin_bp
 from backend.api.tasks import tasks_bp
+from backend.api.system import system_bp
 from backend.cli import register_commands
 
 migrate = Migrate()
-
 
 def create_app(config_class=Config):
     """Application Factory Pattern"""
@@ -40,8 +44,6 @@ def create_app(config_class=Config):
     else:
         print("----> Running in DEVELOPMENT mode with CORS")
 
-        # Get the IP from the .env file, as it was before.
-        # This is important so your frontend can be accessed from another device on the LAN.
         local_ip = os.getenv("LOCAL_IP", "192.168.2.59")
 
         allowed_origins = [
@@ -56,8 +58,9 @@ def create_app(config_class=Config):
 
     # Initialize extensions
     db.init_app(app)
+    limiter.init_app(app)
 
-    # --- CRITICAL FIX: Explicitly set the migrations directory ---
+    # Explicitly set the migrations directory
     backend_dir = os.path.abspath(os.path.dirname(__file__))
     migrations_dir = os.path.join(backend_dir, 'migrations')
     migrate.init_app(app, db, directory=migrations_dir)
@@ -68,15 +71,35 @@ def create_app(config_class=Config):
     app.register_blueprint(auth_bp)
     app.register_blueprint(vaults_bp)
     app.register_blueprint(nodes_bp)
-    app.register_blueprint(image_bp, url_prefix='/api/image')
+    app.register_blueprint(image_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(tasks_bp)
+    app.register_blueprint(system_bp)
 
-    # --- CLI Commands (cleaned up) ---
+    # CLI Commands
     register_commands(app)
 
-    # --- Frontend Serving (for production) ---
+    # Frontend Serving (for production)
     register_frontend_serving(app)
+
+    # Guest cleanup scheduler
+    def _cleanup_expired_guests():
+        with app.app_context():
+            expired = User.query.filter(
+                User.is_guest == True,
+                User.expires_at < datetime.now(timezone.utc)
+            ).all()
+            for user in expired:
+                for vault in Vault.query.filter_by(owner_id=user.id).all():
+                    db.session.delete(vault)
+                VaultAccess.query.filter_by(user_id=user.id).delete()
+                db.session.delete(user)
+            if expired:
+                db.session.commit()
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_cleanup_expired_guests, 'interval', hours=1)
+    scheduler.start()
 
     return app
 

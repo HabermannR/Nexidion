@@ -1,4 +1,4 @@
-# tests/api/test_api_auth.py
+# tests/api/test_auth_api.py
 
 
 def test_v2_login_success(client, test_user_1_obj):

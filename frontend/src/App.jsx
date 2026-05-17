@@ -10,7 +10,6 @@ import AppLoading from './components/AppLoading'; // Importiere die Ladekomponen
 function App() {
     return (
         <DndProvider backend={HTML5Backend}>
-            {/* HIER fügen wir das fallbackElement hinzu */}
             <RouterProvider
                 router={router}
                 fallbackElement={<AppLoading />}

@@ -14,6 +14,7 @@ replay indistinguishable from a live agent run.
 
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from runner.svc import (
@@ -29,9 +30,6 @@ from runner.svc import (
 # Captures operations during a real agent run so they can be replayed later.
 # ---------------------------------------------------------------------------
 
-import time
-
-
 class RecordingWriter:
     def __init__(self):
         self.steps = []
@@ -39,7 +37,7 @@ class RecordingWriter:
         self._pending_message: str = ""
 
     def begin_step(self, status_message: str):
-        self._step_start     = time.monotonic()
+        self._step_start      = time.monotonic()
         self._pending_message = status_message
 
     def record_operation(self, op_type: str, **kwargs):
@@ -115,7 +113,6 @@ def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> Non
         log_fn(f"  [replay] rename_node {op['node_id']} → '{op['title']}'")
 
     elif op_type == "patch_node":
-        # patch_node stores pre-computed patched content in the recording
         res = svc_update_node(vault_id, op["node_id"], agent_user_id,
                               content=op.get("content"))
         if not res["ok"]:
@@ -132,18 +129,22 @@ def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> Non
 
 
 # ---------------------------------------------------------------------------
-# _update_task_status — thin wrapper so replay.py has no direct DB import
-# ---------------------------------------------------------------------------
-# Callers pass in a callable; loop.py provides mark_task_raw bound to its conn.
-
-
-# ---------------------------------------------------------------------------
 # Main replay coroutine
 # ---------------------------------------------------------------------------
 
-async def _run_replay(task_row: dict, vault_id: int, agent_user_id: int,
-                      flask_app, db, Vault, DemoState,
-                      update_status_fn, log_fn) -> str:
+async def _run_replay(
+    task_row:         dict,
+    vault_id:         int,
+    agent_user_id:    int,
+    remap:            dict,
+    recording_path:   str,
+    flask_app,
+    db,
+    Vault,
+    DemoState,
+    update_status_fn,
+    log_fn,
+) -> str:
     """
     Execute a recorded demo task.
 
@@ -152,6 +153,9 @@ async def _run_replay(task_row: dict, vault_id: int, agent_user_id: int,
     task_row         : dict from claim_oldest_task
     vault_id         : resolved vault ID
     agent_user_id    : AGENT_USER_ID constant
+    remap            : UUID translation table — {recording_uuid: guest_vault_uuid}
+                       fetched from vault.owner.demo_remap in loop.py
+    recording_path   : path to the .nexidion recording file, from config
     flask_app        : the Flask application instance (for app context)
     db               : SQLAlchemy db object
     Vault            : Vault model class
@@ -159,25 +163,6 @@ async def _run_replay(task_row: dict, vault_id: int, agent_user_id: int,
     update_status_fn : callable(task_id, status, log=...) — wraps mark_task_raw
     log_fn           : callable(str) — the _log function from loop.py
     """
-    try:
-        meta = json.loads(task_row.get("meta") or "{}")
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"replay: task.meta is not valid JSON — {exc}") from exc
-
-    remap          = meta.get("uuid_remap")
-    recording_path = meta.get("recording_path")
-
-    if remap is None or not isinstance(remap, dict):
-        raise RuntimeError(
-            "replay: task.meta['uuid_remap'] is missing or not a dict. "
-            "Cannot replay without a UUID remap table."
-        )
-    if not recording_path:
-        raise RuntimeError(
-            "replay: task.meta['recording_path'] is missing. "
-            "Cannot replay without knowing which recording to load."
-        )
-
     try:
         recording = json.loads(Path(recording_path).read_text(encoding="utf-8"))
     except FileNotFoundError:

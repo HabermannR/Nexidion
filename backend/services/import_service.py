@@ -33,8 +33,12 @@ def import_vault(
     user = db.session.get(User, owner_id)
     if not user:
         raise ValueError(f"User {owner_id} not found.")
-    if user.is_guest and user.demo_state == DemoState.READ_ONLY:
-        raise DemoLockError("Complete the demo task to unlock importing.")
+
+    if user.is_guest:
+        limit = 1 if user.demo_state == DemoState.READ_ONLY else 3
+        vault_count = Vault.query.filter_by(owner_id=owner_id).count()
+        if vault_count >= limit:
+            raise DemoLockError(f"Demo accounts are limited to {limit} vault(s).")
 
     vault_name = vault_name_override or data['vault']['name']
     vault_name = vault_name.strip()

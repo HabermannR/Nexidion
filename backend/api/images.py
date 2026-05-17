@@ -1,9 +1,10 @@
 from flask import Blueprint, send_from_directory, jsonify, current_app
 from flask_jwt_extended import jwt_required
-import os
+
 
 # Erstelle einen neuen Blueprint. Der erste Parameter 'images' ist der Name des Blueprints.
-image_bp = Blueprint('images', __name__)
+image_bp = Blueprint('images', __name__, url_prefix='/api/image')
+
 
 # WICHTIG: Die Route hier ist nur der Teil, der NACH dem Prefix kommt,
 # den wir bei der Registrierung festlegen.

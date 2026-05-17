@@ -1,20 +1,20 @@
 # api/auth.py
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
-from backend.services import auth_service
-from datetime import timedelta
 
+from backend.extensions import limiter
+from backend.models import db, User, UserType, VaultAccess, VaultRole, DemoState
+from backend.services import auth_service
+from backend.services.import_service import import_vault
 
 auth_bp = Blueprint('auth_v2', __name__, url_prefix='/api/auth')
 
 
 @auth_bp.route('/login', methods=['POST'], strict_slashes=False)
 def login():
-    """
-    API endpoint for user login.
-    Handles HTTP request/response and uses the auth_service for logic.
-    """
     data = request.get_json(silent=True) or {}
     username = data.get('username')
     password = data.get('password')
@@ -25,9 +25,10 @@ def login():
     user = auth_service.login_user(username, password)
 
     if user:
-        identity_as_string = str(user.id)
-        expires = timedelta(hours=8)
-        access_token = create_access_token(identity=identity_as_string, expires_delta=expires)
+        access_token = create_access_token(
+            identity=str(user.id),
+            expires_delta=timedelta(hours=8),
+        )
         return jsonify(access_token=access_token, user=user.to_dict())
 
     return jsonify({"error": "Invalid credentials"}), 401
@@ -62,3 +63,45 @@ def change_user_password():
             return jsonify({"error": "Invalid old password"}), 401
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@auth_bp.route('/guest', methods=['POST'], strict_slashes=False)
+@limiter.limit("3 per hour")
+def guest_login():
+    if not current_app.config["DEMO_MODE_ENABLED"]:
+        return jsonify({"error": "Demo mode is not enabled."}), 403
+
+    agent = User.query.filter_by(user_type=UserType.LLM_ASSISTANT).first()
+    if not agent:
+        return jsonify({"error": "Agent not configured."}), 503
+
+    guest = User(
+        username     = f"guest-{uuid.uuid4().hex[:8]}",
+        display_name = "Guest",
+        user_type    = UserType.HUMAN,
+        is_guest     = True,
+        demo_state   = DemoState.READ_ONLY,
+        expires_at   = datetime.now(timezone.utc) + timedelta(hours=24),
+    )
+    db.session.add(guest)
+    db.session.flush()
+
+    vault_id, remap = import_vault(
+        path=current_app.config["DEMO_VAULT_PATH"],
+        owner_id=guest.id,
+        vault_name_override="Demo Vault",
+    )
+    guest.demo_remap = remap
+
+    db.session.add(VaultAccess(
+        vault_id=vault_id,
+        user_id=agent.id,
+        role=VaultRole.EDITOR,
+    ))
+    db.session.commit()
+
+    token = create_access_token(
+        identity=str(guest.id),
+        expires_delta=timedelta(hours=24),
+    )
+    return jsonify(access_token=token, user=guest.to_dict()), 201

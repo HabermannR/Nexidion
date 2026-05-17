@@ -147,7 +147,6 @@ def mark_task_raw(conn, task_id: str, status: str,
                 WHERE id = %s
             """, (status, summary, ops_json, now, task_id))
         elif log is not None:
-            # Intermediate status update with a progress log message
             cur.execute("""
                 UPDATE tasks
                 SET status = %s, status_log = %s
@@ -165,9 +164,9 @@ def mark_task_raw(conn, task_id: str, status: str,
 
 def _execute_task(task_row: dict, conn) -> None:
     """Run either the real LLM agent or the replay engine, depending on task status."""
-    task_id      = task_row["id"]
-    vault_id     = task_row["vault_id"]
-    orig_status  = task_row["status"]   # value before claim set it to 'processing'
+    task_id     = task_row["id"]
+    vault_id    = task_row["vault_id"]
+    orig_status = task_row["status"]   # value before claim set it to 'processing'
 
     with flask_app.app_context():
         audit = Audit(
@@ -180,24 +179,31 @@ def _execute_task(task_row: dict, conn) -> None:
 
         try:
             if orig_status == "pending_demo":
-                _log(f"Mode: REPLAY (pending_demo)")
+                _log("Mode: REPLAY (pending_demo)")
 
-                # Import lazily to avoid pulling ORM models at module load time
-                from backend.models import db, Vault, DemoState  # noqa: PLC0415
+                from backend.models import db, Vault, User, DemoState  # noqa: PLC0415
+
+                # Fetch remap from the vault owner and recording path from config
+                vault = db.session.get(Vault, vault_id)
+                owner = db.session.get(User, vault.owner_id)
+                remap          = owner.demo_remap or {}
+                recording_path = flask_app.config["DEMO_RECORDING_PATH"]
 
                 def _update_status(tid, status, log=None):
                     mark_task_raw(conn, tid, status, log=log)
 
                 summary = asyncio.run(_run_replay(
-                    task_row      = task_row,
-                    vault_id      = vault_id,
-                    agent_user_id = AGENT_USER_ID,
-                    flask_app     = flask_app,
-                    db            = db,
-                    Vault         = Vault,
-                    DemoState     = DemoState,
+                    task_row         = task_row,
+                    vault_id         = vault_id,
+                    agent_user_id    = AGENT_USER_ID,
+                    remap            = remap,
+                    recording_path   = recording_path,
+                    flask_app        = flask_app,
+                    db               = db,
+                    Vault            = Vault,
+                    DemoState        = DemoState,
                     update_status_fn = _update_status,
-                    log_fn        = _log,
+                    log_fn           = _log,
                 ))
                 mark_task_raw(conn, task_id, "completed", summary=summary,
                               operations=audit.writes)
@@ -205,20 +211,20 @@ def _execute_task(task_row: dict, conn) -> None:
                 _log(f"✅ {summary}")
 
             else:
-                _log(f"Mode: REAL LLM")
+                _log("Mode: REAL LLM")
                 summary = run_agent(
-                    task_row         = task_row,
-                    audit            = audit,
-                    agent_user_id    = AGENT_USER_ID,
-                    gpt_token        = GPT_TOKEN,
-                    gpt_model        = GPT_MODEL,
-                    local_llm_url    = LOCAL_LLM_URL,
+                    task_row          = task_row,
+                    audit             = audit,
+                    agent_user_id     = AGENT_USER_ID,
+                    gpt_token         = GPT_TOKEN,
+                    gpt_model         = GPT_MODEL,
+                    local_llm_url     = LOCAL_LLM_URL,
                     local_llm_api_key = LOCAL_LLM_API_KEY,
-                    max_loop_turns   = MAX_LOOP_TURNS,
-                    max_tool_fetches = MAX_TOOL_FETCHES,
-                    blacklist_icon   = BLACKLIST_ICON,
-                    read_lock_icon   = READ_LOCK_ICON,
-                    log_fn           = _log,
+                    max_loop_turns    = MAX_LOOP_TURNS,
+                    max_tool_fetches  = MAX_TOOL_FETCHES,
+                    blacklist_icon    = BLACKLIST_ICON,
+                    read_lock_icon    = READ_LOCK_ICON,
+                    log_fn            = _log,
                 )
                 mark_task_raw(conn, task_id, "completed", summary=summary,
                               operations=audit.writes)
