@@ -6,12 +6,12 @@ von einem Administrator ausgeführt werden, wie das Erstellen, Auflisten, Lösch
 und Verwalten von Benutzern. Sie interagiert direkt mit dem User-Model.
 """
 
-from backend.models import db, User
+from backend.models import db, User, UserType
 
 
 def get_all_users() -> list[User]:
     """Returns all human users, sorted alphabetically by username."""
-    return User.query.filter_by(user_type='human').order_by(User.username).all()
+    return User.query.filter_by(user_type=UserType.HUMAN).order_by(User.username).all()
 
 
 def get_all_users_including_llm() -> list[User]:
@@ -49,7 +49,7 @@ def create_user(username: str, password: str, display_name: str | None = None, i
         username=stripped_username,
         display_name=display_name.strip() if display_name else stripped_username,
         is_admin=bool(is_admin),
-        user_type='human',
+        user_type=UserType.HUMAN,
     )
     new_user.set_password(password)
 
@@ -109,7 +109,7 @@ def set_user_password(user_id: int, new_password: str) -> bool:
     if not new_password or len(new_password) < 8:
         raise ValueError("New password must be at least 8 characters long.")
 
-    if user.user_type != 'human':
+    if user.user_type != UserType.HUMAN:
         raise ValueError("Cannot set a password for a non-human user account.")
 
     user.set_password(new_password)

@@ -49,7 +49,7 @@ LOCAL_LLM_API_KEY = os.environ.get("LOCAL_LLM_API_KEY", "not-needed")
 POLL_INTERVAL = int(os.environ.get("NEXIDION_POLL_INTERVAL", "5"))
 AUDIT_DIR     = os.environ.get("NEXIDION_AUDIT_DIR", "./audit_logs")
 
-# The agent user — user ID 2 (default-llm), type llm_assistant.
+# The agent user — user ID 2 (default-llm), type UserType.LLM_ASSISTANT.
 # All service calls are made on behalf of this user.
 AGENT_USER_ID = 2
 

@@ -2,7 +2,7 @@
 
 import pytest
 from backend.services import task_service, vault_service
-from backend.models import Task, VaultAccess
+from backend.models import Task, VaultAccess, VaultRole
 
 
 
@@ -190,7 +190,7 @@ def test_llm_agent_task_permissions(db_session, test_user_1_obj, test_llm_agent_
     vault_denied = vault_service.create_vault("Vault-Without-LLM-Access", owner_id)
 
     # 2. LLM-Agent explizit Zugriff auf den ersten Vault geben
-    access = VaultAccess(user_id=llm_id, vault_id=vault_granted.id, role='editor')
+    access = VaultAccess(user_id=llm_id, vault_id=vault_granted.id, role=VaultRole.EDITOR.value )
     db_session.session.add(access)
     db_session.session.commit()
 

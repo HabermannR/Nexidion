@@ -3,12 +3,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from functools import wraps
 
 from backend.services import user_service, vault_service
-from backend.models import db, User
+from backend.models import db, User, VaultRole
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
-
-VALID_ROLES = {'editor', 'viewer'}
-
 
 # ---------------------------------------------------------------------------
 # Auth decorator
@@ -159,15 +156,27 @@ def grant_vault_access(vault_id):
     """[ADMIN] Grant a user access to a vault. Body: { user_id, role? }"""
     data = request.get_json(silent=True) or {}
     user_id = data.get('user_id')
-    role = data.get('role', 'editor')
+
+    # 1. Get the role, defaulting to EDITOR value
+    raw_role = data.get('role', VaultRole.EDITOR.value)
+
+    # 2. Safely translate string roles to integers if the frontend still sends strings
+    if raw_role == 'viewer':
+        role = VaultRole.VIEWER.value
+    elif raw_role == 'editor':
+        role = VaultRole.EDITOR.value
+    else:
+        role = raw_role  # fallback in case it's already an integer
 
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
 
-    if role not in VALID_ROLES:
-        return jsonify({"error": f"Invalid role. Must be one of: {', '.join(sorted(VALID_ROLES))}"}), 400
+    # 3. Validate against our IntEnum values
+    if role not in (VaultRole.VIEWER.value, VaultRole.EDITOR.value):
+        return jsonify({"error": "Invalid role. Must be 1 (viewer) or 2 (editor)."}), 400
 
     try:
+        # Pass the verified integer down to the service
         vault_service.grant_vault_access(vault_id, int(user_id), role)
         return jsonify({"message": "Access granted."}), 200
     except ValueError as e:

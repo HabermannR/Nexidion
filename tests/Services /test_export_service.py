@@ -4,7 +4,7 @@ import json
 import pytest
 from backend.services.export_service import export_vault
 from backend.services import vault_service, node_service
-from backend.models import Node
+from backend.models import Node, VaultRole
 
 
 def test_export_vault_success(db_session, test_user_1_obj):
@@ -74,7 +74,7 @@ def test_export_vault_permission_denied(db_session, test_user_1_obj, test_user_2
 
     # Vault für User 1 erstellen und User 2 als Editor hinzufügen
     vault = vault_service.create_vault(name="Owner Vault", owner_id=test_user_1_obj.id)
-    vault_service.grant_vault_access(vault.id, test_user_2_obj.id, role="editor")
+    vault_service.grant_vault_access(vault.id, test_user_2_obj.id, role=VaultRole.EDITOR.value)
 
     # Act & Assert: User 2 versucht den Vault von User 1 zu exportieren
     with pytest.raises(PermissionError, match="Only the vault owner may export this vault."):

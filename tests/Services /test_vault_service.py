@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch
 from backend.services import vault_service
-from backend.models import Vault, Node, Version, User
+from backend.models import Vault, Node, Version, User, VaultRole
 
 
 def test_create_vault_success(db_session, test_user_1_obj):
@@ -156,7 +156,7 @@ from backend.models import VaultAccess
 def test_get_vaults_for_user(db_session, test_user_1_obj, test_user_2_obj, test_vault_1_obj, test_vault_2_obj):
     """Testet, dass die Funktion eigene Vaults und Vaults mit expliziten Zugriffsrechten zurückgibt."""
     # User 1 Zugriff auf den Vault von User 2 geben
-    vault_service.grant_vault_access(test_vault_2_obj.id, test_user_1_obj.id, role="viewer")
+    vault_service.grant_vault_access(test_vault_2_obj.id, test_user_1_obj.id, role=VaultRole.VIEWER.value )
 
     vaults = vault_service.get_vaults_for_user(test_user_1_obj.id)
 
@@ -203,7 +203,7 @@ def test_get_all_vaults_missing_owner(db_session, test_vault_1_obj):
 def test_get_vault_access_list_success(db_session, test_user_1_obj, test_user_2_obj, test_vault_1_obj):
     """[Admin] Testet den erfolgreichen Abruf der Zugriffsliste eines Vaults."""
     # User 2 Zugriff geben, damit er in access_list auftaucht
-    vault_service.grant_vault_access(test_vault_1_obj.id, test_user_2_obj.id, role="viewer")
+    vault_service.grant_vault_access(test_vault_1_obj.id, test_user_2_obj.id, role=VaultRole.VIEWER.value )
 
     data = vault_service.get_vault_access_list(test_vault_1_obj.id)
 
@@ -229,18 +229,26 @@ def test_get_vault_access_list_not_found(db_session):  # <--- HIER FEHLTE DAS 'd
 # --- Tests für Admin Access Modifiers (grant_vault_access, revoke_vault_access) ---
 
 def test_grant_vault_access_success(db_session, test_user_2_obj, test_vault_1_obj):
-    """[Admin] Testet das Hinzufügen (und Updaten) von Berechtigungen."""
+    """[Admin] Testet das Hinzufügen (und Updaten von Berechtigungen."""
     # 1. Access gewähren (Insert)
-    vault_service.grant_vault_access(test_vault_1_obj.id, test_user_2_obj.id, role="viewer")
+    vault_service.grant_vault_access(
+        test_vault_1_obj.id,
+        test_user_2_obj.id,
+        role=VaultRole.VIEWER.value  # Changed from "viewer"
+    )
 
     access = VaultAccess.query.filter_by(vault_id=test_vault_1_obj.id, user_id=test_user_2_obj.id).first()
     assert access is not None
-    assert access.role == "viewer"
+    assert access.role == VaultRole.VIEWER.value  # Changed from "viewer"
 
     # 2. Access updaten (Update/Idempotenz)
-    vault_service.grant_vault_access(test_vault_1_obj.id, test_user_2_obj.id, role="editor")
+    vault_service.grant_vault_access(
+        test_vault_1_obj.id,
+        test_user_2_obj.id,
+        role=VaultRole.EDITOR.value  # Changed from "editor"
+    )
     db_session.session.refresh(access)
-    assert access.role == "editor"
+    assert access.role == VaultRole.EDITOR.value  # Changed from "editor"
 
 
 def test_grant_vault_access_fails_on_owner(test_user_1_obj, test_vault_1_obj):

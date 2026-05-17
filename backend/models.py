@@ -7,6 +7,7 @@ providing a secure and object-oriented way to interact with the data.
 """
 
 import uuid
+import enum
 from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.ext.associationproxy import association_proxy
@@ -14,10 +15,22 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects import postgresql
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
 # Create the SQLAlchemy database instance.
 # This will be initialized with the Flask app in the main application file.
 db = SQLAlchemy()
 
+class UserType(enum.IntEnum):
+    HUMAN         = 1
+    LLM_ASSISTANT = 2
+
+class VaultRole(enum.IntEnum):
+    VIEWER = 1
+    EDITOR = 2
+
+class DemoState(enum.IntEnum):
+    READ_ONLY = 1
+    UNLOCKED  = 2
 
 class User(db.Model):
     """
@@ -30,7 +43,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)  # z.B. 'richard', 'claude-3-opus'
     display_name = db.Column(db.String(120), nullable=False)  # z.B. 'Richard', 'Claude 3 Opus'
     password_hash = db.Column(db.String(256), nullable=True) # String-Länge sicherheitshalber erhöhen
-    user_type = db.Column(db.String(20), nullable=False, default='human')  # 'human' or 'llm_assistant'
+    user_type = db.Column(db.SmallInteger, nullable=False, default=UserType.HUMAN)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
@@ -44,9 +57,11 @@ class User(db.Model):
 
     def set_password(self, password):
         """Creates a password hash using werkzeug."""
-        if self.user_type == 'human':
-            # Die Methode 'pbkdf2:sha256' ist der Standard und sehr sicher.
+        # ONLY hash the password if the user is human
+        if self.user_type == UserType.HUMAN.value or self.user_type == UserType.HUMAN:
             self.password_hash = generate_password_hash(password)
+        else:
+            self.password_hash = None
 
     def check_password(self, password):
         """Checks a password against the hash using werkzeug."""
@@ -246,7 +261,7 @@ class VaultAccess(db.Model):
     __tablename__ = 'vault_access'
     user_id  = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
     vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id'), primary_key=True)
-    role     = db.Column(db.String(10), nullable=False, default='editor')
+    role     = db.Column(db.SmallInteger, nullable=False, default=VaultRole.EDITOR)
     # 'editor' is all you need for now. 'viewer' can come later if ever.
 
 class Task(db.Model):

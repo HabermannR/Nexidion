@@ -14,7 +14,7 @@ if project_root not in sys.path:
 load_dotenv(os.path.join(project_root, 'backend', '.env'))
 
 from backend.app import create_app
-from backend.models import db, User, Vault, Node, Version, Task, VaultAccess
+from backend.models import db, User, Vault, Node, Version, Task, VaultAccess, UserType, VaultRole
 from backend.config import Config
 
 
@@ -77,7 +77,7 @@ def db_session(app):
 @pytest.fixture(scope='function')
 def test_user_1_obj(db_session):
     """Standard Human User 1"""
-    user = User(username='user1', display_name='User One', user_type='human')
+    user = User(username='user1', display_name='User One', user_type=UserType.HUMAN)
     user.set_password('password123')
     db_session.session.add(user)
     db_session.session.commit()
@@ -87,7 +87,7 @@ def test_user_1_obj(db_session):
 @pytest.fixture(scope='function')
 def test_user_2_obj(db_session):
     """Standard Human User 2"""
-    user = User(username='user2', display_name='User Two', user_type='human')
+    user = User(username='user2', display_name='User Two', user_type=UserType.HUMAN)
     user.set_password('password456')
     db_session.session.add(user)
     db_session.session.commit()
@@ -97,7 +97,7 @@ def test_user_2_obj(db_session):
 @pytest.fixture(scope='function')
 def test_admin_obj(db_session):
     """Admin User"""
-    admin = User(username='admin', display_name='Admin User', user_type='human', is_admin=True)
+    admin = User(username='admin', display_name='Admin User', user_type=UserType.HUMAN, is_admin=True)
     admin.set_password('admin123')
     db_session.session.add(admin)
     db_session.session.commit()
@@ -107,14 +107,12 @@ def test_admin_obj(db_session):
 @pytest.fixture(scope="function")
 def test_llm_agent_obj(db_session):
     """The default LLM Agent account."""
-    llm_user = User(username='default-llm', display_name='LLM Assistant', user_type='llm_assistant')
+    llm_user = User(username='default-llm', display_name='LLM Assistant', user_type=UserType.LLM_ASSISTANT)
     db_session.session.add(llm_user)
     db_session.session.commit()
     return llm_user
 
-
 # --- 4. Content Fixtures (Vault, Node, Version, Task) ---
-
 @pytest.fixture(scope='function')
 def test_vault_1_obj(db_session, test_user_1_obj):
     """Erstellt einen Vault, der User 1 gehört."""
@@ -123,7 +121,7 @@ def test_vault_1_obj(db_session, test_user_1_obj):
     db_session.session.commit()
 
     # Optional: Give User 1 explicit VaultAccess
-    access = VaultAccess(user_id=test_user_1_obj.id, vault_id=vault.id, role='editor')
+    access = VaultAccess(user_id=test_user_1_obj.id, vault_id=vault.id, role=VaultRole.EDITOR)
     db_session.session.add(access)
     db_session.session.commit()
 
@@ -138,7 +136,7 @@ def test_vault_2_obj(db_session, test_user_2_obj):
     db_session.session.commit()
 
     # Explicit VaultAccess for User 2
-    access = VaultAccess(user_id=test_user_2_obj.id, vault_id=vault.id, role='editor')
+    access = VaultAccess(user_id=test_user_2_obj.id, vault_id=vault.id, role=VaultRole.EDITOR)
     db_session.session.add(access)
     db_session.session.commit()
 

@@ -18,7 +18,7 @@ import click
 load_dotenv()
 
 from backend.config import Config
-from backend.models import db, User
+from backend.models import db, User, UserType
 
 # Import API Blueprints
 from backend.api.auth import auth_bp
@@ -115,7 +115,7 @@ def register_cli_commands(app):
         # If no display name is provided, use the username
         display_name = display_name or username.capitalize()
 
-        user = User(username=username, display_name=display_name, user_type='human', is_admin=True)
+        user = User(username=username, display_name=display_name, user_type=UserType.HUMAN, is_admin=True)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -132,7 +132,8 @@ def register_cli_commands(app):
         agent = User(
             username='default-llm',
             display_name='LLM Assistant',
-            user_type='llm_assistant',
+            # Update user_type here to use the Enum
+            user_type=UserType.LLM_ASSISTANT,
             is_admin=False,
         )
         db.session.add(agent)

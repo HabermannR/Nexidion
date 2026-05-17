@@ -1,6 +1,6 @@
 # services/auth_service.py
 
-from backend.models import db, User
+from backend.models import db, User, UserType
 
 
 def login_user(username: str, password: str) -> User | None:
@@ -20,13 +20,23 @@ def login_user(username: str, password: str) -> User | None:
     if not username or not password:
         return None
 
-    # Only human users can log in.
-    user = User.query.filter_by(username=username, user_type='human').first()
+    # Query using the IntEnum's integer value
+    user = User.query.filter_by(username=username, user_type=UserType.HUMAN.value).first()
 
-    if user and user.check_password(password):
-        return user
+    if not user:
+        # Debugging: Did the user type get stored weirdly?
+        debug_user = User.query.filter_by(username=username).first()
+        if debug_user:
+            print(f"\n[DEBUG] Found '{username}' but user_type is {debug_user.user_type} (Expected: {UserType.HUMAN.value})")
+        else:
+            print(f"\n[DEBUG] User '{username}' not found in DB at all.")
+        return None
 
-    return None
+    if not user.check_password(password):
+        print(f"\n[DEBUG] Password check failed for '{username}'.")
+        return None
+
+    return user
 
 
 def get_user_by_id(user_id: int) -> User | None:

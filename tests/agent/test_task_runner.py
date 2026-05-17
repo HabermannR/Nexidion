@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 # Importiere den task_runner. Da er auf Modul-Ebene Flask initialisiert,
 # stellen wir sicher, dass dies innerhalb der Test-Umgebung sauber läuft.
 import task_runner
-from backend.models import Node, VaultAccess
+from backend.models import Node, VaultAccess, VaultRole
 
 
 # ========================================================================
@@ -19,7 +19,7 @@ def setup_agent_env(db_session, test_vault_1_obj, test_llm_agent_obj, test_node_
     1. Gibt dem LLM Agenten Zugriff auf den Test-Vault.
     2. Setzt die AGENT_USER_ID im task_runner auf die dynamische ID unseres Test-Agents.
     """
-    access = VaultAccess(user_id=test_llm_agent_obj.id, vault_id=test_vault_1_obj.id, role='editor')
+    access = VaultAccess(user_id=test_llm_agent_obj.id, vault_id=test_vault_1_obj.id, role=VaultRole.EDITOR.value)
     db_session.session.add(access)
     db_session.session.commit()
 

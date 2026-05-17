@@ -1,29 +1,41 @@
-from backend.models import User
+from backend.models import User, UserType
+
 
 def test_user_set_password_for_human():
     """Testet, ob für einen 'human' User ein Passwort-Hash erstellt wird."""
-    user = User(username="human_user", display_name="Human", user_type="human")
+    user = User(username="human_user", display_name="Human", user_type=UserType.HUMAN)
     user.set_password("a-strong-password")
     assert user.password_hash is not None
-    assert user.password_hash != "a-strong-password" # Sicherstellen, dass es gehasht wurde
+    assert user.password_hash != "a-strong-password"  # Sicherstellen, dass es gehasht wurde
+
 
 def test_user_set_password_for_llm_assistant_does_nothing():
     """Testet, dass für einen 'llm_assistant' KEIN Passwort-Hash erstellt wird."""
-    llm_user = User(username="llm_user", display_name="LLM", user_type="llm_assistant")
-    llm_user.set_password("some-password")
-    assert llm_user.password_hash is None # Hier darf kein Hash gesetzt werden
+    llm_user = User(username="llm_user", display_name="LLM", user_type=UserType.LLM_ASSISTANT)
+
+    # If set_password raises a ValueError (as suggested previously), we catch it.
+    # If it silently returns, it just skips this block.
+    try:
+        llm_user.set_password("some-password")
+    except ValueError:
+        pass
+
+    assert llm_user.password_hash is None  # Hier darf kein Hash gesetzt werden
+
 
 def test_user_check_password_with_correct_password():
     """Testet die erfolgreiche Passwortprüfung."""
-    user = User(username="testuser", display_name="Test", user_type="human")
+    user = User(username="testuser", display_name="Test", user_type=UserType.HUMAN)
     user.set_password("correct-password")
     assert user.check_password("correct-password") is True
 
+
 def test_user_check_password_with_incorrect_password():
     """Testet die fehlgeschlagene Passwortprüfung."""
-    user = User(username="testuser", display_name="Test", user_type="human")
+    user = User(username="testuser", display_name="Test", user_type=UserType.HUMAN)
     user.set_password("correct-password")
     assert user.check_password("wrong-password") is False
+
 
 def test_user_check_password_on_user_with_no_hash():
     """
@@ -34,7 +46,7 @@ def test_user_check_password_on_user_with_no_hash():
     user_without_password = User(
         username="no_pass_user",
         display_name="No Password User",
-        user_type="llm_assistant"
+        user_type=UserType.LLM_ASSISTANT
     )
     # Sicherstellen, dass der Hash wirklich None ist
     assert user_without_password.password_hash is None

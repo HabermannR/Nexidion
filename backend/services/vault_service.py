@@ -12,7 +12,7 @@ Enthält:
 import hashlib
 import json
 
-from backend.models import db, Vault, VaultAccess, User, Node, Version
+from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +304,7 @@ def get_vault_access_list(vault_id: int) -> dict:
     }
 
 
-def grant_vault_access(vault_id: int, user_id: int, role: str = "editor") -> None:
+def grant_vault_access(vault_id: int, user_id: int, role: int = VaultRole.EDITOR.value) -> None:
     """[Admin] Idempotent upsert. Raises if target is the vault owner."""
     vault = db.session.get(Vault, vault_id)
     if not vault:

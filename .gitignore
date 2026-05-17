@@ -43,6 +43,7 @@ frontend/yarn-error.log*
 # Local environment variables
 .env
 .env.*
+backend/.flaskenv
 !.env.example
 
 # Local databases and instance folder

@@ -1,9 +1,10 @@
 # tests/test_models.py
+from backend.models import UserType
 
 def test_user_creation(test_user_1_obj):
     """Testet, ob die User-Fixture korrekt in die DB geschrieben wird."""
     assert test_user_1_obj.username == 'user1'
-    assert test_user_1_obj.user_type == 'human'
+    assert test_user_1_obj.user_type == UserType.HUMAN
     assert test_user_1_obj.check_password('password123') is True
 
 def test_vault_creation(test_vault_1_obj):
