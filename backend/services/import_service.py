@@ -40,6 +40,15 @@ def import_vault(
         if vault_count >= limit:
             raise DemoLockError(f"Demo accounts are limited to {limit} vault(s).")
 
+        # Also enforce the per-vault node limit so a large import file cannot
+        # bypass the 100-node cap that create_node enforces for guest accounts.
+        incoming_node_count = len(data.get('nodes', []))
+        if incoming_node_count > 100:
+            raise DemoLockError(
+                f"Demo accounts are limited to 100 nodes per vault "
+                f"({incoming_node_count} nodes in import file)."
+            )
+
     vault_name = vault_name_override or data['vault']['name']
     vault_name = vault_name.strip()
 

@@ -11,6 +11,7 @@ loop.py so there is exactly one definition of each.
 
 import json
 import time
+from functools import partial
 
 import httpx
 from openai import OpenAI
@@ -325,41 +326,20 @@ def run_agent(task_row: dict, audit,
         context_node_ids = json.loads(context_node_ids)
 
     # ------------------------------------------------------------------
-    # Convenience closures — bind agent_user_id so call sites are clean
+    # Convenience partials — bind agent_user_id so call sites are clean
     # ------------------------------------------------------------------
-    def _svc_get_tree(vid):
-        return svc_get_tree(vid, agent_user_id, log_fn)
+    _svc_get_tree         = partial(svc_get_tree,         agent_user_id=agent_user_id, log_fn=log_fn)
+    _svc_get_node         = partial(svc_get_node,         agent_user_id=agent_user_id)
+    _svc_get_node_summary = partial(svc_get_node_summary, agent_user_id=agent_user_id)
+    _svc_search           = partial(svc_search,           agent_user_id=agent_user_id)
+    _svc_update_node      = partial(svc_update_node,      agent_user_id=agent_user_id)
+    _svc_update_summary   = partial(svc_update_summary,   agent_user_id=agent_user_id)
+    _svc_move_node        = partial(svc_move_node,        agent_user_id=agent_user_id)
+    _svc_create_node      = partial(svc_create_node,      agent_user_id=agent_user_id)
 
-    def _svc_get_node(vid, nid):
-        return svc_get_node(vid, nid, agent_user_id)
-
-    def _svc_get_node_summary(vid, nid):
-        return svc_get_node_summary(vid, nid, agent_user_id)
-
-    def _svc_search(vid, query, limit=15):
-        return svc_search(vid, query, agent_user_id, limit)
-
-    def _svc_update_node(vid, nid, **kw):
-        return svc_update_node(vid, nid, agent_user_id, **kw)
-
-    def _svc_update_summary(vid, nid, summary):
-        return svc_update_summary(vid, nid, agent_user_id, summary)
-
-    def _svc_move_node(vid, nid, new_parent):
-        return svc_move_node(vid, nid, new_parent, agent_user_id)
-
-    def _svc_create_node(vid, title, parent_id, content, ai_summary):
-        return svc_create_node(vid, title, parent_id, agent_user_id, content, ai_summary)
-
-    def _is_read_locked(vid, nid):
-        return is_read_locked(_svc_get_node, read_lock_icon, vid, nid)
-
-    def _is_blacklisted(vid, nid):
-        return is_blacklisted(_svc_get_node, blacklist_icon, read_lock_icon, vid, nid)
-
-    def _get_subtree_summary(vid, nid):
-        return get_subtree_summary(_svc_get_node_summary, _svc_get_tree,
-                                   read_lock_icon, vid, nid)
+    _is_read_locked     = partial(is_read_locked,     _svc_get_node, read_lock_icon)
+    _is_blacklisted     = partial(is_blacklisted,     _svc_get_node, blacklist_icon, read_lock_icon)
+    _get_subtree_summary = partial(get_subtree_summary, _svc_get_node_summary, _svc_get_tree, read_lock_icon)
 
     # ------------------------------------------------------------------
     # Build context for system prompt
@@ -396,13 +376,13 @@ def run_agent(task_row: dict, audit,
     # ------------------------------------------------------------------
     # OpenAI client
     # ------------------------------------------------------------------
+    # TLS verification is disabled only when targeting a local LLM endpoint
+    # (LM Studio, Ollama, etc.) which typically use self-signed or no TLS.
+    # When calling the real OpenAI API, full certificate verification is kept.
+    tls_verify = not bool(local_llm_url)
     client_kwargs = {
         "api_key": gpt_token if gpt_token else local_llm_api_key,
-        "http_client": httpx.Client(
-            # verify=False is intentional: local LLM endpoints (LM Studio, Ollama)
-            # use self-signed or no TLS; certificate verification would always fail.
-            verify=False
-        ),
+        "http_client": httpx.Client(verify=tls_verify),
     }
     if local_llm_url:
         client_kwargs["base_url"] = local_llm_url
@@ -514,7 +494,7 @@ def run_agent(task_row: dict, audit,
             # ── search_nodes ─────────────────────────────────────────────
             elif name == "search_nodes":
                 limit  = min(int(args.get("limit", 10)), 20)
-                result = _svc_search(vault_id, args.get("query", ""), limit)
+                result = _svc_search(vault_id, args.get("query", ""), limit=limit)
                 _append(input_list, item.call_id, _fmt(result))
                 audit.record_tool(name, args, "ok",
                                   f"Found {result.get('count', 0)} results")
@@ -552,7 +532,7 @@ def run_agent(task_row: dict, audit,
                     continue
 
                 if _is_blacklisted(vault_id, node_id):
-                    res2 = _svc_update_summary(vault_id, node_id, ai_summary)
+                    res2 = _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
                     if not res2["ok"]:
                         _append(input_list, item.call_id,
                                 f"Error writing summary to protected node: {res2['error']}")
@@ -571,7 +551,7 @@ def run_agent(task_row: dict, audit,
                     audit.record_tool(name, args, "error", res["error"])
                     continue
 
-                res2 = _svc_update_summary(vault_id, node_id, ai_summary)
+                res2 = _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
                 if not res2["ok"]:
                     _append(input_list, item.call_id,
                             f"Content written but summary failed: {res2['error']}")
@@ -600,7 +580,7 @@ def run_agent(task_row: dict, audit,
                                     f"Content protected, and summary validation error: {err}")
                             audit.record_tool(name, args, "error", err)
                             continue
-                        res2 = _svc_update_summary(vault_id, node_id, ai_summary)
+                        res2 = _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
                         if not res2["ok"]:
                             _append(input_list, item.call_id,
                                     f"Error writing summary to protected node: {res2['error']}")
@@ -651,7 +631,7 @@ def run_agent(task_row: dict, audit,
                                 f"Content patched but summary invalid: {err}")
                         audit.record_tool(name, args, "error", err)
                         continue
-                    _svc_update_summary(vault_id, node_id, ai_summary)
+                    _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
 
                 log_fn(f"  ✅ patch_node: {node_id} ({len(patches)} patch(es))")
                 msg = f"Node {node_id} patched ({len(patches)} patch(es))."
@@ -696,7 +676,7 @@ def run_agent(task_row: dict, audit,
                     audit.record_tool(name, args, "error", err)
                     continue
 
-                res = _svc_create_node(vault_id, title, parent_id, content, ai_summary)
+                res = _svc_create_node(vault_id, title, parent_id, content=content, ai_summary=ai_summary)
                 if res["ok"]:
                     new_id = res["node"].get("id", "unknown")
                     log_fn(f"  ✅ create_node: '{title}' ({new_id})")
@@ -711,7 +691,13 @@ def run_agent(task_row: dict, audit,
 
             # ── finish ───────────────────────────────────────────────────
             elif name == "finish":
-                finish_summary = args.get("summary", "Task completed.")
+                raw_summary = args.get("summary", "").strip()
+                if not raw_summary:
+                    msg = "Validation error: finish() requires a non-empty 'summary'."
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "error", msg)
+                    continue
+                finish_summary = raw_summary
                 log_fn(f"  ✅ finish: {finish_summary}")
                 _append(input_list, item.call_id, "Acknowledged.")
                 audit.record_tool(name, args, "ok", finish_summary)

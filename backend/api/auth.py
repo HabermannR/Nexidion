@@ -14,6 +14,7 @@ auth_bp = Blueprint('auth_v2', __name__, url_prefix='/api/auth')
 
 
 @auth_bp.route('/login', methods=['POST'], strict_slashes=False)
+@limiter.limit("20 per minute; 100 per hour")
 def login():
     data = request.get_json(silent=True) or {}
     username = data.get('username')
@@ -46,6 +47,7 @@ def get_current_user_profile():
 
 @auth_bp.route('/change-password', methods=['POST'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("10 per hour")
 def change_user_password():
     current_user_id = int(get_jwt_identity())
     data = request.get_json(silent=True) or {}

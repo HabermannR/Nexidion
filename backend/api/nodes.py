@@ -5,6 +5,7 @@ import json
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
+from backend.extensions import limiter
 # Import the services and the new exceptions +++
 from backend.services import node_service
 from backend.exceptions import DemoLockError, InsufficientVaultRoleError
@@ -121,6 +122,7 @@ def search_nodes_by_title(vault_id: int):
 
 @nodes_bp.route('/full-search', methods=['GET'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("60 per minute")
 def full_text_search(vault_id: int):
     """
     Full-text search specifically for LLM agents.
@@ -280,6 +282,7 @@ def get_single_version_route(vault_id: int, node_id: str, version_id: int):
 
 @nodes_bp.route('/', methods=['POST'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("60 per minute; 500 per hour")
 def create_node(vault_id: int):
     user_id = int(get_jwt_identity())
     data = request.json
@@ -310,6 +313,7 @@ def create_node(vault_id: int):
 
 @nodes_bp.route('/<string:node_id>', methods=['PUT'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("60 per minute; 500 per hour")
 def update_node(vault_id: int, node_id: str):
     """
     Updates a node (title and/or content) and ALWAYS creates a new version.
@@ -381,6 +385,7 @@ def set_node_icon_route(vault_id: int, node_id: str):
 
 @nodes_bp.route('/<string:node_id>', methods=['DELETE'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("30 per minute; 200 per hour")
 def delete_node(vault_id: int, node_id: str):
     user_id = int(get_jwt_identity())
     try:

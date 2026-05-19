@@ -33,7 +33,7 @@ import psycopg2
 import psycopg2.extras
 
 from backend.app import create_app
-from backend.models import User, UserType
+from backend.models import db, User, UserType
 from runner.audit import Audit
 from runner.agent import run_agent
 from runner.replay import _run_replay
@@ -246,7 +246,7 @@ def run_loop():
     _log("=" * 60)
     _log("Nexidion Task Runner")
     with flask_app.app_context():
-        agent = User.query.get(AGENT_USER_ID)
+        agent = db.session.get(User, AGENT_USER_ID)
         _log(f"Agent user ID : {AGENT_USER_ID} ({agent.username})")
     _log(f"Poll interval : {POLL_INTERVAL}s")
     _log("Vault ID      : read from each task")

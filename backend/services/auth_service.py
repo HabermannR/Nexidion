@@ -1,6 +1,10 @@
 # services/auth_service.py
 
+import logging
+
 from backend.models import db, User, UserType
+
+logger = logging.getLogger(__name__)
 
 
 def login_user(username: str, password: str) -> User | None:
@@ -24,16 +28,11 @@ def login_user(username: str, password: str) -> User | None:
     user = User.query.filter_by(username=username, user_type=UserType.HUMAN.value).first()
 
     if not user:
-        # Debugging: Did the user type get stored weirdly?
-        debug_user = User.query.filter_by(username=username).first()
-        if debug_user:
-            print(f"\n[DEBUG] Found '{username}' but user_type is {debug_user.user_type} (Expected: {UserType.HUMAN.value})")
-        else:
-            print(f"\n[DEBUG] User '{username}' not found in DB at all.")
+        logger.debug("Login failed for '%s': user not found or wrong type.", username)
         return None
 
     if not user.check_password(password):
-        print(f"\n[DEBUG] Password check failed for '{username}'.")
+        logger.debug("Login failed for '%s': incorrect password.", username)
         return None
 
     return user

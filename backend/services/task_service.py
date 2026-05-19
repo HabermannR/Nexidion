@@ -20,12 +20,22 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
     Erstellt einen neuen Task für einen Vault, nachdem der Zugriff überprüft wurde.
     Wirft Fehler bei ungültigen Daten oder fehlenden Berechtigungen.
     """
+    # Validate inputs before anything else, regardless of user type.
+    instruction_stripped = instruction.strip() if isinstance(instruction, str) else ""
+    if not instruction_stripped:
+        raise ValueError("Instruction cannot be empty.")
+    if not isinstance(context_node_ids, list):
+        raise ValueError("context_node_ids must be a list.")
+
+    # Always verify vault access — demo guests must own the vault they target.
+    _verify_vault_access(vault_id, user_id)
+
     user = db.session.get(User, user_id)
     if user and user.is_guest:
         if user.demo_state == DemoState.READ_ONLY:
             task = Task(
                 vault_id=vault_id,
-                instruction=instruction,
+                instruction=instruction_stripped,
                 context_node_ids=context_node_ids,
                 status='pending_demo',
             )
@@ -34,15 +44,6 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
             return task
         else:
             raise PermissionError("Demo accounts cannot submit agent tasks.")
-
-    instruction_stripped = instruction.strip()
-    if not instruction_stripped:
-        raise ValueError("Instruction cannot be empty.")
-    if not isinstance(context_node_ids, list):
-        raise ValueError("context_node_ids must be a list.")
-
-    # Zugriff auf den Vault prüfen – wirft ValueError oder PermissionError
-    _verify_vault_access(vault_id, user_id)
 
     try:
         task = Task(

@@ -31,6 +31,7 @@ class TestConfig(Config):
     WTF_CSRF_ENABLED = False
     JWT_SECRET_KEY = 'my-super-secret-test-key-string-32'
     RATELIMIT_STORAGE_URI = "memory://"
+    RATELIMIT_ENABLED = False
 
     # Verwende timedelta für höhere Kompatibilität mit neueren flask-jwt-extended Versionen
     JWT_LEEWAY = timedelta(seconds=60)

@@ -2,6 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from backend.extensions import limiter
 from backend.services import task_service
 
 tasks_bp = Blueprint('tasks', __name__, url_prefix='/api/tasks')
@@ -86,6 +87,7 @@ def get_task(task_id):
 
 @tasks_bp.route('', methods=['POST'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("10 per minute; 50 per hour")
 def create_task():
     """
     Erstellt einen neuen Task.

@@ -4,6 +4,7 @@ from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from functools import wraps
 
+from backend.extensions import limiter
 from backend.models import db, User, Vault, VaultRole
 from backend.services import vault_service
 from backend.services.export_service import export_vault
@@ -101,6 +102,7 @@ def export_vault_endpoint(vault_id):
 
 @vaults_bp.route('/import', methods=['POST'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("10 per hour")
 def import_vault_endpoint():
     current_user_id = int(get_jwt_identity())
     if 'file' not in request.files:
@@ -139,6 +141,7 @@ def import_vault_endpoint():
 
 @vaults_bp.route('/', methods=['POST'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("20 per hour")
 def create_vault():
     current_user_id = int(get_jwt_identity())
     vault_name = request.json.get('name')
@@ -177,6 +180,7 @@ def rename_vault(vault_id):
 
 @vaults_bp.route('/<int:vault_id>', methods=['DELETE'], strict_slashes=False)
 @jwt_required()
+@limiter.limit("10 per hour")
 def delete_vault(vault_id):
     current_user_id = int(get_jwt_identity())
     try:
