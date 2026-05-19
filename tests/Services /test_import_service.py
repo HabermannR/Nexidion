@@ -155,12 +155,15 @@ def test_import_vault_name_collision(db_session, test_user_1_obj, valid_export_d
 
 
 def test_import_vault_demo_lock(db_session, test_user_1_obj, valid_export_data):
-    """Tests that guest users in READ_ONLY demo state cannot import vaults."""
+    """Tests that guest users in READ_ONLY demo state cannot import multiple vaults."""
     # Arrange: Set user to locked guest
     test_user_1_obj.is_guest = True
     test_user_1_obj.demo_state = DemoState.READ_ONLY
     db.session.commit()
 
-    # Act & Assert
-    with pytest.raises(DemoLockError, match="Complete the demo task to unlock importing"):
+    # The first import should succeed (automatic demo setup)
+    import_vault(valid_export_data, test_user_1_obj.id)
+
+    # Act & Assert: Everything after the first vault should be forbidden
+    with pytest.raises(DemoLockError, match=r"Demo accounts are limited to 1 vault\(s\)\."):
         import_vault(valid_export_data, test_user_1_obj.id)

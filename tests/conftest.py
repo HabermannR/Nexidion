@@ -23,13 +23,14 @@ os.environ["DB_NAME"] = "nexidion_test"
 from backend.app import create_app
 from backend.models import db, User, Vault, Node, Version, Task, VaultAccess, UserType, VaultRole
 from backend.config import Config
-
+Config.RATELIMIT_STORAGE_URI = "memory://"
 
 # --- 1. Konfiguration für die Testumgebung ---
 class TestConfig(Config):
     TESTING = True
     WTF_CSRF_ENABLED = False
     JWT_SECRET_KEY = 'my-super-secret-test-key-string-32'
+    RATELIMIT_STORAGE_URI = "memory://"
 
     # Verwende timedelta für höhere Kompatibilität mit neueren flask-jwt-extended Versionen
     JWT_LEEWAY = timedelta(seconds=60)

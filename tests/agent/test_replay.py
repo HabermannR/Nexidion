@@ -1,3 +1,5 @@
+# tests/runner/test_replay.py
+
 """
 tests/runner/test_replay.py
 ============================
@@ -165,14 +167,12 @@ class TestRunReplay:
             patch("runner.replay.svc_update_summary",
                   return_value={"ok": True}),
         ):
-            task_row["meta"] = json.dumps({
-                "uuid_remap":     {"demo-parent": "live-parent", "demo-child": "live-child"},
-                "recording_path": recording_path,
-            })
             return asyncio.run(_run_replay(
                 task_row         = task_row,
                 vault_id         = task_row["vault_id"],
                 agent_user_id    = 99,
+                remap            = {"demo-parent": "live-parent", "demo-child": "live-child"},
+                recording_path   = recording_path,
                 flask_app        = mocks["flask_app"],
                 db               = mocks["db"],
                 Vault            = mocks["Vault"],
@@ -218,12 +218,10 @@ class TestRunReplay:
             patch("runner.replay.svc_update_summary",
                   return_value={"ok": True}),
         ):
-            task["meta"] = json.dumps({
-                "uuid_remap":     {"demo-parent": "live-parent", "demo-child": "live-child"},
-                "recording_path": recording_file,
-            })
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
+                remap={"demo-parent": "live-parent", "demo-child": "live-child"},
+                recording_path=recording_file,
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
@@ -257,12 +255,10 @@ class TestRunReplay:
             patch("runner.replay.svc_update_node", return_value={"ok": True}),
             patch("runner.replay.svc_update_summary", return_value={"ok": True}),
         ):
-            task["meta"] = json.dumps({
-                "uuid_remap":     {"demo-parent": "live-parent", "demo-child": "live-child"},
-                "recording_path": recording_file,
-            })
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=7,
+                remap={"demo-parent": "live-parent", "demo-child": "live-child"},
+                recording_path=recording_file,
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
@@ -288,10 +284,7 @@ class TestRunReplay:
         p = tmp_path / "write_rec.json"
         p.write_text(json.dumps(recording))
 
-        task  = _make_task(meta={
-            "uuid_remap":     {"demo-node": "live-node"},
-            "recording_path": str(p),
-        })
+        task  = _make_task()
         mocks = _build_replay_mocks(str(p))
 
         with (
@@ -301,6 +294,8 @@ class TestRunReplay:
         ):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
+                remap={"demo-node": "live-node"},
+                recording_path=str(p),
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
@@ -354,31 +349,13 @@ class TestRunReplay:
     # 7. Corrupted remap table → clear error
     def test_missing_remap_raises(self, recording_file):
         from runner.replay import _run_replay
-        task = _make_task(meta={
-            # remap key missing entirely
-            "recording_path": recording_file,
-        })
+        task = _make_task()
         mocks = _build_replay_mocks(recording_file)
 
-        with pytest.raises(RuntimeError, match="uuid_remap"):
+        with pytest.raises(RuntimeError, match="UUID remap failed"):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
-                flask_app=mocks["flask_app"], db=mocks["db"],
-                Vault=mocks["Vault"], DemoState=mocks["DemoState"],
-                update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
-            ))
-
-    def test_missing_recording_path_raises(self, recording_file):
-        from runner.replay import _run_replay
-        task = _make_task(meta={
-            "uuid_remap": {"a": "b"},
-            # recording_path key missing
-        })
-        mocks = _build_replay_mocks(recording_file)
-
-        with pytest.raises(RuntimeError, match="recording_path"):
-            asyncio.run(_run_replay(
-                task_row=task, vault_id=42, agent_user_id=99,
+                remap=None, recording_path=recording_file,
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
@@ -386,29 +363,29 @@ class TestRunReplay:
 
     def test_nonexistent_recording_file_raises(self):
         from runner.replay import _run_replay
-        task = _make_task(meta={
-            "uuid_remap":     {"a": "b"},
-            "recording_path": "/nonexistent/path/recording.json",
-        })
+        task = _make_task()
         mocks = _build_replay_mocks("/nonexistent/path/recording.json")
 
         with pytest.raises(RuntimeError, match="recording not found"):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
+                remap={"a": "b"}, recording_path="/nonexistent/path/recording.json",
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
             ))
 
-    def test_invalid_meta_json_raises(self, recording_file):
+    def test_invalid_recording_json_raises(self, tmp_path):
         from runner.replay import _run_replay
         task        = _make_task()
-        task["meta"] = "not-valid-json{"
-        mocks       = _build_replay_mocks(recording_file)
+        p = tmp_path / "bad.json"
+        p.write_text("not-valid-json{")
+        mocks       = _build_replay_mocks(str(p))
 
         with pytest.raises(RuntimeError, match="not valid JSON"):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
+                remap={}, recording_path=str(p),
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
@@ -423,12 +400,13 @@ class TestRunReplay:
         p = tmp_path / "bad_op.json"
         p.write_text(json.dumps(recording))
 
-        task  = _make_task(meta={"uuid_remap": {}, "recording_path": str(p)})
+        task  = _make_task()
         mocks = _build_replay_mocks(str(p))
 
         with pytest.raises(RuntimeError, match="unknown operation type"):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
+                remap={}, recording_path=str(p),
                 flask_app=mocks["flask_app"], db=mocks["db"],
                 Vault=mocks["Vault"], DemoState=mocks["DemoState"],
                 update_status_fn=mocks["update_status_fn"], log_fn=mocks["log_fn"],
