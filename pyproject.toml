@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexidion-backend"
 version = "4.1.1"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 description = "The backend service for the Nexidion project."
 dependencies = [
     # Web Framework & Extensions
@@ -31,6 +31,8 @@ dependencies = [
     "Pillow",
     "apscheduler>=3.11.2",
     "flask-limiter>=3.8.0",
+    "pymupdf>=1.24.11",
+    "pymupdf4llm==1.27.2.3",
 ]
 
 # ==========================================================

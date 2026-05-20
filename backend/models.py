@@ -78,11 +78,17 @@ class User(db.Model):
         return False
 
     def to_dict(self):
+        # Translate IntEnum to string safely
+        try:
+            type_str = UserType(self.user_type).name.lower()
+        except ValueError:
+            type_str = "human" # Fallback
+
         return {
             'id': self.id,
             'username': self.username,
             'display_name': self.display_name,
-            'user_type': self.user_type,
+            'user_type': type_str,
             'is_admin': self.is_admin,
             'is_guest': self.is_guest,
             'demo_state': self.demo_state

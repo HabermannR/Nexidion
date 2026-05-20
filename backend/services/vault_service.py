@@ -13,7 +13,7 @@ import hashlib
 import json
 
 from backend.exceptions import InsufficientVaultRoleError, DemoLockError
-from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version, DemoState
+from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version, DemoState, UserType
 
 
 # ---------------------------------------------------------------------------
@@ -289,25 +289,42 @@ def get_vault_access_list(vault_id: int) -> dict:
     for row in access_rows:
         u = db.session.get(User, row.user_id)
         if u:
+            # --- TRANSLATE ENUMS TO STRINGS ---
+            try:
+                role_str = VaultRole(row.role).name.lower()
+            except ValueError:
+                role_str = "unknown"
+
+            try:
+                type_str = UserType(u.user_type).name.lower()
+            except ValueError:
+                type_str = "human"
+
             access_list.append({
                 "user_id": u.id,
                 "username": u.username,
                 "display_name": u.display_name,
-                "user_type": u.user_type,
-                "role": row.role,
+                "user_type": type_str,
+                "role": role_str,
             })
 
     excluded_ids = access_user_ids | {vault.owner_id}
     all_users = User.query.filter(User.id.notin_(excluded_ids)).order_by(User.display_name).all()
-    available_users = [
-        {
+
+    available_users = []
+    for u in all_users:
+        # --- TRANSLATE ENUMS TO STRINGS FOR DROPDOWN ---
+        try:
+            type_str = UserType(u.user_type).name.lower()
+        except ValueError:
+            type_str = "human"
+
+        available_users.append({
             "user_id": u.id,
             "username": u.username,
             "display_name": u.display_name,
-            "user_type": u.user_type,
-        }
-        for u in all_users
-    ]
+            "user_type": type_str,
+        })
 
     return {
         "vault": {
