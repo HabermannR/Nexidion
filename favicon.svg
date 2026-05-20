@@ -1,0 +1,67 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Filter für das leuchtende Zentrum -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Globaler Filter für den sanften, fließenden "AI" Look (DeepMind/Gemini Stil) -->
+    <filter id="smoothGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Gradients inspiriert vom Google Gemini / DeepMind Logo -->
+    <!-- Zentrum: Dein Orange, aufgewertet zu einem strahlenden, warmen Licht -->
+    <linearGradient id="centerOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD600" /> <!-- Leuchtendes Gelb -->
+      <stop offset="50%" stop-color="#FF6D00" /> <!-- Dein starkes Orange -->
+      <stop offset="100%" stop-color="#D50000" /> <!-- Tiefes Rot -->
+    </linearGradient>
+
+    <!-- Oben & Links: Das Google Grün, das weich in Blau übergeht -->
+    <linearGradient id="gradTop" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#00C853" />
+      <stop offset="100%" stop-color="#2962FF" />
+    </linearGradient>
+    <linearGradient id="gradLeft" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#00C853" />
+      <stop offset="100%" stop-color="#2962FF" />
+    </linearGradient>
+
+    <!-- Unten & Rechts: Ein sattes Lila, das ebenfalls in das Blau übergeht (erinnert an dein altes Design) -->
+    <linearGradient id="gradRight" x1="100%" y1="50%" x2="0%" y2="50%">
+      <stop offset="0%" stop-color="#AA00FF" />
+      <stop offset="100%" stop-color="#2962FF" />
+    </linearGradient>
+    <linearGradient id="gradBottom" x1="50%" y1="100%" x2="50%" y2="0%">
+      <stop offset="0%" stop-color="#AA00FF" />
+      <stop offset="100%" stop-color="#2962FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Gruppe für das gesamte Logo mit den sanften Außenkanten -->
+  <g transform="translate(0, 5)" filter="url(#smoothGlow)">
+    <!-- Die Gaben, etwas größer und näher am Zentrum platziert für weiche Überschneidungen -->
+    
+    <!-- Oben: Sensibilität -->
+    <circle cx="50" cy="27" r="13" fill="url(#gradTop)" opacity="0.85" /> 
+    <!-- Links: Würde -->
+    <circle cx="32" cy="45" r="13" fill="url(#gradLeft)" opacity="0.85" /> 
+    
+    <!-- Rechts: Verbundenheit -->
+    <circle cx="68" cy="45" r="13" fill="url(#gradRight)" opacity="0.85" /> 
+    <!-- Unten: Intuition -->
+    <circle cx="50" cy="63" r="13" fill="url(#gradBottom)" opacity="0.85" /> 
+
+    <!-- Das leuchtende Selbst im Zentrum (sitzt leicht transparent über den anderen) -->
+    <circle cx="50" cy="45" r="16" fill="url(#centerOrange)" filter="url(#glow)" opacity="0.95" />
+  </g>
+</svg>

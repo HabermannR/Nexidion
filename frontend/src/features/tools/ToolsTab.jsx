@@ -1,13 +1,14 @@
 // src/features/workspace/ToolsTab.jsx
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { Button, Alert, Form } from 'react-bootstrap';
+import { Button, Form } from 'react-bootstrap';
 import { useParams } from 'react-router-dom';
 
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { copyContextContent } from '../../lib/clipboardService.js';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
+import { useToast } from '../../components/ToastProvider.jsx';
 
 // Import our helper functions
 import { getIdsInOrder, generateTocForSelectedNodes } from '../nodes/node.utils.js';
@@ -18,27 +19,21 @@ import '../agent/AgentTab.css';
 
 export default function ToolsTab() {
     const { vaultId } = useParams();
+    const toast = useToast();
 
-    const [copyContentStatus, setCopyContentStatus] = useState('idle'); // idle | copying | success | error
-    const [copyContentError, setCopyContentError] = useState(null);
-
+    const [copyContentStatus, setCopyContentStatus] = useState('idle'); // idle | copying | success
     const [copyTreeStatus, setCopyTreeStatus] = useState('idle');
-    const [copyTreeError, setCopyTreeError] = useState(null);
-
-    const [printStatus, setPrintStatus] = useState('idle'); // idle | preparing | preparing_all | error
-    const [printError, setPrintError] = useState(null);
-
-    const [exportStatus, setExportStatus] = useState('idle'); // idle | exporting | success | error
-    const [exportError, setExportError] = useState(null);
-
-    const [importStatus, setImportStatus] = useState('idle'); // idle | importing | success | error
-    const [importError, setImportError] = useState(null);
+    const [printStatus, setPrintStatus] = useState('idle'); // idle | preparing | preparing_all
+    const [exportStatus, setExportStatus] = useState('idle'); // idle | exporting | success
+    const [importStatus, setImportStatus] = useState('idle'); // idle | importing | success
+    const [ingestStatus, setIngestStatus] = useState('idle'); // idle | ingesting
 
     // Toggles for Copy Tree
     const [includeUuid, setIncludeUuid] = useState(true);
     const [includeSummary, setIncludeSummary] = useState(false);
 
     const fileInputRef = useRef(null);
+    const pdfInputRef = useRef(null); // Dedicated ref for PDF Ingestion
 
     const { data } = useVaultTreeQuery(vaultId);
     const treeData = data?.tree || [];
@@ -59,9 +54,13 @@ export default function ToolsTab() {
             .sort((a, b) => a.title.localeCompare(b.title));
     }, [selectedNodeIds, allNodesFlat]);
 
+    // Calculate Ingestion Target Logic
+    const isIngestAllowed = selectedNodes.length <= 1;
+    const ingestTargetId = selectedNodes.length === 1 ? selectedNodes[0].id : '';
+    const ingestTargetTitle = selectedNodes.length === 1 ? selectedNodes[0].title : 'Vault Root';
+
     const handleCopyContent = useCallback(async () => {
         setCopyContentStatus('copying');
-        setCopyContentError(null);
 
         const getContextContentForApi = async () => {
             const ids = Array.from(selectedNodeIds);
@@ -79,28 +78,23 @@ export default function ToolsTab() {
             setCopyContentStatus('success');
             setTimeout(() => setCopyContentStatus('idle'), 2000);
         } catch (error) {
-            setCopyContentError(error.message);
-            setCopyContentStatus('error');
+            toast.error(`Copy failed: ${error.message}`);
+            setCopyContentStatus('idle');
         }
-    }, [selectedNodeIds, vaultId]);
+    }, [selectedNodeIds, vaultId, toast]);
 
-    // UPDATED: Now uses the `agent_tree` endpoint for lightning-fast summary fetching
     const handleCopyTree = useCallback(async () => {
         setCopyTreeStatus('copying');
-        setCopyTreeError(null);
         try {
             let nodesToProcess = treeData;
 
-            // If summaries are requested, fetch the cached agent tree!
             if (includeSummary) {
                 const res = await apiClient.get(`/api/vaults/${vaultId}/nodes`, {
                     params: { format: 'agent_tree' }
                 });
-                // Assuming the backend returns { tree: [...], allNodesFlat: [...] }
                 nodesToProcess = res.data.tree || res.data;
             }
 
-            // Recursive function to format the tree text
             const buildText = (nodes, depth = 0) => {
                 let text = '';
                 const indent = '  '.repeat(depth);
@@ -114,7 +108,6 @@ export default function ToolsTab() {
 
                     if (includeSummary && node.ai_summary) {
                         const summaryIndent = '  '.repeat(depth + 1);
-                        // Ensure multi-line summaries stay nicely indented under the arrow
                         const formattedSummary = node.ai_summary.replace(/\n/g, `\n${summaryIndent}  `);
                         text += `${summaryIndent}↳ ${formattedSummary}\n`;
                     }
@@ -132,56 +125,49 @@ export default function ToolsTab() {
             setCopyTreeStatus('success');
             setTimeout(() => setCopyTreeStatus('idle'), 2000);
         } catch (error) {
-            setCopyTreeError(error.message || "Failed to copy tree structure.");
-            setCopyTreeStatus('error');
+            toast.error(`Copy failed: ${error.message || 'Failed to copy tree structure.'}`);
+            setCopyTreeStatus('idle');
         }
-    }, [treeData, vaultId, includeUuid, includeSummary]);
+    }, [treeData, vaultId, includeUuid, includeSummary, toast]);
 
     const handlePrintSelected = useCallback(async () => {
         if (!hasSelection) return;
         setPrintStatus('preparing');
-        setPrintError(null);
 
         try {
             const orderedIds = getIdsInOrder(treeData, selectedNodeIds);
             const nodes = await getFullNodesByIds(orderedIds, vaultId);
             const toc = generateTocForSelectedNodes(treeData, selectedNodeIds);
-
             openPrintPreview(nodes, toc);
-
             setPrintStatus('idle');
         } catch (error) {
-            setPrintError('Failed to prepare print preview. ' + error.message);
-            setPrintStatus('error');
+            toast.error(`Failed to prepare print preview: ${error.message}`);
+            setPrintStatus('idle');
         }
-    }, [treeData, selectedNodeIds, vaultId, openPrintPreview, hasSelection]);
+    }, [treeData, selectedNodeIds, vaultId, openPrintPreview, hasSelection, toast]);
 
     const handlePrintAll = useCallback(async () => {
         if (!hasNodes) return;
         setPrintStatus('preparing_all');
-        setPrintError(null);
 
         try {
             const allNodeIdsSet = new Set(allNodesFlat.map(n => n.id));
             const orderedIds = getIdsInOrder(treeData, allNodeIdsSet);
             const nodes = await getFullNodesByIds(orderedIds, vaultId);
             const toc = generateTocForSelectedNodes(treeData, allNodeIdsSet);
-
             openPrintPreview(nodes, toc);
-
             setPrintStatus('idle');
         } catch (error) {
-            setPrintError('Failed to prepare print preview for entire vault. ' + error.message);
-            setPrintStatus('error');
+            toast.error(`Failed to prepare print preview: ${error.message}`);
+            setPrintStatus('idle');
         }
-    }, [treeData, allNodesFlat, vaultId, openPrintPreview, hasNodes]);
+    }, [treeData, allNodesFlat, vaultId, openPrintPreview, hasNodes, toast]);
 
     const handleExportVault = useCallback(async () => {
         setExportStatus('exporting');
-        setExportError(null);
         try {
             const response = await apiClient.get(`/api/vaults/${vaultId}/export`, {
-                responseType: 'blob' // Needed to handle the file download properly
+                responseType: 'blob'
             });
 
             const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -213,23 +199,19 @@ export default function ToolsTab() {
                     const text = await error.response.data.text();
                     const json = JSON.parse(text);
                     if (json.error) errorMsg = json.error;
-                } catch (e) {
-                    // Ignore blob parsing error
-                }
+                } catch (e) { /* ignore */ }
             } else if (error.response?.data?.error) {
                 errorMsg = error.response.data.error;
             } else if (error.message) {
                 errorMsg = error.message;
             }
-            setExportError(errorMsg);
-            setExportStatus('error');
+            toast.error(`Export failed: ${errorMsg}`);
+            setExportStatus('idle');
         }
-    }, [vaultId]);
+    }, [vaultId, toast]);
 
     const handleImportClick = () => {
-        if (fileInputRef.current) {
-            fileInputRef.current.click();
-        }
+        if (fileInputRef.current) fileInputRef.current.click();
     };
 
     const handleFileChange = async (e) => {
@@ -237,34 +219,58 @@ export default function ToolsTab() {
         if (!file) return;
 
         setImportStatus('importing');
-        setImportError(null);
 
         const formData = new FormData();
         formData.append('file', file);
 
         try {
             await apiClient.post('/api/vaults/import', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                }
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
             setImportStatus('success');
 
-            // Allow the user to see the success message before resetting
             setTimeout(() => {
                 setImportStatus('idle');
-                // Reload or invalidate to show the new vault in the UI
                 window.location.reload();
             }, 2500);
-
         } catch (error) {
             const errorMsg = error.response?.data?.error || error.message || 'Failed to import vault.';
-            setImportError(errorMsg);
-            setImportStatus('error');
+            toast.error(`Import failed: ${errorMsg}`);
+            setImportStatus('idle');
         } finally {
-            // Reset the input so the same file can be selected again if needed
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
+            }
+        }
+    };
+
+    const handlePdfIngestClick = () => {
+        if (pdfInputRef.current) pdfInputRef.current.click();
+    };
+
+    const handlePdfFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setIngestStatus('ingesting');
+        const formData = new FormData();
+        formData.append('file', file);
+        if (ingestTargetId) {
+            formData.append('parent_id', ingestTargetId);
+        }
+
+        try {
+            await apiClient.post(`/api/vaults/${vaultId}/ingest/pdf`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            toast.success('PDF ingestion started! The document will appear in your tree automatically once finished.');
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || error.message || 'Failed to ingest PDF.';
+            toast.error(`Ingestion failed: ${errorMsg}`);
+        } finally {
+            setIngestStatus('idle');
+            if (pdfInputRef.current) {
+                pdfInputRef.current.value = '';
             }
         }
     };
@@ -276,7 +282,7 @@ export default function ToolsTab() {
             <div>
                 <h6 className="text-muted mb-2">Tools & Export</h6>
 
-                {/* EXACT COPY OF THE AGENT TAB UI FOR SELECTED NODES */}
+                {/* SELECTED NODES LIST */}
                 <div className="mb-3">
                     <small className="text-muted fw-bold d-block mb-1">
                         Selected nodes ({selectedNodes.length})
@@ -316,6 +322,36 @@ export default function ToolsTab() {
                         <i className="bx bxs-book-content me-1"></i>
                         {printStatus === 'preparing_all' ? 'Preparing Entire Vault...' : 'Print Entire Vault'}
                     </Button>
+
+                    {/* NEW: AI INGESTION SECTION */}
+                    <hr className="my-2 text-muted" />
+                    <h6 className="text-muted mb-2">AI Document Ingestion</h6>
+
+                    <input
+                        type="file"
+                        accept=".pdf"
+                        style={{ display: 'none' }}
+                        ref={pdfInputRef}
+                        onChange={handlePdfFileChange}
+                    />
+
+                    <Button
+                        variant="outline-info"
+                        size="sm"
+                        onClick={handlePdfIngestClick}
+                        disabled={!isIngestAllowed || ingestStatus === 'ingesting'}
+                    >
+                        {ingestStatus === 'ingesting' ? (
+                            <><i className="bx bx-loader-alt bx-spin me-1"></i> Uploading...</>
+                        ) : (
+                            <><i className="bx bxs-file-pdf me-1"></i> Ingest PDF to {ingestTargetTitle}</>
+                        )}
+                    </Button>
+                    {!isIngestAllowed && (
+                        <small className="text-danger">
+                            Please select exactly 1 node (or 0 nodes) to use as a target folder.
+                        </small>
+                    )}
 
                     <hr className="my-2 text-muted" />
 
@@ -399,33 +435,6 @@ export default function ToolsTab() {
                     </Button>
                 </div>
             </div>
-
-            {/* Error Alerts */}
-            {printError && (
-                <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Error:</strong> {printError}
-                </Alert>
-            )}
-            {exportError && (
-                <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Export Error:</strong> {exportError}
-                </Alert>
-            )}
-            {importError && (
-                <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Import Error:</strong> {importError}
-                </Alert>
-            )}
-            {copyContentError && (
-                <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Copy Error:</strong> {copyContentError}
-                </Alert>
-            )}
-            {copyTreeError && (
-                <Alert variant="danger" className="mt-2 small p-2">
-                    <strong>Copy Error:</strong> {copyTreeError}
-                </Alert>
-            )}
         </div>
     );
 }

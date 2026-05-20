@@ -101,7 +101,7 @@ The application will be built and accessible at `http://localhost:5001`.
 Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the full stack + Task Runner profile:
 
 ```bash
-docker compose --profile with-postgres --profile with-task-runner up -d --force-recreate --build
+docker compose --profile with-postgres --profile with-task-agent up -d --force-recreate --build
 ```
 
 *(Note: If you do not want to use the AI features, simply run the standard command in Step 3. The worker will remain offline, and no external requests will be made).*

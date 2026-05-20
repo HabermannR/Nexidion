@@ -120,6 +120,57 @@ def update_user_details(user_id):
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
 
+# ---------------------------------------------------------------------------
+# Developer / testing utilities
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/replay-test', methods=['POST'])
+@jwt_required()
+@admin_required
+def trigger_replay_test():
+    """[ADMIN] Queue a pending_demo task on any vault to test the B8 replay engine.
+
+    Body (JSON):
+        vault_id (int, required): The vault that will receive the pending_demo task.
+
+    The agent picks up pending_demo tasks exactly as it does for real guest sessions,
+    so this lets you test the full replay path without creating a guest account.
+    """
+    from backend.models import Task
+
+    data = request.get_json(silent=True) or {}
+    vault_id = data.get('vault_id')
+
+    if not vault_id:
+        return jsonify({"error": "vault_id is required"}), 400
+
+    try:
+        vault_id = int(vault_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "vault_id must be an integer"}), 400
+
+    # Verify the vault actually exists
+    from backend.models import Vault
+    vault = db.session.get(Vault, vault_id)
+    if not vault:
+        return jsonify({"error": f"Vault {vault_id} not found"}), 404
+
+    task = Task(
+        vault_id=vault_id,
+        instruction="[admin replay test] Replay the demo recording.",
+        context_node_ids=[],
+        status='pending_demo',
+    )
+    db.session.add(task)
+    db.session.commit()
+
+    return jsonify({
+        "message": "pending_demo task queued. The agent will pick it up on its next tick.",
+        "task_id": task.id,
+        "vault_id": vault_id,
+    }), 201
+
+
 
 # ---------------------------------------------------------------------------
 # Vault access management

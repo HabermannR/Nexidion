@@ -1,24 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Filter für den sanften Schein des Selbst -->
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-
-  <!-- Gruppe für das gesamte Logo -->
-  <g transform="translate(0, 5)">
-    <!-- Innerer Ring: Die Gaben (ehem. Exiles) -->
-    <circle cx="50" cy="23" r="11" fill="#e0b0ff" /> <!-- Oben: Sensibilität -->
-    <circle cx="77" cy="45" r="11" fill="#e0b0ff" /> <!-- Rechts: Verbundenheit -->
-    <circle cx="50" cy="67" r="11" fill="#e0b0ff" /> <!-- Unten: Intuition -->
-    <circle cx="23" cy="45" r="11" fill="#e0b0ff" /> <!-- Links: Würde -->
-
-    <!-- Das leuchtende Selbst im Zentrum -->
-    <circle cx="50" cy="45" r="18" fill="#f39c12" filter="url(#glow)" />
-  </g>
+<defs>
+<linearGradient id="e" y2="100%">
+<stop stop-color="#FFD600" offset="0"/>
+<stop stop-color="#FF6D00" offset=".5"/>
+<stop stop-color="#D50000" offset="1"/>
+</linearGradient>
+<linearGradient id="a" x1="50%" x2="50%" y2="100%">
+<stop stop-color="#00C853" offset="0"/>
+<stop stop-color="#2962FF" offset="1"/>
+</linearGradient>
+<linearGradient id="c" y1="50%" y2="50%">
+<stop stop-color="#00C853" offset="0"/>
+<stop stop-color="#2962FF" offset="1"/>
+</linearGradient>
+<linearGradient id="b" x1="100%" x2="0%" y1="50%" y2="50%">
+<stop stop-color="#a0f" offset="0"/>
+<stop stop-color="#2962FF" offset="1"/>
+</linearGradient>
+<linearGradient id="d" x1="50%" x2="50%" y1="100%">
+<stop stop-color="#a0f" offset="0"/>
+<stop stop-color="#2962FF" offset="1"/>
+</linearGradient>
+</defs>
+<circle cx="50" cy="24" r="18" fill="url(#a)" opacity=".9"/>
+<circle cx="24" cy="50" r="18" fill="url(#c)" opacity=".9"/>
+<circle cx="76" cy="50" r="18" fill="url(#b)" opacity=".9"/>
+<circle cx="50" cy="76" r="18" fill="url(#d)" opacity=".9"/>
+<circle cx="50" cy="50" r="22" fill="url(#e)"/>
 </svg>

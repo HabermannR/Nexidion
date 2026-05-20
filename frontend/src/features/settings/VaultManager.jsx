@@ -17,8 +17,8 @@ import {
     InputGroup
 } from 'react-bootstrap';
 import apiClient from '../../api/apiClient.js';
-
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
+import { useToast } from '../../components/ToastProvider.jsx';
 
 // --- VaultRow Component (Refactored - NO CHANGES) ---
 function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutation }) {
@@ -124,24 +124,25 @@ export default function VaultManager() {
 
 
     const [isBatchMode, setIsBatchMode] = useState(false);
-    const [alert, setAlert] = useState(null); // Local alert state for success/error messages
+    const [successMsg, setSuccessMsg] = useState(null);
     const formRef = useRef();
     const inputRef = useRef();
+    const toast = useToast();
 
-    // --- DATA FETCHING with useQuery (NO CHANGES) ---
+    // --- DATA FETCHING with useQuery ---
     const { data: vaults, isLoading, isError, error: loaderError } = useQuery({
         queryKey: ['vaults'],
         queryFn: () => apiClient.get('/api/vaults/').then(res => res.data)
     });
 
-    // --- MUTATIONS (NO CHANGES) ---
+    // --- MUTATIONS ---
     const createVaultMutation = useMutation({
         mutationFn: (name) => apiClient.post('/api/vaults/', { name }),
         onSuccess: (response) => {
             const newVault = response.data;
             queryClient.invalidateQueries({ queryKey: ['vaults'] });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
-            setAlert({ type: 'success', message: `Vault "${newVault.name}" was successfully created.` });
+            setSuccessMsg(`Vault "${newVault.name}" was successfully created.`);
             if (isBatchMode) {
                 formRef.current?.reset();
                 inputRef.current?.focus();
@@ -150,7 +151,7 @@ export default function VaultManager() {
             }
         },
         onError: (err) => {
-            setAlert({ type: 'danger', message: err.response?.data?.error || 'An error occurred.' });
+            toast.error(err.response?.data?.error || 'Failed to create vault.');
         }
     });
 
@@ -160,9 +161,9 @@ export default function VaultManager() {
             const updatedVault = response.data;
             queryClient.invalidateQueries({ queryKey: ['vaults'] });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
-            setAlert({ type: 'success', message: `Vault successfully renamed to "${updatedVault.name}".` });
+            setSuccessMsg(`Vault successfully renamed to "${updatedVault.name}".`);
         },
-        onError: (err) => setAlert({ type: 'danger', message: err.response?.data?.error || 'Renaming failed.' })
+        onError: (err) => toast.error(err.response?.data?.error || 'Renaming failed.')
     });
 
     const deleteVaultMutation = useMutation({
@@ -179,9 +180,9 @@ export default function VaultManager() {
                 }
             });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
-            setAlert({ type: 'success', message: 'Vault was successfully deleted.' });
+            setSuccessMsg('Vault was successfully deleted.');
         },
-        onError: (err) => setAlert({ type: 'danger', message: err.response?.data?.error || 'Deletion failed.' })
+        onError: (err) => toast.error(err.response?.data?.error || 'Deletion failed.')
     });
 
     const handleCreateSubmit = (event) => {
@@ -209,7 +210,7 @@ export default function VaultManager() {
                 </Button>
             </div>
 
-            {alert && <Alert variant={alert.type} onClose={() => setAlert(null)} dismissible>{alert.message}</Alert>}
+            {successMsg && <Alert variant="success" onClose={() => setSuccessMsg(null)} dismissible>{successMsg}</Alert>}
 
             {/* The rest of the component remains unchanged... */}
             <Card className="mb-4">

@@ -6,6 +6,7 @@ import {
 } from 'react-bootstrap';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/apiClient';
+import { useToast } from '../../components/ToastProvider';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,8 +58,8 @@ function VaultList({ selectedVaultId, onSelect }) {
 
 function VaultAccessPanel({ vaultId }) {
     const queryClient = useQueryClient();
+    const toast = useToast();
     const [selectedUserId, setSelectedUserId] = useState('');
-    const [panelAlert, setPanelAlert] = useState(null);
 
     const { data, isLoading, isError } = useQuery({
         queryKey: ['admin', 'vault-access', vaultId],
@@ -74,15 +75,15 @@ function VaultAccessPanel({ vaultId }) {
     const grantMutation = useMutation({
         mutationFn: (userId) =>
             apiClient.post(`/api/admin/vaults/${vaultId}/access`, { user_id: userId }),
-        onSuccess: () => { setPanelAlert(null); setSelectedUserId(''); invalidate(); },
-        onError: (e) => setPanelAlert({ type: 'danger', message: e.response?.data?.error || 'Failed to grant access.' }),
+        onSuccess: () => { setSelectedUserId(''); invalidate(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Failed to grant access.'),
     });
 
     const revokeMutation = useMutation({
         mutationFn: (userId) =>
             apiClient.delete(`/api/admin/vaults/${vaultId}/access/${userId}`),
-        onSuccess: () => { setPanelAlert(null); invalidate(); },
-        onError: (e) => setPanelAlert({ type: 'danger', message: e.response?.data?.error || 'Failed to revoke access.' }),
+        onSuccess: () => { invalidate(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Failed to revoke access.'),
     });
 
     if (!vaultId) {
@@ -105,12 +106,6 @@ function VaultAccessPanel({ vaultId }) {
                 <span className="text-muted ms-2">— owned by {vault.owner_display_name} ({vault.owner_username})</span>
             </Card.Header>
             <Card.Body>
-                {panelAlert && (
-                    <Alert variant={panelAlert.type} dismissible onClose={() => setPanelAlert(null)}>
-                        {panelAlert.message}
-                    </Alert>
-                )}
-
                 {/* Current access list */}
                 <h6 className="mb-2">Current access</h6>
                 <Table size="sm" bordered className="mb-4">

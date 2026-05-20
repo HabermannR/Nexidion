@@ -3,11 +3,11 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from backend.models import Node, VaultAccess, VaultRole
-from runner.audit import Audit
-from runner.agent import run_agent
+from agent.audit import Audit
+from agent.agent import run_agent
 
 # Import for the subtree check (adjust if you redact in a custom tools.py wrapper instead)
-#from runner.helpers import get_subtree_summary
+#from agent.helpers import get_subtree_summary
 
 BLACKLIST_ICON = "bxs-lock-alt"
 READ_LOCK_ICON = "bxs-no-entry"
@@ -70,7 +70,7 @@ def create_mock_tool_call(name: str, arguments: dict):
 # TESTS FÜR DIE WORKFLOWS (TOOL EXECUTION)
 # ========================================================================
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_write_node(mock_openai_class, setup_agent_env, db_session):
     vault, agent, node, mock_task = setup_agent_env
 
@@ -115,7 +115,7 @@ def test_agent_workflow_write_node(mock_openai_class, setup_agent_env, db_sessio
     assert audit.writes[0]["operation"] == "write_node"
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_move_node(mock_openai_class, setup_agent_env, db_session):
     vault, agent, child_node, mock_task = setup_agent_env
 
@@ -152,7 +152,7 @@ def test_agent_workflow_move_node(mock_openai_class, setup_agent_env, db_session
     assert audit.writes[0]["operation"] == "move_node"
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_protected_node_handling(mock_openai_class, setup_agent_env, db_session):
     vault, agent, node, mock_task = setup_agent_env
 
@@ -194,7 +194,7 @@ def test_agent_workflow_protected_node_handling(mock_openai_class, setup_agent_e
     assert audit.writes[0]["operation"] == "write_node_summary_only"
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_summary_validation_fails(mock_openai_class, setup_agent_env, db_session):
     vault, agent, node, mock_task = setup_agent_env
     original_content = node.current_version_object.content
@@ -232,7 +232,7 @@ def test_agent_workflow_summary_validation_fails(mock_openai_class, setup_agent_
     assert "must be exactly 3 lines" in audit.turns[0]["tool_calls"][0]["detail"]
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_fully_private_node_read(mock_openai_class, setup_agent_env, db_session):
     vault, agent, node, mock_task = setup_agent_env
 
@@ -275,7 +275,7 @@ def test_agent_workflow_fully_private_node_read(mock_openai_class, setup_agent_e
     assert "private (bxs-no-entry)" in content_call["detail"]
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_fully_private_node_write(mock_openai_class, setup_agent_env, db_session):
     vault, agent, node, mock_task = setup_agent_env
 
@@ -338,7 +338,7 @@ def test_agent_workflow_fully_private_node_write(mock_openai_class, setup_agent_
     assert "patch_node_summary_only" in operations
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_create_node(mock_openai_class, setup_agent_env, db_session):
     """
     Testet das erfolgreiche Erstellen eines neuen Nodes (create_node).
@@ -384,7 +384,7 @@ def test_agent_workflow_create_node(mock_openai_class, setup_agent_env, db_sessi
     assert audit.writes[0]["operation"] == "create_node"
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_patch_node_success(mock_openai_class, setup_agent_env, db_session):
     """
     Testet das erfolgreiche Patchen (patch_node) eines normalen Nodes.
@@ -428,7 +428,7 @@ def test_agent_workflow_patch_node_success(mock_openai_class, setup_agent_env, d
     assert audit.writes[0]["operation"] == "patch_node"
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_rename_node(mock_openai_class, setup_agent_env, db_session):
     """
     Testet das erfolgreiche Umbenennen eines Nodes (rename_node).
@@ -466,7 +466,7 @@ def test_agent_workflow_rename_node(mock_openai_class, setup_agent_env, db_sessi
     assert audit.writes[0]["operation"] == "rename_node"
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_search_nodes(mock_openai_class, setup_agent_env, db_session):
     """
     Testet, dass search_nodes erfolgreich aufgerufen wird und Ergebnisse liefert.
@@ -505,7 +505,7 @@ def test_agent_workflow_search_nodes(mock_openai_class, setup_agent_env, db_sess
     assert "Found 1 results" in search_call["detail"]
 
 
-@patch("runner.agent.OpenAI")
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_read_node_success(mock_openai_class, setup_agent_env, db_session):
     """
     Testet den unblockierten Lesezugriff (get_node_content und get_node_summary)

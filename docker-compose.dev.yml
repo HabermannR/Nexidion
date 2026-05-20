@@ -31,7 +31,7 @@ services:
     env_file:
       - .env
     environment:
-      - FLASK_APP=run.py
+      - FLASK_APP=wsgi.py
       - FLASK_ENV=development
     depends_on:
       postgres:
@@ -71,7 +71,7 @@ services:
       "
 
   # --- THE AI TASK RUNNER (Background Worker) ---
-  task-runner:
+  task-agent:
     build:
       context: .
       dockerfile: Dockerfile.prod
@@ -84,7 +84,7 @@ services:
         condition: service_healthy
         required: false
     profiles:
-      - with-task-runner   # opt-in: only starts when explicitly requested
+      - with-task-agent   # opt-in: only starts when explicitly requested
 
   # --- THE DATABASE ---
   postgres:

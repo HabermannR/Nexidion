@@ -11,6 +11,7 @@ import DiffViewer from '../../components/DiffViewer.jsx';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { useVaultTreeQuery } from './hooks/useVaultTreeQuery.js';
 import { useSaveNodeContent } from './hooks/useSaveNodeContent.js';
+import { useToast } from '../../components/ToastProvider.jsx';
 
 import ContentHeader from './ContentHeader.jsx';
 import NodeEditor from './NodeEditor.jsx';
@@ -62,6 +63,7 @@ export default function NodeContent() {
     });
 
     const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
+    const toast = useToast();
 
     const [isEditing, setIsEditing] = useState(false);
     const [localContent, setLocalContent] = useState('');
@@ -93,14 +95,20 @@ export default function NodeContent() {
             queryClient.invalidateQueries({ queryKey: ['vaultTree', variables.vaultId] });
             navigate(variables.parentId ? `/vaults/${variables.vaultId}/nodes/${variables.parentId}` : `/vaults/${variables.vaultId}`);
         },
+        onError: (err) => {
+            toast.error(`Could not delete node: ${err.response?.data?.error || err.message}`);
+            setShowDeleteModal(false);
+        },
     });
 
-    // NEU: Mutation for updating the AI Summary
     const updateSummaryMutation = useMutation({
         mutationFn: (newSummary) => apiClient.patch(`/api/vaults/${vaultId}/nodes/${nodeId}/summary`, { ai_summary: newSummary }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, nodeId] });
             setIsEditingSummary(false);
+        },
+        onError: (err) => {
+            toast.error(`Could not save summary: ${err.response?.data?.error || err.message}`);
         }
     });
 

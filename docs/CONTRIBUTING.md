@@ -105,7 +105,7 @@ Open **[http://localhost:5173](http://localhost:5173)** in your browser. The Vit
 If you want to develop or test the Task Runner, add your `OPENAI_API_KEY` (or a local LLM URL — see [Section 9](#9-ai-task-runner)) to `.env`, then start with the extra profile:
 
 ```bash
-docker compose -f docker-compose.dev.yml --profile with-postgres --profile with-task-runner up --build
+docker compose -f docker-compose.dev.yml --profile with-postgres --profile with-task-agent up --build
 ```
 
 ### Stopping the stack

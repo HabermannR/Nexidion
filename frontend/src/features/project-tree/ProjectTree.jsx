@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from "../../api/apiClient.js";
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
+import { useToast } from '../../components/ToastProvider.jsx';
 import "./ProjectTree.css";
 
 const ItemTypes = { NODE: "NODE" };
@@ -118,6 +119,7 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
     const { vaultId } = useParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const toast = useToast();
 
     const toggleNodeCollapse = useWorkspaceStore(state => state.toggleNodeCollapse);
     const collapsedNodes = useWorkspaceStore(state => state.collapsedNodes);
@@ -153,13 +155,9 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
     useEffect(() => {
         if (!scrollToNodeId) return;
         const timer = setTimeout(() => {
-            // Select ALL elements with this ID (handles both mobile offcanvas and desktop sidebar if both are in DOM)
             const elements = document.querySelectorAll(`[data-node-id="${scrollToNodeId}"]`);
-
             elements.forEach(el => {
-                // Check if the element is currently visible on the screen
                 const isVisible = el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0;
-
                 if (isVisible) {
                     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
@@ -176,8 +174,12 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
             navigate(`/vaults/${vaultId}/nodes/${response.data.id}`);
         },
         onError: (err) => {
-            console.error("Fehler beim Erstellen des Elements:", err);
-            alert(`Fehler: ${err.response?.data?.error || err.message}`);
+            const msg = err.response?.data?.error || err.message;
+            if (err.response?.status === 403) {
+                toast.error('Node limit reached — you\'ve hit the maximum number of nodes for this vault.');
+            } else {
+                toast.error(`Failed to create node: ${msg}`);
+            }
         }
     });
 
@@ -188,17 +190,16 @@ export default function ProjectTree({ onNodeClick, highlightedNodeIds = new Set(
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
         },
         onError: (err) => {
-            console.error("Fehler beim Verschieben des Elements:", err);
-            alert(`Fehler: ${err.response?.data?.error || err.message}`);
+            toast.error(`Failed to move node: ${err.response?.data?.error || err.message}`);
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
         }
     });
 
     const handleAddNode = useCallback((parentId) => {
         if (!isSuccess) return;
-        const title = prompt("Titel für das neue Element eingeben:");
+        const title = prompt("Title for new node:");
         if (!title || !title.trim()) return;
-        addNodeMutation.mutate({ title, parent_id: parentId });
+        addNodeMutation.mutate({ title: title.trim(), parent_id: parentId });
     }, [isSuccess, addNodeMutation]);
 
     const handleMoveNode = useCallback((sourceNode, targetNode) => {

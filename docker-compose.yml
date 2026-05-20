@@ -33,7 +33,7 @@ services:
         condition: service_healthy
         required: false
     profiles:
-      - with-task-runner   # opt-in: only starts when explicitly requested
+      - with-task-agent   # opt-in: only starts when explicitly requested
 
   postgres:
     image: postgres:18

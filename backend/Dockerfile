@@ -20,7 +20,7 @@ RUN uv pip install --system --no-cache -r requirements.txt
 COPY backend/ ./backend/
 
 # Copy the run scripts from the project root
-COPY run.py task_runner.py ./
+COPY wsgi.py task_runner.py ./
 
 # Run the app via gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "run:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "wsgi:app"]

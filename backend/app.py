@@ -24,6 +24,7 @@ from backend.api.images import image_bp
 from backend.api.admin import admin_bp
 from backend.api.tasks import tasks_bp
 from backend.api.system import system_bp
+from backend.api.ingest import ingest_bp
 from backend.cli import register_commands
 
 migrate = Migrate()
@@ -74,6 +75,7 @@ def create_app(config_class=Config):
     app.register_blueprint(image_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(tasks_bp)
+    app.register_blueprint(ingest_bp)
     app.register_blueprint(system_bp)
 
     # CLI Commands

@@ -6,6 +6,7 @@ import { Button, ButtonGroup, Dropdown, Form, InputGroup } from 'react-bootstrap
 import IconSelectorDropdown from './IconSelectorDropdown.jsx';
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
+import { useToast } from '../../components/ToastProvider.jsx';
 import './ContentHeader.css';
 
 export default function ContentHeader({
@@ -20,7 +21,8 @@ export default function ContentHeader({
                                           onAddSummary
                                       }) {
     const queryClient = useQueryClient();
-    const openPrintPreview = useWorkspaceStore(state => state.openPrintPreview); // <-- Get action from store
+    const openPrintPreview = useWorkspaceStore(state => state.openPrintPreview);
+    const toast = useToast();
 
     const [isRenaming, setIsRenaming] = useState(false);
     const [newTitle, setNewTitle] = useState('');
@@ -45,7 +47,8 @@ export default function ContentHeader({
             setIsRenaming(false);
         },
         onError: (error) => {
-            console.error("Error renaming node:", error);
+            const msg = error.response?.data?.error || error.message || 'Rename failed.';
+            toast.error(`Could not rename node: ${msg}`);
             setIsRenaming(false);
         }
     });

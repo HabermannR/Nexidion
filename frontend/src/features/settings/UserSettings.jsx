@@ -6,6 +6,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Container, Card, Button, Form as BootstrapForm, Row, Col, Alert, Spinner } from 'react-bootstrap';
 import apiClient from '../../api/apiClient';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
+import { useToast } from '../../components/ToastProvider';
 
 export default function UserSettings() {
     const formRef = useRef();
@@ -15,17 +16,18 @@ export default function UserSettings() {
     const lastActiveVaultId = useWorkspaceStore(state => state.lastActiveVaultId);
 
     // --- LOCAL UI STATE ---
-    const [alert, setAlert] = useState(null);
+    const [successMsg, setSuccessMsg] = useState(null);
+    const toast = useToast();
 
     // --- DATA MUTATION ---
     const changePasswordMutation = useMutation({
         mutationFn: (passwords) => apiClient.post('/api/auth/change-password', passwords),
         onSuccess: () => {
-            setAlert({type: 'success', message: 'Password changed successfully.'});
+            setSuccessMsg('Password changed successfully.');
             formRef.current?.reset();
         },
         onError: (err) => {
-            setAlert({type: 'danger', message: err.response?.data?.error || 'An error occurred.'});
+            toast.error(err.response?.data?.error || 'Failed to change password.');
         }
     });
 
@@ -40,12 +42,12 @@ export default function UserSettings() {
         const confirm_password = formData.get('confirm_password');
 
         if (new_password !== confirm_password) {
-            setAlert({type: 'danger', message: 'The new passwords do not match.'});
+            toast.error('The new passwords do not match.');
             return;
         }
 
         if (!old_password || !new_password) {
-            setAlert({type: 'danger', message: 'Please fill in all fields.'});
+            toast.error('Please fill in all fields.');
             return;
         }
 
@@ -68,7 +70,7 @@ export default function UserSettings() {
                 </Button>
             </div>
 
-            {alert && <Alert variant={alert.type} onClose={() => setAlert(null)} dismissible>{alert.message}</Alert>}
+            {successMsg && <Alert variant="success" onClose={() => setSuccessMsg(null)} dismissible>{successMsg}</Alert>}
 
             <Row>
                 <Col md={8} lg={6}>

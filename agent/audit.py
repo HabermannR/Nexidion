@@ -1,5 +1,5 @@
 """
-backend/runner/audit.py
+agent/audit.py
 =======================
 Audit log — one instance per task execution.
 Records every turn, tool call, and write operation, then serialises to JSON.
@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from runner.helpers import _iso
+from agent.helpers import _iso
 
 
 class Audit:

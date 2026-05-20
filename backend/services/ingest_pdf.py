@@ -10,8 +10,8 @@ import httpx
 # Nexidion specific imports
 from backend.app import create_app
 from backend.models import User, UserType
-from runner.extractor import extract_pdf_smart
-from runner.svc import svc_create_node
+from agent.extractor import extract_pdf_smart
+from agent.svc import svc_create_node
 
 
 # --- LOGGING HELPER ---
@@ -34,7 +34,7 @@ def _banner(msg): print(f"\n{'=' * 60}\n{msg}\n{'=' * 60}", flush=True)
 # CONFIGURATION & LLM CLIENT SETUP (Matching loop.py)
 # ---------------------------------------------------------------------------
 GPT_TOKEN = os.environ.get("OPENAI_API_KEY")
-GPT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+GPT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4")
 LOCAL_LLM_URL = os.environ.get("LOCAL_LLM_URL")
 LOCAL_LLM_API_KEY = os.environ.get("LOCAL_LLM_API_KEY", "not-needed")
 

@@ -2,12 +2,13 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Container, Card, Button, Table, Alert, Spinner, Modal,
-    Form as BootstrapForm, Row, Col, InputGroup
+    Form as BootstrapForm, Row, Col, InputGroup, Badge
 } from 'react-bootstrap';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/apiClient';
 import VaultAccessManager from './VaultAccessManager';
+import { useToast } from '../../components/ToastProvider';
 
 // Helper component for the password field with a "Show" button
 function PasswordInput({ name, label, required = true }) {
@@ -25,6 +26,108 @@ function PasswordInput({ name, label, required = true }) {
     );
 }
 
+// ── B8 Replay Tester ────────────────────────────────────────────────────────
+
+function ReplayTester() {
+    const toast = useToast();
+    const [selectedVaultId, setSelectedVaultId] = useState('');
+    const [lastResult, setLastResult] = useState(null);
+
+    const { data: vaults, isLoading: isLoadingVaults } = useQuery({
+        queryKey: ['admin', 'allVaults'],
+        queryFn: () => apiClient.get('/api/admin/vaults').then(res => res.data),
+    });
+
+    const triggerReplayMutation = useMutation({
+        mutationFn: (vaultId) =>
+            apiClient.post('/api/admin/replay-test', { vault_id: parseInt(vaultId, 10) }),
+        onSuccess: (res) => {
+            setLastResult({ ok: true, task_id: res.data.task_id, vault_id: res.data.vault_id });
+            toast.success(`Replay task queued — task ID ${res.data.task_id}`);
+        },
+        onError: (err) => {
+            const msg = err.response?.data?.error || 'Failed to queue replay task.';
+            setLastResult({ ok: false, error: msg });
+            toast.error(msg);
+        },
+    });
+
+    const handleTrigger = () => {
+        if (!selectedVaultId) return;
+        setLastResult(null);
+        triggerReplayMutation.mutate(selectedVaultId);
+    };
+
+    return (
+        <Card className="mb-4 border-warning">
+            <Card.Header as="h5" className="d-flex align-items-center gap-2">
+                <span>🔁 B8 Replay Engine Test</span>
+                <Badge bg="warning" text="dark" className="ms-1">Dev only</Badge>
+            </Card.Header>
+            <Card.Body>
+                <p className="text-muted mb-3" style={{ fontSize: '0.9rem' }}>
+                    Creates a <code>pending_demo</code> task on any vault and lets the runner pick it up,
+                    so you can verify the replay engine end-to-end without a guest account.
+                    The vault must have a guest owner with a <code>demo_remap</code> set; otherwise the
+                    runner will error — which is also a useful signal.
+                </p>
+
+                <Row className="align-items-end g-2">
+                    <Col sm={7}>
+                        <BootstrapForm.Label className="fw-semibold">Target vault</BootstrapForm.Label>
+                        {isLoadingVaults ? (
+                            <BootstrapForm.Control disabled placeholder="Loading vaults…" />
+                        ) : (
+                            <BootstrapForm.Select
+                                value={selectedVaultId}
+                                onChange={e => setSelectedVaultId(e.target.value)}
+                            >
+                                <option value="">— select a vault —</option>
+                                {vaults?.map(v => (
+                                    <option key={v.id} value={v.id}>
+                                        [{v.id}] {v.name}
+                                        {v.owner_username ? ` (owner: ${v.owner_username})` : ''}
+                                    </option>
+                                ))}
+                            </BootstrapForm.Select>
+                        )}
+                    </Col>
+                    <Col sm="auto">
+                        <Button
+                            variant="warning"
+                            onClick={handleTrigger}
+                            disabled={!selectedVaultId || triggerReplayMutation.isPending}
+                        >
+                            {triggerReplayMutation.isPending
+                                ? <><Spinner size="sm" className="me-1" />Queuing…</>
+                                : '▶ Queue replay task'}
+                        </Button>
+                    </Col>
+                </Row>
+
+                {lastResult && (
+                    <Alert
+                        variant={lastResult.ok ? 'success' : 'danger'}
+                        className="mt-3 mb-0"
+                    >
+                        {lastResult.ok ? (
+                            <>
+                                Task <code>{lastResult.task_id}</code> queued on vault{' '}
+                                <code>{lastResult.vault_id}</code>.{' '}
+                                The runner will pick it up on its next tick.
+                                Watch the runner logs or poll{' '}
+                                <code>GET /api/tasks/{lastResult.task_id}</code> for status.
+                            </>
+                        ) : (
+                            lastResult.error
+                        )}
+                    </Alert>
+                )}
+            </Card.Body>
+        </Card>
+    );
+}
+
 export default function AdminDashboard() {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
@@ -34,7 +137,7 @@ export default function AdminDashboard() {
     const passwordFormRef = useRef();
 
     // --- LOCAL UI STATE ---
-    const [alert, setAlert] = useState(null);
+    const [successMsg, setSuccessMsg] = useState(null);
     const [modalState, setModalState] = useState({ type: null, user: null }); // 'delete', 'password'
 
     // --- DATA FETCHING (QUERY) ---
@@ -48,24 +151,24 @@ export default function AdminDashboard() {
     const createUserMutation = useMutation({
         mutationFn: (newUser) => apiClient.post('/api/admin/users', newUser),
         onSuccess: (data) => {
-            setAlert({ type: 'success', message: `User "${data.data.username}" successfully created.` });
+            setSuccessMsg(`User "${data.data.username}" successfully created.`);
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
             createUserFormRef.current?.reset();
         },
         onError: (err) => {
-            setAlert({ type: 'danger', message: err.response?.data?.error || 'Error creating user.' });
+            toast.error(err.response?.data?.error || 'Error creating user.');
         }
     });
 
     const deleteUserMutation = useMutation({
         mutationFn: (userId) => apiClient.delete(`/api/admin/users/${userId}`),
         onSuccess: () => {
-            setAlert({ type: 'success', message: `User successfully deleted.` });
+            setSuccessMsg('User successfully deleted.');
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
             handleCloseModal();
         },
         onError: (err) => {
-            setAlert({ type: 'danger', message: err.response?.data?.error || 'Error deleting user.' });
+            toast.error(err.response?.data?.error || 'Error deleting user.');
             handleCloseModal();
         }
     });
@@ -73,13 +176,13 @@ export default function AdminDashboard() {
     const setPasswordMutation = useMutation({
         mutationFn: ({ userId, new_password }) => apiClient.put(`/api/admin/users/${userId}/password`, { new_password }),
         onSuccess: () => {
-            setAlert({ type: 'success', message: 'Password successfully reset.' });
+            setSuccessMsg('Password successfully reset.');
             queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
             passwordFormRef.current?.reset();
             handleCloseModal();
         },
         onError: (err) => {
-            setAlert({ type: 'danger', message: err.response?.data?.error || 'Error setting password.' });
+            toast.error(err.response?.data?.error || 'Error setting password.');
         }
     });
 
@@ -222,6 +325,12 @@ export default function AdminDashboard() {
                     </Card>
                 </Col>
             </Row>
+
+            {/* --- B8 Replay Tester --- */}
+            <hr className="my-4" />
+            <h4 className="mb-1">Developer Tools</h4>
+            <p className="text-muted">Internal testing utilities — not visible to normal users.</p>
+            <ReplayTester />
 
             {/* --- Vault Access Management --- */}
             <hr className="my-4" />

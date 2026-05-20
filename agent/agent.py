@@ -1,5 +1,5 @@
 """
-backend/runner/agent.py
+agent/agent.py
 =======================
 Agentic loop: builds the system prompt, drives the OpenAI Responses API,
 dispatches tool calls, and returns a finish summary.
@@ -16,7 +16,7 @@ from functools import partial
 import httpx
 from openai import OpenAI
 
-from runner.helpers import (
+from agent.helpers import (
     _append,
     _check_budget,
     _fmt,
@@ -26,7 +26,7 @@ from runner.helpers import (
     is_blacklisted,
     is_read_locked,
 )
-from runner.svc import (
+from agent.svc import (
     svc_create_node,
     svc_get_node,
     svc_get_node_summary,

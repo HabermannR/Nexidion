@@ -1,9 +1,9 @@
 """
-backend/runner/loop.py
+agent/loop.py
 ======================
 Task Runner — Database Access Model
 
-This runner uses two DB access patterns intentionally:
+This agent uses two DB access patterns intentionally:
 
 1. Raw psycopg2 (claim_oldest_task, mark_task_raw):
    FOR UPDATE SKIP LOCKED is a Postgres primitive for safe concurrent
@@ -15,10 +15,10 @@ This runner uses two DB access patterns intentionally:
    Flask API uses. Version history, internal links, and all business
    logic run through the same code path as regular user actions.
 
-Authorization: the runner does not call assert_write_allowed() or
+Authorization: the agent does not call assert_write_allowed() or
 _verify_vault_access(). This is intentional — the task row is the proof
 of authorization. A task only exists if an authenticated user created it
-through the API. The runner is a trusted internal process, not a public
+through the API. The agent is a trusted internal process, not a public
 endpoint.
 """
 
@@ -34,9 +34,9 @@ import psycopg2.extras
 
 from backend.app import create_app
 from backend.models import db, User, UserType
-from runner.audit import Audit
-from runner.agent import run_agent
-from runner.replay import _run_replay
+from agent.audit import Audit
+from agent.agent import run_agent
+from agent.replay import _run_replay
 
 flask_app = create_app()
 

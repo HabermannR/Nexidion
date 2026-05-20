@@ -1,12 +1,12 @@
 """
-backend/runner/svc.py
+agent/svc.py
 =====================
 Thin wrappers around node_service that fix vault_id + agent user ID on every
-call.  All content reads and writes go through these functions so the runner
+call.  All content reads and writes go through these functions so the agent
 uses the exact same business-logic path as the Flask API.
 
 The module-level cache (_agent_tree_etags / _cached_agent_trees) is
-intentionally process-scoped: a single runner process handles one vault at a
+intentionally process-scoped: a single agent process handles one vault at a
 time, and the cache is invalidated server-side via ETags.
 """
 

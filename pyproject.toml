@@ -22,7 +22,7 @@ dependencies = [
     "Flask-JWT-Extended",
     "Flask-Migrate",         # This automatically includes 'alembic'
     "Flask-SQLAlchemy",
-    # Database driver (Required for the runner)
+    # Database driver (Required for the agent)
     "psycopg2-binary",
     # AI Interfaces
     "openai",
@@ -58,7 +58,7 @@ dev = [
 # This tells setuptools what code to include in the package.
 # ==========================================================
 [tool.setuptools]
-packages = ["backend", "runner"]
+packages = ["backend", "agent"]
 
 
 # ==========================================================
@@ -66,13 +66,13 @@ packages = ["backend", "runner"]
 # ==========================================================
 [tool.pytest.ini_options]
 # These options are now applied to EVERY pytest run automatically.
-# The --cov flags are handled here. Added --cov=runner
-addopts = "--cov=backend --cov=runner --cov-report=html --cov-report=term-missing"
+# The --cov flags are handled here. Added --cov=agent
+addopts = "--cov=backend --cov=agent  --cov-report=html --cov-report=term-missing"
 
 
 [tool.coverage.run]
 # Tells coverage to track BOTH directories
-source = ["backend", "runner"]
+source = ["backend", "agent"]
 omit = ["backend/scripts/*", "backend/cli.py"]
 
 [tool.coverage.report]

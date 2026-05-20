@@ -1,11 +1,12 @@
 // src/features/agent/AgentTab.jsx
 import React, { useState, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
-import { Button, Alert, Form } from 'react-bootstrap';
+import { Button, Form } from 'react-bootstrap';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
 import apiClient from '../../api/apiClient';
+import { useToast } from '../../components/ToastProvider';
 
 // Import our new theme-compliant stylesheet
 import './AgentTab.css';
@@ -210,8 +211,9 @@ function TaskCard({ task, vaultId }) {
 export default function AgentTab() {
     const {vaultId} = useParams();
     const queryClient = useQueryClient();
+    const toast = useToast();
     const [instruction, setInstruction] = useState('');
-    const [status, setStatus] = useState('idle');
+    const [isSending, setIsSending] = useState(false);
     const [statusFilter, setStatusFilter] = useState('');
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
@@ -238,8 +240,8 @@ export default function AgentTab() {
     });
 
     const handleSend = async () => {
-        if (!instruction.trim() || status === 'sending') return;
-        setStatus('sending');
+        if (!instruction.trim() || isSending) return;
+        setIsSending(true);
         try {
             await apiClient.post('/api/tasks', {
                 vault_id: parseInt(vaultId),
@@ -247,12 +249,19 @@ export default function AgentTab() {
                 context_node_ids: Array.from(selectedNodeIds),
             });
             setInstruction('');
-            setStatus('sent');
+            toast.success('Task added to queue');
             queryClient.invalidateQueries({queryKey: ['agentTasks', vaultId]});
-            setTimeout(() => setStatus('idle'), 3000);
-        } catch {
-            setStatus('error');
-            setTimeout(() => setStatus('idle'), 4000);
+        } catch (err) {
+            const msg = err.response?.data?.error;
+            if (err.response?.status === 403) {
+                toast.error(msg || 'You don\'t have permission to submit tasks in this vault.');
+            } else if (err.response?.status === 429) {
+                toast.error('Too many tasks — please wait before submitting again.');
+            } else {
+                toast.error(msg || 'Failed to queue task — check your connection.');
+            }
+        } finally {
+            setIsSending(false);
         }
     };
 
@@ -300,22 +309,11 @@ export default function AgentTab() {
                         variant="primary"
                         size="sm"
                         onClick={handleSend}
-                        disabled={!instruction.trim() || status === 'sending'}
+                        disabled={!instruction.trim() || isSending}
                     >
-                        {status === 'sending' ? 'Queuing…' : 'Queue Task ↗'}
+                        {isSending ? 'Queuing…' : 'Queue Task ↗'}
                     </Button>
                 </div>
-
-                {status === 'sent' && (
-                    <Alert variant="success" className="py-2 px-3 mt-2 mb-0 small">
-                        ✓ Task added to queue
-                    </Alert>
-                )}
-                {status === 'error' && (
-                    <Alert variant="danger" className="py-2 px-3 mt-2 mb-0 small">
-                        ✗ Failed to queue task — check connection
-                    </Alert>
-                )}
             </div>
 
             <hr className="my-1"/>

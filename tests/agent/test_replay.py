@@ -1,7 +1,7 @@
-# tests/runner/test_replay.py
+# tests/agent/test_replay.py
 
 """
-tests/runner/test_replay.py
+tests/agent/test_replay.py
 ============================
 B8 — Replay engine test suite.
 
@@ -11,7 +11,7 @@ Covers:
   3. Node structure matches expected post-agent state.
   4. Version history exists on modified nodes, authored by agent user.
   5. Rollback on a modified node restores pre-agent content.
-  6. Real task submitted to same runner is not affected.
+  6. Real task submitted to same agent is not affected.
   7. Corrupted remap table fails with a clear logged error.
 """
 
@@ -20,7 +20,7 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch
 
-from runner.replay import _run_replay
+from agent.replay import _run_replay
 
 
 # ---------------------------------------------------------------------------
@@ -51,29 +51,29 @@ def _make_task(status: str = "pending_demo", meta: dict | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 class TestRemapUuids:
-    from runner.replay import _remap_uuids
+    from agent.replay import _remap_uuids
 
     def test_simple_substitution(self):
-        from runner.replay import _remap_uuids
+        from agent.replay import _remap_uuids
         op     = {"type": "move_node", "node_id": "demo-child", "new_parent_id": "demo-parent"}
         remap  = {"demo-child": "live-child", "demo-parent": "live-parent"}
         result = _remap_uuids(op, remap)
         assert result == {"type": "move_node", "node_id": "live-child", "new_parent_id": "live-parent"}
 
     def test_unknown_uuids_passthrough(self):
-        from runner.replay import _remap_uuids
+        from agent.replay import _remap_uuids
         op    = {"type": "create_node", "parent_id": "not-in-remap", "title": "Test"}
         remap = {"demo-a": "live-a"}
         assert _remap_uuids(op, remap)["parent_id"] == "not-in-remap"
 
     def test_nested_dict_remapped(self):
-        from runner.replay import _remap_uuids
+        from agent.replay import _remap_uuids
         op    = {"type": "x", "inner": {"node_id": "demo-a"}}
         remap = {"demo-a": "live-a"}
         assert _remap_uuids(op, remap)["inner"]["node_id"] == "live-a"
 
     def test_non_string_values_untouched(self):
-        from runner.replay import _remap_uuids
+        from agent.replay import _remap_uuids
         op    = {"type": "create_node", "count": 3, "flag": True}
         remap = {"demo-a": "live-a"}
         result = _remap_uuids(op, remap)
@@ -156,15 +156,15 @@ class TestRunReplay:
     """_run_replay integration tests (service layer mocked)."""
 
     def _run(self, task_row, recording_path, mocks):
-        from runner.replay import _run_replay
+        from agent.replay import _run_replay
         with (
-            patch("runner.replay.svc_create_node",
+            patch("agent.replay.svc_create_node",
                   return_value={"ok": True, "node": {"id": "live-new"}}),
-            patch("runner.replay.svc_move_node",
+            patch("agent.replay.svc_move_node",
                   return_value={"ok": True}),
-            patch("runner.replay.svc_update_node",
+            patch("agent.replay.svc_update_node",
                   return_value={"ok": True}),
-            patch("runner.replay.svc_update_summary",
+            patch("agent.replay.svc_update_summary",
                   return_value={"ok": True}),
         ):
             return asyncio.run(_run_replay(
@@ -204,18 +204,18 @@ class TestRunReplay:
 
     # 3. Node structure matches expected post-agent state
     def test_operations_dispatched_correctly(self, recording_file):
-        from runner.replay import _run_replay
+        from agent.replay import _run_replay
         task  = _make_task()
         mocks = _build_replay_mocks(recording_file)
 
         with (
-            patch("runner.replay.svc_create_node",
+            patch("agent.replay.svc_create_node",
                   return_value={"ok": True, "node": {"id": "live-new"}}) as mock_create,
-            patch("runner.replay.svc_move_node",
+            patch("agent.replay.svc_move_node",
                   return_value={"ok": True}) as mock_move,
-            patch("runner.replay.svc_update_node",
+            patch("agent.replay.svc_update_node",
                   return_value={"ok": True}),
-            patch("runner.replay.svc_update_summary",
+            patch("agent.replay.svc_update_summary",
                   return_value={"ok": True}),
         ):
             asyncio.run(_run_replay(
@@ -249,11 +249,11 @@ class TestRunReplay:
         mocks = _build_replay_mocks(recording_file)
 
         with (
-            patch("runner.replay.svc_create_node",
+            patch("agent.replay.svc_create_node",
                   return_value={"ok": True, "node": {"id": "x"}}) as mock_create,
-            patch("runner.replay.svc_move_node",  return_value={"ok": True}),
-            patch("runner.replay.svc_update_node", return_value={"ok": True}),
-            patch("runner.replay.svc_update_summary", return_value={"ok": True}),
+            patch("agent.replay.svc_move_node",  return_value={"ok": True}),
+            patch("agent.replay.svc_update_node", return_value={"ok": True}),
+            patch("agent.replay.svc_update_summary", return_value={"ok": True}),
         ):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=7,
@@ -268,7 +268,7 @@ class TestRunReplay:
 
     # 5. Rollback restores pre-agent content
     #    (node_service.update_node creates a version entry; the rollback API
-    #    fetches the previous version. Tested here at the runner boundary:
+    #    fetches the previous version. Tested here at the agent boundary:
     #    svc_update_node must be called so a version record is created.)
     def test_write_node_produces_version_via_svc(self, tmp_path):
         recording = _make_recording([{
@@ -288,9 +288,9 @@ class TestRunReplay:
         mocks = _build_replay_mocks(str(p))
 
         with (
-            patch("runner.replay.svc_update_node",
+            patch("agent.replay.svc_update_node",
                   return_value={"ok": True}) as mock_update,
-            patch("runner.replay.svc_update_summary", return_value={"ok": True}),
+            patch("agent.replay.svc_update_summary", return_value={"ok": True}),
         ):
             asyncio.run(_run_replay(
                 task_row=task, vault_id=42, agent_user_id=99,
@@ -315,7 +315,7 @@ class TestRunReplay:
             mock_user = MagicMock()
             mock_user.id = 99
             mock_first.return_value = mock_user
-            from runner import loop
+            from agent import loop
 
         task = _make_task(status="pending")
 
@@ -348,7 +348,7 @@ class TestRunReplay:
 
     # 7. Corrupted remap table → clear error
     def test_missing_remap_raises(self, recording_file):
-        from runner.replay import _run_replay
+        from agent.replay import _run_replay
         task = _make_task()
         mocks = _build_replay_mocks(recording_file)
 
@@ -362,7 +362,7 @@ class TestRunReplay:
             ))
 
     def test_nonexistent_recording_file_raises(self):
-        from runner.replay import _run_replay
+        from agent.replay import _run_replay
         task = _make_task()
         mocks = _build_replay_mocks("/nonexistent/path/recording.json")
 
@@ -376,7 +376,7 @@ class TestRunReplay:
             ))
 
     def test_invalid_recording_json_raises(self, tmp_path):
-        from runner.replay import _run_replay
+        from agent.replay import _run_replay
         task        = _make_task()
         p = tmp_path / "bad.json"
         p.write_text("not-valid-json{")

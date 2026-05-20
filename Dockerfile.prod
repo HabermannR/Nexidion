@@ -16,8 +16,8 @@ RUN uv pip install --system --no-cache -r requirements.txt
 COPY backend/ ./backend/
 
 # Copy the orchestration scripts from the root
-COPY runner/   ./runner/
-COPY run.py task_runner.py ./
+COPY agent/   ./agent/
+COPY wsgi.py task_runner.py ./
 
 # Run the app via gunicorn (this gets overridden by task-runner's command in docker-compose)
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "run:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "wsgi:app"]

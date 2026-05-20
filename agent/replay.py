@@ -1,5 +1,5 @@
 """
-backend/runner/replay.py
+agent/replay.py
 ========================
 Demo replay engine (B8).
 
@@ -17,7 +17,7 @@ import json
 import time
 from pathlib import Path
 
-from runner.svc import (
+from agent.svc import (
     svc_create_node,
     svc_move_node,
     svc_update_node,
