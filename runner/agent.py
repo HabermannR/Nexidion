@@ -383,6 +383,7 @@ def run_agent(task_row: dict, audit,
     client_kwargs = {
         "api_key": gpt_token if gpt_token else local_llm_api_key,
         "http_client": httpx.Client(verify=tls_verify),
+        "timeout": 300.0,
     }
     if local_llm_url:
         client_kwargs["base_url"] = local_llm_url

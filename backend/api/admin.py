@@ -125,6 +125,10 @@ def update_user_details(user_id):
 # Vault access management
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Vault access management
+# ---------------------------------------------------------------------------
+
 @admin_bp.route('/vaults', methods=['GET'])
 @jwt_required()
 @admin_required
@@ -136,5 +140,55 @@ def list_all_vaults():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ADDED '/vaults' TO THE ROUTE BELOW
+@admin_bp.route('/vaults/<int:vault_id>/access', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_vault_access(vault_id):
+    """Get vault metadata, current access list, and grantable users."""
+    try:
+        data = vault_service.get_vault_access_list(vault_id)
+        return jsonify(data), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
 
+# ADDED '/vaults' TO THE ROUTE BELOW
+@admin_bp.route('/vaults/<int:vault_id>/access', methods=['POST'])
+@jwt_required()
+@admin_required
+def grant_vault_access(vault_id):
+    """Grant a user or LLM agent access to a vault."""
+    data = request.get_json(silent=True) or {}
+    user_id = data.get('user_id')
+    raw_role = data.get('role', VaultRole.EDITOR.value)
 
+    if raw_role == 'viewer':
+        role = VaultRole.VIEWER.value
+    elif raw_role == 'editor':
+        role = VaultRole.EDITOR.value
+    else:
+        role = raw_role
+
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+    if role not in (VaultRole.VIEWER.value, VaultRole.EDITOR.value):
+        return jsonify({"error": "Invalid role. Must be 1 (viewer) or 2 (editor)."}), 400
+
+    try:
+        vault_service.grant_vault_access(vault_id, int(user_id), role)
+        return jsonify({"message": "Access granted."}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+# ADDED '/vaults' TO THE ROUTE BELOW
+@admin_bp.route('/vaults/<int:vault_id>/access/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def revoke_vault_access(vault_id, user_id):
+    """Revoke a user's/agent's access to a vault."""
+    try:
+        vault_service.revoke_vault_access(vault_id, user_id)
+        return jsonify({"message": "Access revoked."}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
