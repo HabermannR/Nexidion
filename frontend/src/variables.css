@@ -1,15 +1,25 @@
 :root {
-  /* Your existing variables */
-  --primary-color: #405d83;
+  /* ── Core theme ─────────────────────────────────────────── */
+  --primary-color:   #405d83;
   --secondary-color: #f5f5f5;
-  --hover-color: #303f9f;
-  --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  --border-color: #e0e0e0;
-  --text-color: #333;
-  --white-color: #fff;
-  --header-height: 70px;
-  --footer-height: 0px;
-  --text-muted: #6c757d;
-  --text-faint: #999999;
-  --border-strong: #d0d0d0;
+  --hover-color:     #303f9f;
+  --font-family:     'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --border-color:    #e0e0e0;
+  --border-strong:   #d0d0d0;
+  --text-color:      #333;
+  --text-muted:      #6c757d;
+  --text-faint:      #999999;
+  --white-color:     #fff;
+  --header-height:   70px;
+  --footer-height:   0px;
+
+  /* ── Agent operation accent colours ─────────────────────── */
+  /* Defined here so every component (AgentTab, op rows, badges)
+     shares the same values and they can be overridden per-theme. */
+  --agent-op-create:  #2e7d5e;   /* green  — create_node            */
+  --agent-op-write:   #2e6b7d;   /* teal   — write_node             */
+  --agent-op-summary: #888888;   /* grey   — write_node_summary_only */
+  --agent-op-delete:  #a03535;   /* red    — delete_node / failed    */
+  --agent-op-move:    #7a6020;   /* amber  — move_node / stuck warn  */
+  /* patch_node re-uses --primary-color intentionally */
 }

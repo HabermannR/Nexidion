@@ -34,9 +34,10 @@ import psycopg2.extras
 
 from backend.app import create_app
 from backend.models import db, User, UserType
+from backend.services.vault_service import get_vault_access
 from agent.audit import Audit
 from agent.agent import run_agent
-from agent.replay import _run_replay
+from agent.replay import _run_replay, RecordingWriter
 
 flask_app = create_app()
 
@@ -212,7 +213,8 @@ def _execute_task(task_row: dict, conn) -> None:
 
             else:
                 _log("Mode: REAL LLM")
-                summary = run_agent(
+                recording = RecordingWriter()
+                summary, recording = run_agent(
                     task_row          = task_row,
                     audit             = audit,
                     agent_user_id     = AGENT_USER_ID,
@@ -225,7 +227,23 @@ def _execute_task(task_row: dict, conn) -> None:
                     blacklist_icon    = BLACKLIST_ICON,
                     read_lock_icon    = READ_LOCK_ICON,
                     log_fn            = _log,
+                    recording         = recording,
                 )
+                # Write recording to DEMO_RECORDING_PATH if demo mode is active.
+                # The file is overwritten on every successful real run — the admin
+                # decides whether to keep it by resetting or re-running the task.
+                demo_recording_path = flask_app.config.get("DEMO_RECORDING_PATH")
+                if demo_recording_path and recording and recording.steps:
+                    import json as _json
+                    from pathlib import Path as _Path
+                    try:
+                        _Path(demo_recording_path).write_text(
+                            _json.dumps(recording.to_dict(), ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                        _log(f"📼 Recording saved to {demo_recording_path} ({len(recording.steps)} steps)")
+                    except OSError as write_err:
+                        _log(f"⚠️  Could not write recording: {write_err}")
                 mark_task_raw(conn, task_id, "completed", summary=summary,
                               operations=audit.writes)
                 audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
@@ -274,6 +292,19 @@ def run_loop():
 
         _log(f"Claimed task : {task_row['id']}")
         _log(f"Instruction  : {task_row['instruction']}")
+
+        # Pre-flight: verify the agent user has access to the vault BEFORE
+        # dispatching. Without this, the task fails mid-run with
+        # "LLM has no access to the vault" after work has already started.
+        try:
+            with flask_app.app_context():
+                get_vault_access(task_row["vault_id"], AGENT_USER_ID)
+        except (PermissionError, ValueError) as e:
+            _log(f"✗ Vault access check failed for vault {task_row['vault_id']}: {e}")
+            mark_task_raw(conn, task_row["id"], "failed",
+                          summary=f"LLM has no access to the vault: {e}")
+            time.sleep(POLL_INTERVAL)
+            continue
 
         _execute_task(task_row, conn)
 

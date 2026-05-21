@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from functools import wraps
 
@@ -8,7 +8,7 @@ from backend.models import db, User, VaultRole
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
 # ---------------------------------------------------------------------------
-# Auth decorator
+# Auth decorators
 # ---------------------------------------------------------------------------
 
 def admin_required(fn):
@@ -21,6 +21,20 @@ def admin_required(fn):
             return jsonify({"error": "User not found"}), 401
         if not user.is_admin:
             return jsonify({"error": "Admin privileges required"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def demo_required(fn):
+    """Guards demo-only endpoints. Returns 404 when DEMO_MODE_ENABLED is false.
+
+    Stacks after @admin_required. Returning 404 (not 403) keeps these endpoints
+    invisible to non-demo installs — they look like they simply don't exist.
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not current_app.config.get("DEMO_MODE_ENABLED", False):
+            return jsonify({"error": "Not found"}), 404
         return fn(*args, **kwargs)
     return wrapper
 
@@ -120,61 +134,6 @@ def update_user_details(user_id):
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
 
-# ---------------------------------------------------------------------------
-# Developer / testing utilities
-# ---------------------------------------------------------------------------
-
-@admin_bp.route('/replay-test', methods=['POST'])
-@jwt_required()
-@admin_required
-def trigger_replay_test():
-    """[ADMIN] Queue a pending_demo task on any vault to test the B8 replay engine.
-
-    Body (JSON):
-        vault_id (int, required): The vault that will receive the pending_demo task.
-
-    The agent picks up pending_demo tasks exactly as it does for real guest sessions,
-    so this lets you test the full replay path without creating a guest account.
-    """
-    from backend.models import Task
-
-    data = request.get_json(silent=True) or {}
-    vault_id = data.get('vault_id')
-
-    if not vault_id:
-        return jsonify({"error": "vault_id is required"}), 400
-
-    try:
-        vault_id = int(vault_id)
-    except (TypeError, ValueError):
-        return jsonify({"error": "vault_id must be an integer"}), 400
-
-    # Verify the vault actually exists
-    from backend.models import Vault
-    vault = db.session.get(Vault, vault_id)
-    if not vault:
-        return jsonify({"error": f"Vault {vault_id} not found"}), 404
-
-    task = Task(
-        vault_id=vault_id,
-        instruction="[admin replay test] Replay the demo recording.",
-        context_node_ids=[],
-        status='pending_demo',
-    )
-    db.session.add(task)
-    db.session.commit()
-
-    return jsonify({
-        "message": "pending_demo task queued. The agent will pick it up on its next tick.",
-        "task_id": task.id,
-        "vault_id": vault_id,
-    }), 201
-
-
-
-# ---------------------------------------------------------------------------
-# Vault access management
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Vault access management
@@ -191,7 +150,35 @@ def list_all_vaults():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ADDED '/vaults' TO THE ROUTE BELOW
+
+@admin_bp.route('/vaults/<int:vault_id>', methods=['PUT'])
+@jwt_required()
+@admin_required
+def admin_rename_vault(vault_id):
+    """[ADMIN] Rename any vault, bypassing owner check."""
+    new_name = (request.get_json(silent=True) or {}).get('name', '').strip()
+    if not new_name:
+        return jsonify({"error": "New name is required."}), 400
+    try:
+        vault = vault_service.admin_rename_vault(vault_id, new_name)
+        return jsonify(vault), 200
+    except ValueError as e:
+        status_code = 404 if "not found" in str(e).lower() else 409
+        return jsonify({"error": str(e)}), status_code
+
+
+@admin_bp.route('/vaults/<int:vault_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def admin_delete_vault(vault_id):
+    """[ADMIN] Delete any vault, bypassing owner check."""
+    try:
+        vault_service.admin_delete_vault(vault_id)
+        return jsonify({"message": f"Vault {vault_id} deleted."}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
 @admin_bp.route('/vaults/<int:vault_id>/access', methods=['GET'])
 @jwt_required()
 @admin_required
@@ -203,7 +190,7 @@ def get_vault_access(vault_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
 
-# ADDED '/vaults' TO THE ROUTE BELOW
+
 @admin_bp.route('/vaults/<int:vault_id>/access', methods=['POST'])
 @jwt_required()
 @admin_required
@@ -232,7 +219,7 @@ def grant_vault_access(vault_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-# ADDED '/vaults' TO THE ROUTE BELOW
+
 @admin_bp.route('/vaults/<int:vault_id>/access/<int:user_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
@@ -243,3 +230,99 @@ def revoke_vault_access(vault_id, user_id):
         return jsonify({"message": "Access revoked."}), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# Demo Studio endpoints (DEMO_MODE_ENABLED=true only)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/replay-test', methods=['POST'])
+@jwt_required()
+@admin_required
+@demo_required
+def trigger_replay_test():
+    """[DEMO] Queue a pending_demo task on any vault to smoke-test the replay engine."""
+    from backend.models import Task, Vault
+
+    data = request.get_json(silent=True) or {}
+    vault_id = data.get('vault_id')
+    if not vault_id:
+        return jsonify({"error": "vault_id is required"}), 400
+    try:
+        vault_id = int(vault_id)
+    except (TypeError, ValueError):
+        return jsonify({"error": "vault_id must be an integer"}), 400
+
+    vault = db.session.get(Vault, vault_id)
+    if not vault:
+        return jsonify({"error": f"Vault {vault_id} not found"}), 404
+
+    task = Task(
+        vault_id=vault_id,
+        instruction="[admin replay test] Replay the demo recording.",
+        context_node_ids=[],
+        status='pending_demo',
+    )
+    db.session.add(task)
+    db.session.commit()
+    return jsonify({
+        "message": "pending_demo task queued. The runner will pick it up on its next tick.",
+        "task_id": task.id,
+        "vault_id": vault_id,
+    }), 201
+
+
+@admin_bp.route('/vaults/<int:vault_id>/reset-to-snapshot', methods=['POST'])
+@jwt_required()
+@admin_required
+@demo_required
+def reset_vault_to_snapshot(vault_id):
+    """[DEMO] Wipe a vault's nodes and reimport from a .nexidion snapshot.
+
+    Body (JSON):
+        snapshot (dict): a parsed .nexidion export payload
+
+    The "undo" step after a real agent run: resets the vault back to the clean
+    demo baseline so it's ready for the next guest replay. The vault's owner
+    and access grants are preserved — only nodes are replaced.
+    """
+    from backend.models import Node, Vault
+    from backend.services.import_service import _create_node_from_export, _rewrite_internal_links
+    from backend.services.node_service import rebuild_vault_tree_cache
+    from backend.services.vault_service import invalidate_vault_list_cache
+
+    data = request.get_json(silent=True) or {}
+    snapshot = data.get("snapshot")
+    if not snapshot:
+        return jsonify({"error": "'snapshot' field (parsed .nexidion JSON) is required."}), 400
+
+    vault = db.session.get(Vault, vault_id)
+    if not vault:
+        return jsonify({"error": f"Vault {vault_id} not found."}), 404
+
+    # Delete all existing nodes (cascade deletes versions)
+    db.session.execute(db.delete(Node).where(Node.vault_id == vault_id))
+    db.session.flush()
+
+    # Reimport in BFS order (the export already guarantees this)
+    remap: dict[str, str] = {}
+    for node_data in snapshot.get("nodes", []):
+        new_id = _create_node_from_export(
+            node_data=node_data,
+            vault_id=vault_id,
+            owner_id=vault.owner_id,
+            remap=remap,
+        )
+        remap[node_data["id"]] = new_id
+
+    _rewrite_internal_links(vault_id, remap)
+    db.session.commit()
+
+    invalidate_vault_list_cache(vault.owner_id)
+    rebuild_vault_tree_cache(vault_id)
+
+    return jsonify({
+        "message": f"Vault {vault_id} reset to snapshot state.",
+        "vault_id": vault_id,
+        "node_count": len(snapshot.get("nodes", [])),
+    }), 200

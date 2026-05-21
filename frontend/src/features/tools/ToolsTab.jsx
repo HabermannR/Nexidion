@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { copyContextContent } from '../../lib/clipboardService.js';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
 import { useToast } from '../../components/ToastProvider.jsx';
+import { useSystemConfigQuery } from '../auth/useSystemConfigQuery';
 
 // Import our helper functions
 import { getIdsInOrder, generateTocForSelectedNodes } from '../nodes/node.utils.js';
@@ -20,6 +21,8 @@ import '../agent/AgentTab.css';
 export default function ToolsTab() {
     const { vaultId } = useParams();
     const toast = useToast();
+    const { data: systemConfig } = useSystemConfigQuery();
+    const isDemo = systemConfig?.demo_mode_enabled === true;
 
     const [copyContentStatus, setCopyContentStatus] = useState('idle'); // idle | copying | success
     const [copyTreeStatus, setCopyTreeStatus] = useState('idle');
@@ -323,34 +326,38 @@ export default function ToolsTab() {
                         {printStatus === 'preparing_all' ? 'Preparing Entire Vault...' : 'Print Entire Vault'}
                     </Button>
 
-                    {/* NEW: AI INGESTION SECTION */}
-                    <hr className="my-2 text-muted" />
-                    <h6 className="text-muted mb-2">AI Document Ingestion</h6>
+                    {/* AI INGESTION SECTION — hidden in demo mode */}
+                    {!isDemo && (
+                        <>
+                            <hr className="my-2 text-muted" />
+                            <h6 className="text-muted mb-2">AI Document Ingestion</h6>
 
-                    <input
-                        type="file"
-                        accept=".pdf"
-                        style={{ display: 'none' }}
-                        ref={pdfInputRef}
-                        onChange={handlePdfFileChange}
-                    />
+                            <input
+                                type="file"
+                                accept=".pdf"
+                                style={{ display: 'none' }}
+                                ref={pdfInputRef}
+                                onChange={handlePdfFileChange}
+                            />
 
-                    <Button
-                        variant="outline-info"
-                        size="sm"
-                        onClick={handlePdfIngestClick}
-                        disabled={!isIngestAllowed || ingestStatus === 'ingesting'}
-                    >
-                        {ingestStatus === 'ingesting' ? (
-                            <><i className="bx bx-loader-alt bx-spin me-1"></i> Uploading...</>
-                        ) : (
-                            <><i className="bx bxs-file-pdf me-1"></i> Ingest PDF to {ingestTargetTitle}</>
-                        )}
-                    </Button>
-                    {!isIngestAllowed && (
-                        <small className="text-danger">
-                            Please select exactly 1 node (or 0 nodes) to use as a target folder.
-                        </small>
+                            <Button
+                                variant="outline-info"
+                                size="sm"
+                                onClick={handlePdfIngestClick}
+                                disabled={!isIngestAllowed || ingestStatus === 'ingesting'}
+                            >
+                                {ingestStatus === 'ingesting' ? (
+                                    <><i className="bx bx-loader-alt bx-spin me-1"></i> Uploading...</>
+                                ) : (
+                                    <><i className="bx bxs-file-pdf me-1"></i> Ingest PDF to {ingestTargetTitle}</>
+                                )}
+                            </Button>
+                            {!isIngestAllowed && (
+                                <small className="text-danger">
+                                    Please select exactly 1 node (or 0 nodes) to use as a target folder.
+                                </small>
+                            )}
+                        </>
                     )}
 
                     <hr className="my-2 text-muted" />

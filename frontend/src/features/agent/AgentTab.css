@@ -1,4 +1,8 @@
-/* src/features/agent/AgentTab.css */
+/* src/features/agent/AgentTab.css
+   Accent colours (--agent-op-*) are defined in variables.css.
+   This file must never hardcode those hex values — always use the token. */
+
+/* ── Operation detail pane ──────────────────────────────────────────────── */
 
 .agent-op-detail {
     display: flex;
@@ -6,7 +10,7 @@
     gap: 2px;
     margin-top: 5px;
     padding-top: 4px;
-    border-top: 1px solid var(--border-color, #e0e0e0);
+    border-top: 1px solid var(--border-color);
 }
 
 .agent-op-detail-row {
@@ -17,14 +21,14 @@
 }
 
 .agent-op-detail-key {
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
     flex-shrink: 0;
     min-width: 110px;
     text-transform: capitalize;
 }
 
 .agent-op-detail-val {
-    color: var(--text-color, #333333);
+    color: var(--text-color);
     word-break: break-word;
 }
 
@@ -38,8 +42,17 @@
     white-space: normal;
 }
 
+/* ── Operation row ──────────────────────────────────────────────────────── */
+/*
+   --op-color is set inline on each .agent-op-row via the OperationRow
+   component (style={{ '--op-color': meta.color }}). meta.color is always
+   one of the --agent-op-* tokens, so --op-color is always resolved.
+   The fallback here covers the edge case where a future op type has no
+   OPERATION_META entry and the component falls back to --text-muted.
+*/
+
 .agent-op-row {
-    border-left: 2px solid var(--op-color, var(--text-muted, #6c757d));
+    border-left: 2px solid var(--op-color, var(--text-muted));
     padding-left: 8px;
     padding-top: 3px;
     padding-bottom: 3px;
@@ -57,7 +70,7 @@
 }
 
 .agent-op-label {
-    color: var(--op-color, var(--text-muted, #6c757d));
+    color: var(--op-color, var(--text-muted));
     font-size: 0.7rem;
     font-weight: 600;
     flex-shrink: 0;
@@ -66,7 +79,7 @@
 .agent-op-link {
     font-family: monospace;
     font-size: 0.65rem;
-    color: var(--primary-color, #405d83);
+    color: var(--primary-color);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -75,30 +88,32 @@
 }
 
 .agent-op-link:hover {
-    color: var(--hover-color, #303f9f);
+    color: var(--hover-color);
 }
 
 .agent-op-id {
     font-family: monospace;
     font-size: 0.65rem;
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
     flex: 1;
 }
 
 .agent-op-time {
     font-size: 0.62rem;
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
     flex-shrink: 0;
 }
 
 .agent-op-toggle {
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
     font-size: 0.6rem;
     flex-shrink: 0;
 }
 
+/* ── Task detail pane ───────────────────────────────────────────────────── */
+
 .agent-task-detail-container {
-    border-top: 1px solid var(--border-color, #e0e0e0);
+    border-top: 1px solid var(--border-color);
     padding-top: 10px;
     margin-top: 4px;
     display: flex;
@@ -108,7 +123,7 @@
 
 .agent-task-section-title {
     font-size: 0.62rem;
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 4px;
@@ -117,9 +132,9 @@
 
 .agent-task-box {
     font-size: 0.72rem;
-    color: var(--text-color, #333333);
-    background: var(--secondary-color, #f5f5f5);
-    border: 1px solid var(--border-color, #e0e0e0);
+    color: var(--text-color);
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 6px 8px;
     white-space: pre-wrap;
@@ -130,6 +145,8 @@
     font-family: monospace;
 }
 
+/* ── Status badge ───────────────────────────────────────────────────────── */
+
 .agent-status-badge {
     font-size: 0.6rem;
     font-weight: 700;
@@ -138,26 +155,49 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     flex-shrink: 0;
-    border: 1px solid var(--border-color, #e0e0e0);
-    background: var(--secondary-color, #f5f5f5);
-    color: var(--text-muted, #6c757d);
+    border: 1px solid var(--border-color);
+    background: var(--secondary-color);
+    color: var(--text-muted);
 }
 
-.status-completed { background: #e6f2ec; color: #2e7d5e; border-color: #b8deca; }
-.status-failed { background: #fceaea; color: #a03535; border-color: #f0b8b8; }
-.status-processing { background: #fdf6e3; color: #7a6020; border-color: #e8d99a; }
-.status-pending { background: var(--secondary-color, #f0f0f0); color: #666; border-color: var(--border-color, #d8d8d8); }
+.status-completed {
+    background: #e6f2ec;
+    color: var(--agent-op-create);
+    border-color: #b8deca;
+}
+.status-failed {
+    background: #fceaea;
+    color: var(--agent-op-delete);
+    border-color: #f0b8b8;
+}
+.status-processing {
+    background: #fdf6e3;
+    color: var(--agent-op-move);
+    border-color: #e8d99a;
+}
+.status-pending {
+    background: var(--secondary-color);
+    color: #666;
+    border-color: var(--border-color);
+}
+
+/* ── Task card ──────────────────────────────────────────────────────────── */
 
 .agent-task-card {
-    background: var(--white-color, #ffffff);
-    border: 1px solid var(--border-color, #e0e0e0);
+    background: var(--white-color);
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     overflow: hidden;
     transition: border-color 0.15s ease-in-out;
 }
 
 .agent-task-card.expanded {
-    border-color: var(--border-strong, #d0d0d0);
+    border-color: var(--border-strong);
+}
+
+/* Failed card: subtle left accent using the defined token */
+.agent-task-card.is-failed {
+    border-left: 3px solid var(--agent-op-delete);
 }
 
 .agent-task-card-header {
@@ -171,7 +211,7 @@
 
 .agent-task-card-preview {
     font-size: 0.73rem;
-    color: var(--text-color, #333333);
+    color: var(--text-color);
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -193,19 +233,21 @@
 
 .agent-task-card-id {
     font-size: 0.62rem;
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
     font-family: monospace;
 }
 
 .agent-task-card-time {
     font-size: 0.62rem;
-    color: var(--text-faint, #999999);
+    color: var(--text-faint);
 }
 
 .agent-task-card-body {
     padding: 0 10px 10px;
-    background: var(--white-color, #ffffff);
+    background: var(--white-color);
 }
+
+/* ── Context node chips ─────────────────────────────────────────────────── */
 
 .agent-context-list {
     display: flex;
@@ -215,13 +257,45 @@
 
 .agent-context-chip {
     font-size: 0.7rem;
-    background: var(--secondary-color, #f5f5f5);
-    border: 1px solid var(--border-color, #e0e0e0);
-    color: var(--text-color, #333333);
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
     padding: 2px 6px;
     border-radius: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 150px;
+}
+
+/* ── Stuck-processing warning ───────────────────────────────────────────── */
+
+.agent-stuck-warning {
+    font-size: 0.72rem;
+    color: var(--agent-op-move);
+    margin-top: 0.25rem;
+    opacity: 0.85;
+}
+
+/* ── Retry button ───────────────────────────────────────────────────────── */
+
+.agent-retry-btn {
+    font-size: 0.68rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    border: 1px solid var(--agent-op-delete);
+    background: transparent;
+    color: var(--agent-op-delete);
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.4;
+    transition: background 0.15s, color 0.15s;
+}
+.agent-retry-btn:hover:not(:disabled) {
+    background: var(--agent-op-delete);
+    color: var(--white-color);
+}
+.agent-retry-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }

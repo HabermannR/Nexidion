@@ -1,45 +1,32 @@
-// src/features/vaults/VaultManager.jsx
+// src/features/settings/VaultManager.jsx
 
 import React, { useState, useEffect, useRef } from 'react';
-// ADDED: useParams to read the vaultId from the URL if activeVault is not present
 import { Link, useOutletContext, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-    Container,
-    Row,
-    Col,
-    Card,
-    Button,
-    Form as BootstrapForm,
-    Table,
-    Alert,
-    Spinner,
-    InputGroup
+    Container, Row, Col, Card, Button,
+    Form as BootstrapForm, Table, Alert, Spinner, InputGroup,
 } from 'react-bootstrap';
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { useToast } from '../../components/ToastProvider.jsx';
 
-// --- VaultRow Component (Refactored - NO CHANGES) ---
+// ─── VaultRow ─────────────────────────────────────────────────────────────────
+
 function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutation }) {
     const [isEditing, setIsEditing] = useState(false);
 
-    // Check if a mutation targeting THIS row is in progress
     const isRenaming = renameMutation.isPending && renameMutation.variables?.vaultId === vault.id;
     const isDeleting = deleteMutation.isPending && deleteMutation.variables === vault.id;
 
-    // Close editing mode on successful rename
     useEffect(() => {
-        if (renameMutation.isSuccess) {
-            setIsEditing(false);
-        }
+        if (renameMutation.isSuccess) setIsEditing(false);
     }, [renameMutation.isSuccess]);
 
     const handleRenameSubmit = (e) => {
         e.preventDefault();
-        const formData = new FormData(e.currentTarget);
-        const newName = formData.get('newName');
-        if (newName && newName.trim() !== '') {
+        const newName = new FormData(e.currentTarget).get('newName');
+        if (newName?.trim()) {
             renameMutation.mutate({ vaultId: vault.id, newName: newName.trim() });
         }
     };
@@ -51,22 +38,21 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
     };
 
     return (
-        <tr key={vault.id}>
+        <tr>
             <td>
                 {isEditing ? (
                     <BootstrapForm onSubmit={handleRenameSubmit} className="d-flex">
                         <InputGroup>
                             <BootstrapForm.Control
-                                type="text"
-                                name="newName"
+                                type="text" name="newName"
                                 defaultValue={vault.name}
-                                autoFocus
-                                disabled={isRenaming}
+                                autoFocus disabled={isRenaming}
                             />
                             <Button type="submit" variant="outline-success" size="sm" disabled={isRenaming}>
                                 {isRenaming ? <Spinner size="sm" /> : '✓'}
                             </Button>
-                            <Button variant="outline-secondary" size="sm" onClick={() => setIsEditing(false)} disabled={isRenaming}>
+                            <Button variant="outline-secondary" size="sm"
+                                onClick={() => setIsEditing(false)} disabled={isRenaming}>
                                 ✕
                             </Button>
                         </InputGroup>
@@ -79,23 +65,27 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
                 {activeVault?.id === vault.id ? (
                     <span className="badge bg-success">Active</span>
                 ) : (
-                    <Link to={`/vaults/${vault.id}`} className="btn btn-sm btn-outline-primary">
-                        Activate
-                    </Link>
+                    // FIX: vault change now goes through Link which triggers router-level
+                    // vaultId change → WorkspaceLayout's useEffect clears selectedNodeIds.
+                    // The extra clearSelection() call below is a belt-and-suspenders guard
+                    // for cases where the vault is already loaded but the store wasn't reset
+                    // (e.g. same vaultId after a page reload).
+                    <ActivateVaultLink vaultId={vault.id} />
                 )}
             </td>
             <td>
                 {!isEditing && (
                     <div className="btn-group" role="group">
-                        <Button variant="outline-primary" size="sm" onClick={() => setIsEditing(true)} disabled={isDeleting || isRenaming}>
+                        <Button variant="outline-primary" size="sm"
+                            onClick={() => setIsEditing(true)}
+                            disabled={isDeleting || isRenaming}>
                             Rename
                         </Button>
                         <Button
-                            variant="outline-danger"
-                            size="sm"
+                            variant="outline-danger" size="sm"
                             onClick={handleDelete}
                             disabled={isDeleting || isRenaming || vaultsCount <= 1}
-                            title={vaultsCount <= 1 ? "The last vault cannot be deleted" : ""}
+                            title={vaultsCount <= 1 ? 'The last vault cannot be deleted' : ''}
                         >
                             {isDeleting ? <Spinner size="sm" /> : 'Delete'}
                         </Button>
@@ -106,36 +96,58 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
     );
 }
 
+// ─── ActivateVaultLink ────────────────────────────────────────────────────────
+//
+// Extracts the vault-activation click into its own component so we can call
+// clearSelection() *before* navigation. Without this, the selected node IDs
+// from the old vault bleed into the new vault's context until the workspace
+// layout remounts — which can cause the agent tab to submit tasks with stale
+// node IDs that don't exist in the new vault.
 
-// --- Main VaultManager Component (Refactored) ---
+function ActivateVaultLink({ vaultId }) {
+    const clearSelection = useWorkspaceStore(state => state.clearSelection);
+    const navigate       = useNavigate();
+
+    const handleActivate = (e) => {
+        e.preventDefault();
+        clearSelection();          // ← FIX: empty selected nodes before switching vault
+        navigate(`/vaults/${vaultId}`);
+    };
+
+    return (
+        <a href={`/vaults/${vaultId}`}
+            className="btn btn-sm btn-outline-primary"
+            onClick={handleActivate}>
+            Activate
+        </a>
+    );
+}
+
+// ─── Main VaultManager ────────────────────────────────────────────────────────
+
 export default function VaultManager() {
-    // FIX: useOutletContext is not robust enough, we use useParams as a fallback
-    const { activeVault } = useOutletContext() || {};
-    const { vaultId } = useParams(); // Get the vaultId from the URL
-    const navigate = useNavigate();
-    const queryClient = useQueryClient();
+    const { activeVault }  = useOutletContext() || {};
+    const { vaultId }      = useParams();
+    const navigate         = useNavigate();
+    const queryClient      = useQueryClient();
+    const toast            = useToast();
 
-    // FIX: We read the vault-specific path object
-    const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
-
-    // FIX: We determine the correct path for the current context
-    const currentVaultId = activeVault?.id || vaultId;
-    const lastValidPathForThisVault = lastValidPaths ? lastValidPaths[currentVaultId] : null;
-
+    const lastValidPaths        = useWorkspaceStore(state => state.lastValidPaths);
+    const currentVaultId        = activeVault?.id || vaultId;
+    const lastValidPathForThisVault = lastValidPaths?.[currentVaultId] ?? null;
 
     const [isBatchMode, setIsBatchMode] = useState(false);
-    const [successMsg, setSuccessMsg] = useState(null);
-    const formRef = useRef();
+    const [successMsg,  setSuccessMsg]  = useState(null);
+    const formRef  = useRef();
     const inputRef = useRef();
-    const toast = useToast();
 
-    // --- DATA FETCHING with useQuery ---
     const { data: vaults, isLoading, isError, error: loaderError } = useQuery({
         queryKey: ['vaults'],
-        queryFn: () => apiClient.get('/api/vaults/').then(res => res.data)
+        queryFn:  () => apiClient.get('/api/vaults/').then(res => res.data),
     });
 
-    // --- MUTATIONS ---
+    // --- Mutations ---
+
     const createVaultMutation = useMutation({
         mutationFn: (name) => apiClient.post('/api/vaults/', { name }),
         onSuccess: (response) => {
@@ -150,59 +162,56 @@ export default function VaultManager() {
                 navigate(`/vaults/${newVault.id}`);
             }
         },
-        onError: (err) => {
-            toast.error(err.response?.data?.error || 'Failed to create vault.');
-        }
+        onError: (err) => toast.error(err.response?.data?.error || 'Failed to create vault.'),
     });
 
     const renameVaultMutation = useMutation({
-        mutationFn: ({ vaultId, newName }) => apiClient.put(`/api/vaults/${vaultId}`, { name: newName }),
+        mutationFn: ({ vaultId, newName }) =>
+            apiClient.put(`/api/vaults/${vaultId}`, { name: newName }),
         onSuccess: (response) => {
-            const updatedVault = response.data;
             queryClient.invalidateQueries({ queryKey: ['vaults'] });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
-            setSuccessMsg(`Vault successfully renamed to "${updatedVault.name}".`);
+            setSuccessMsg(`Vault successfully renamed to "${response.data.name}".`);
         },
-        onError: (err) => toast.error(err.response?.data?.error || 'Renaming failed.')
+        onError: (err) => toast.error(err.response?.data?.error || 'Renaming failed.'),
     });
 
     const deleteVaultMutation = useMutation({
         mutationFn: (vaultId) => apiClient.delete(`/api/vaults/${vaultId}`),
-        onSuccess: (data, vaultIdToDelete) => {
-            queryClient.invalidateQueries({ queryKey: ['vaults']}).then(() => {
-                const remainingVaults = queryClient.getQueryData(['vaults']);
+        onSuccess: (_, vaultIdToDelete) => {
+            queryClient.invalidateQueries({ queryKey: ['vaults'] }).then(() => {
+                const remaining = queryClient.getQueryData(['vaults']);
                 if (activeVault?.id === vaultIdToDelete) {
-                    if (remainingVaults && remainingVaults.length > 0) {
-                        navigate(`/vaults/${remainingVaults[0].id}`);
-                    } else {
-                        navigate('/settings/vaults');
-                    }
+                    navigate(
+                        remaining?.length > 0
+                            ? `/vaults/${remaining[0].id}`
+                            : '/settings/vaults'
+                    );
                 }
             });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
             setSuccessMsg('Vault was successfully deleted.');
         },
-        onError: (err) => toast.error(err.response?.data?.error || 'Deletion failed.')
+        onError: (err) => toast.error(err.response?.data?.error || 'Deletion failed.'),
     });
 
     const handleCreateSubmit = (event) => {
         event.preventDefault();
-        const formData = new FormData(event.currentTarget);
-        const name = formData.get('name');
-        if (name && name.trim() !== '') {
-            createVaultMutation.mutate(name.trim());
-        }
+        const name = new FormData(event.currentTarget).get('name');
+        if (name?.trim()) createVaultMutation.mutate(name.trim());
     };
 
     const handleBackClick = () => {
-        // FIX: We use the vault-specific path
         navigate(lastValidPathForThisVault || (currentVaultId ? `/vaults/${currentVaultId}` : '/'));
     };
 
-    const isSubmitting = createVaultMutation.isPending || renameVaultMutation.isPending || deleteVaultMutation.isPending;
+    const isSubmitting =
+        createVaultMutation.isPending ||
+        renameVaultMutation.isPending ||
+        deleteVaultMutation.isPending;
 
     return (
-        <Container className="py-4">
+        <Container className="py-4" style={{ height: '100%', overflowY: 'auto' }}>
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h2>Vault Management</h2>
                 <Button onClick={handleBackClick} variant="secondary">
@@ -210,9 +219,12 @@ export default function VaultManager() {
                 </Button>
             </div>
 
-            {successMsg && <Alert variant="success" onClose={() => setSuccessMsg(null)} dismissible>{successMsg}</Alert>}
+            {successMsg && (
+                <Alert variant="success" onClose={() => setSuccessMsg(null)} dismissible>
+                    {successMsg}
+                </Alert>
+            )}
 
-            {/* The rest of the component remains unchanged... */}
             <Card className="mb-4">
                 <Card.Header as="h5">Create New Vault</Card.Header>
                 <Card.Body>
@@ -235,15 +247,17 @@ export default function VaultManager() {
                                 <BootstrapForm.Check
                                     type="switch" id="batch-mode-switch"
                                     label="Batch creation (create & stay here)"
-                                    checked={isBatchMode} onChange={(e) => setIsBatchMode(e.target.checked)}
+                                    checked={isBatchMode}
+                                    onChange={e => setIsBatchMode(e.target.checked)}
                                     disabled={createVaultMutation.isPending}
                                 />
                             </Col>
                             <Col xs={5} md={4} className="d-flex align-items-end">
-                                <Button type="submit" variant="primary" disabled={createVaultMutation.isPending} className="w-100">
-                                    {createVaultMutation.isPending ? (
-                                        <><Spinner as="span" animation="border" size="sm" /> Creating...</>
-                                    ) : 'Create Vault'}
+                                <Button type="submit" variant="primary"
+                                    disabled={createVaultMutation.isPending} className="w-100">
+                                    {createVaultMutation.isPending
+                                        ? <><Spinner as="span" animation="border" size="sm" /> Creating...</>
+                                        : 'Create Vault'}
                                 </Button>
                             </Col>
                         </Row>
@@ -263,18 +277,20 @@ export default function VaultManager() {
                     ) : (
                         <Table responsive hover>
                             <thead>
-                            <tr><th>Name</th><th>Status</th><th>Actions</th></tr>
+                                <tr><th>Name</th><th>Status</th><th>Actions</th></tr>
                             </thead>
                             <tbody>
-                            {vaults.map((vault) => (
-                                <VaultRow
-                                    key={vault.id} vault={vault}
-                                    activeVault={activeVault} vaultsCount={vaults.length}
-                                    renameMutation={renameVaultMutation}
-                                    deleteMutation={deleteVaultMutation}
-                                    isSubmitting={isSubmitting}
-                                />
-                            ))}
+                                {vaults.map(vault => (
+                                    <VaultRow
+                                        key={vault.id}
+                                        vault={vault}
+                                        activeVault={activeVault}
+                                        vaultsCount={vaults.length}
+                                        renameMutation={renameVaultMutation}
+                                        deleteMutation={deleteVaultMutation}
+                                        isSubmitting={isSubmitting}
+                                    />
+                                ))}
                             </tbody>
                         </Table>
                     )}

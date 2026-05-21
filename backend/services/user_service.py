@@ -98,10 +98,22 @@ def delete_user(user_id_to_delete: int, acting_user_id: int):
             raise PermissionError("Cannot delete user: No admin available to inherit their data.")
         heir_admin_id = fallback_admin.id
 
-    # 2. Reassign their owned Vaults
-    Vault.query.filter_by(owner_id=user_id_to_delete).update(
-        {"owner_id": heir_admin_id}, synchronize_session='fetch'
-    )
+    # 2. Reassign their owned Vaults — rename on collision with heir's existing vaults
+    guest_vaults = Vault.query.filter_by(owner_id=user_id_to_delete).all()
+    heir_existing_names = {
+        v.name for v in Vault.query.filter_by(owner_id=heir_admin_id).all()
+    }
+    for vault in guest_vaults:
+        target_name = vault.name
+        if target_name in heir_existing_names:
+            # Append the original owner username to avoid the unique constraint violation
+            target_name = f"{vault.name} (from {user_to_delete.username})"
+            # If that still collides, append the vault id as a last resort
+            if target_name in heir_existing_names:
+                target_name = f"{vault.name} (from {user_to_delete.username}, vault {vault.id})"
+        vault.owner_id = heir_admin_id
+        vault.name = target_name
+        heir_existing_names.add(target_name)
 
     # 3. Reassign their authored Versions
     Version.query.filter_by(author_id=user_id_to_delete).update(

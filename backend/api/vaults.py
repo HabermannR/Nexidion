@@ -81,10 +81,11 @@ def export_vault_endpoint(vault_id):
         json_str = export_vault(vault_id, current_user_id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
-    except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
     except DemoLockError as e:
         return jsonify({"error": str(e)}), 423
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+
 
     vault = vault_service.get_vault_by_id(vault_id, user_id=current_user_id)
     safe_name = vault.name.replace('"', '').replace('/', '-').replace('\\', '-')

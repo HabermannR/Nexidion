@@ -272,6 +272,47 @@ def get_all_vaults() -> list:
     return result
 
 
+def admin_rename_vault(vault_id: int, new_name: str) -> dict:
+    """[Admin] Rename any vault without owner check."""
+    vault = db.session.get(Vault, vault_id)
+    if not vault:
+        raise ValueError(f"Vault with ID {vault_id} not found.")
+    new_name = new_name.strip()
+    if not new_name:
+        raise ValueError("New vault name cannot be empty.")
+    collision = Vault.query.filter(
+        Vault.id != vault_id,
+        Vault.name == new_name,
+        Vault.owner_id == vault.owner_id,
+    ).first()
+    if collision:
+        raise ValueError(f"The owner already has a vault named '{new_name}'.")
+    vault.name = new_name
+    _invalidate_vault_cache_for_all_affected(vault_id)
+    db.session.commit()
+    owner = db.session.get(User, vault.owner_id)
+    return {
+        "id": vault.id,
+        "name": vault.name,
+        "owner_id": vault.owner_id,
+        "owner_username": owner.username if owner else "unknown",
+        "owner_display_name": owner.display_name if owner else "Unknown",
+    }
+
+
+def admin_delete_vault(vault_id: int):
+    """[Admin] Delete any vault without owner/last-vault check."""
+    vault = db.session.get(Vault, vault_id)
+    if not vault:
+        raise ValueError(f"Vault with ID {vault_id} not found.")
+    affected_ids = _collect_affected_user_ids(vault_id)
+    db.session.delete(vault)
+    db.session.flush()
+    for uid in affected_ids:
+        invalidate_vault_list_cache(uid)
+    db.session.commit()
+
+
 def get_vault_access_list(vault_id: int) -> dict:
     """[Admin] Vault metadata + current access list + available users to grant."""
     vault = db.session.get(Vault, vault_id)

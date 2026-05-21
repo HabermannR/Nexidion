@@ -2,16 +2,16 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
 import apiClient from '../../api/apiClient';
 import { useToast } from '../../components/ToastProvider';
 
-// Import our new theme-compliant stylesheet
 import './AgentTab.css';
 
-// Operation accent colors mapped to generic custom properties (so they can be easily overridden)
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const OPERATION_META = {
     create_node:             { label: 'Created node',  color: 'var(--agent-op-create, #2e7d5e)', icon: '✦' },
     patch_node:              { label: 'Patched node',  color: 'var(--primary-color, #405d83)', icon: '✎' },
@@ -20,6 +20,9 @@ const OPERATION_META = {
     delete_node:             { label: 'Deleted node',  color: 'var(--agent-op-delete, #a03535)', icon: '✕' },
     move_node:               { label: 'Moved node',    color: 'var(--agent-op-move, #7a6020)', icon: '⇢' },
 };
+
+// How many minutes before a "processing" task is considered stale/stuck.
+const STUCK_THRESHOLD_MINUTES = 10;
 
 // ─── OperationDetail ──────────────────────────────────────────────────────────
 
@@ -76,9 +79,7 @@ function OperationRow({ op, vaultId }) {
                         {shortId}
                     </NavLink>
                 ) : (
-                    <span className="agent-op-id">
-                        {shortId}
-                    </span>
+                    <span className="agent-op-id">{shortId}</span>
                 )}
                 <span className="agent-op-time">{time}</span>
                 {hasDetail && (
@@ -87,6 +88,55 @@ function OperationRow({ op, vaultId }) {
             </div>
             {open && hasDetail && <OperationDetail detail={op.detail} />}
         </div>
+    );
+}
+
+// ─── StuckWarning ─────────────────────────────────────────────────────────────
+
+function StuckWarning({ createdAt }) {
+    const ageMinutes = (Date.now() - new Date(createdAt).getTime()) / 60_000;
+    if (ageMinutes < STUCK_THRESHOLD_MINUTES) return null;
+    return (
+        <div className="agent-stuck-warning">
+            ⚠ Still processing after {Math.floor(ageMinutes)} min — the runner may have stalled.
+        </div>
+    );
+}
+
+// ─── RetryButton ──────────────────────────────────────────────────────────────
+
+function RetryButton({ task, vaultId }) {
+    const queryClient = useQueryClient();
+    const toast = useToast();
+
+    const retryMutation = useMutation({
+        mutationFn: () =>
+            apiClient.post('/api/tasks', {
+                vault_id: parseInt(vaultId),
+                instruction: task.instruction,
+                context_node_ids: task.context_node_ids || [],
+            }),
+        onSuccess: () => {
+            toast.success('Task re-queued');
+            queryClient.invalidateQueries({ queryKey: ['agentTasks', vaultId] });
+        },
+        onError: (err) => {
+            toast.error(err.response?.data?.error || 'Failed to re-queue task.');
+        },
+    });
+
+    return (
+        <button
+            className="agent-retry-btn"
+            disabled={retryMutation.isPending}
+            onClick={(e) => {
+                e.stopPropagation();
+                retryMutation.mutate();
+            }}
+            title="Re-queue this task with the same instruction and context"
+        >
+            {retryMutation.isPending ? '…' : '↺ Retry'}
+        </button>
     );
 }
 
@@ -102,19 +152,13 @@ function TaskDetail({ taskId, vaultId }) {
         staleTime: 10_000,
     });
 
-    if (isLoading) return (
-        <div className="text-muted small py-2">Loading…</div>
-    );
-    if (isError || !data) return (
-        <div className="text-danger small py-2">Failed to load detail.</div>
-    );
+    if (isLoading) return <div className="text-muted small py-2">Loading…</div>;
+    if (isError || !data) return <div className="text-danger small py-2">Failed to load detail.</div>;
 
     const operations = Array.isArray(data.operations) ? data.operations : [];
 
     return (
         <div className="agent-task-detail-container">
-
-            {/* Input */}
             <div>
                 <div className="agent-task-section-title">Input</div>
                 <div className="agent-task-box is-input">
@@ -122,7 +166,6 @@ function TaskDetail({ taskId, vaultId }) {
                 </div>
             </div>
 
-            {/* Output */}
             <div>
                 <div className="agent-task-section-title">Output</div>
                 <div className="agent-task-box">
@@ -133,7 +176,6 @@ function TaskDetail({ taskId, vaultId }) {
                 </div>
             </div>
 
-            {/* Operations */}
             <div>
                 <div className="agent-task-section-title">
                     Operations ({operations.length})
@@ -142,7 +184,9 @@ function TaskDetail({ taskId, vaultId }) {
                     <div className="text-muted small fst-italic">No write operations recorded.</div>
                 ) : (
                     <div className="d-flex flex-column gap-1">
-                        {operations.map((op, i) => <OperationRow key={i} op={op} vaultId={vaultId} />)}
+                        {operations.map((op, i) => (
+                            <OperationRow key={i} op={op} vaultId={vaultId} />
+                        ))}
                     </div>
                 )}
             </div>
@@ -165,10 +209,13 @@ function StatusBadge({ status }) {
 
 function TaskCard({ task, vaultId }) {
     const [expanded, setExpanded] = useState(false);
-    const preview = task.preview_text || '';
+    const preview = task.preview_text || task.instruction || '';
+
+    const isFailed     = task.status === 'failed';
+    const isProcessing = task.status === 'processing';
 
     return (
-        <div className={`agent-task-card ${expanded ? 'expanded' : ''}`}>
+        <div className={`agent-task-card ${expanded ? 'expanded' : ''} ${isFailed ? 'is-failed' : ''}`}>
             <div
                 className="agent-task-card-header"
                 onClick={() => setExpanded(e => !e)}
@@ -177,7 +224,13 @@ function TaskCard({ task, vaultId }) {
                     <div className={`agent-task-card-preview ${!expanded ? 'is-collapsed' : ''}`}>
                         {preview}
                     </div>
-                    <StatusBadge status={task.status} />
+                    <div className="d-flex flex-column align-items-end gap-1">
+                        <StatusBadge status={task.status} />
+                        {/* Retry button — shown for failed tasks AND in the header for stuck-processing */}
+                        {(isFailed || isProcessing) && (
+                            <RetryButton task={task} vaultId={vaultId} />
+                        )}
+                    </div>
                 </div>
 
                 <div className="agent-task-card-meta">
@@ -195,6 +248,11 @@ function TaskCard({ task, vaultId }) {
                         </span>
                     </div>
                 </div>
+
+                {/* Stuck-processing warning (shown inline, not in the detail pane) */}
+                {isProcessing && (
+                    <StuckWarning createdAt={task.created_at} />
+                )}
             </div>
 
             {expanded && (
@@ -209,7 +267,7 @@ function TaskCard({ task, vaultId }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AgentTab() {
-    const {vaultId} = useParams();
+    const { vaultId } = useParams();
     const queryClient = useQueryClient();
     const toast = useToast();
     const [instruction, setInstruction] = useState('');
@@ -217,23 +275,23 @@ export default function AgentTab() {
     const [statusFilter, setStatusFilter] = useState('');
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
-    const {data: queryData} = useVaultTreeQuery(vaultId);
+    const { data: queryData } = useVaultTreeQuery(vaultId);
     const allNodesFlat = useMemo(() => queryData?.allNodesFlat || [], [queryData]);
 
     const selectedNodes = useMemo(() => {
         if (allNodesFlat.length === 0 || selectedNodeIds.size === 0) return [];
         const nodeMap = new Map(allNodesFlat.map(n => [n.id, n]));
         return Array.from(selectedNodeIds)
-            .map(id => ({id, title: nodeMap.get(id)?.title || id}))
+            .map(id => ({ id, title: nodeMap.get(id)?.title || id }))
             .sort((a, b) => a.title.localeCompare(b.title));
     }, [selectedNodeIds, allNodesFlat]);
 
-    const {data: tasks = [], isLoading: loadingTasks} = useQuery({
+    const { data: tasks = [], isLoading: loadingTasks } = useQuery({
         queryKey: ['agentTasks', vaultId, statusFilter],
         queryFn: async () => {
-            const params = {vault_id: vaultId, limit: 20};
+            const params = { vault_id: vaultId, limit: 20 };
             if (statusFilter) params.status = statusFilter;
-            const res = await apiClient.get('/api/tasks', {params});
+            const res = await apiClient.get('/api/tasks', { params });
             return Array.isArray(res.data) ? res.data : (res.data.tasks || []);
         },
         refetchInterval: 5000,
@@ -250,11 +308,11 @@ export default function AgentTab() {
             });
             setInstruction('');
             toast.success('Task added to queue');
-            queryClient.invalidateQueries({queryKey: ['agentTasks', vaultId]});
+            queryClient.invalidateQueries({ queryKey: ['agentTasks', vaultId] });
         } catch (err) {
             const msg = err.response?.data?.error;
             if (err.response?.status === 403) {
-                toast.error(msg || 'You don\'t have permission to submit tasks in this vault.');
+                toast.error(msg || "You don't have permission to submit tasks in this vault.");
             } else if (err.response?.status === 429) {
                 toast.error('Too many tasks — please wait before submitting again.');
             } else {
@@ -300,8 +358,8 @@ export default function AgentTab() {
                     value={instruction}
                     onChange={e => setInstruction(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    disabled={status === 'sending'}
-                    style={{resize: 'vertical', fontSize: '0.82rem'}}
+                    disabled={isSending}
+                    style={{ resize: 'vertical', fontSize: '0.82rem' }}
                 />
 
                 <div className="d-grid mt-3">
@@ -316,13 +374,13 @@ export default function AgentTab() {
                 </div>
             </div>
 
-            <hr className="my-1"/>
+            <hr className="my-1" />
 
-            <div className="flex-grow-1 d-flex flex-column" style={{minHeight: 0}}>
+            <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: 0 }}>
                 <div className="d-flex justify-content-between align-items-center mb-2">
                     <h6 className="text-muted mb-0">
                         Tasks
-                        <span className="ms-1" style={{fontSize: '0.7rem', fontWeight: 400}}>
+                        <span className="ms-1" style={{ fontSize: '0.7rem', fontWeight: 400 }}>
                             (last 20)
                         </span>
                     </h6>
@@ -331,7 +389,7 @@ export default function AgentTab() {
                         className="w-auto py-0 text-muted"
                         value={statusFilter}
                         onChange={e => setStatusFilter(e.target.value)}
-                        style={{fontSize: '0.8rem'}}
+                        style={{ fontSize: '0.8rem' }}
                     >
                         <option value="">All Statuses</option>
                         <option value="pending">Pending</option>
@@ -349,7 +407,7 @@ export default function AgentTab() {
                     ) : (
                         <div className="d-flex flex-column gap-2">
                             {tasks.map(task => (
-                                <TaskCard key={task.id} task={task} vaultId={vaultId}/>
+                                <TaskCard key={task.id} task={task} vaultId={vaultId} />
                             ))}
                         </div>
                     )}

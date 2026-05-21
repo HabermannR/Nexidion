@@ -35,6 +35,9 @@ class RecordingWriter:
         self.steps = []
         self._step_start: float | None = None
         self._pending_message: str = ""
+        # Maps created node index (0-based, per create_node step) → live UUID
+        # so the replay engine can build the remap table correctly.
+        self.created_node_ids: list[str] = []
 
     def begin_step(self, status_message: str):
         self._step_start      = time.monotonic()
@@ -48,8 +51,16 @@ class RecordingWriter:
             "operation":      {"type": op_type, **kwargs},
         })
 
+    def register_created_node(self, live_uuid: str):
+        """Call after a create_node succeeds to record the live UUID for replay remap."""
+        self.created_node_ids.append(live_uuid)
+
     def to_dict(self) -> dict:
-        return {"nexidion_recording_version": 1, "steps": self.steps}
+        return {
+            "nexidion_recording_version": 1,
+            "steps": self.steps,
+            "created_node_ids": self.created_node_ids,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +85,8 @@ def _remap_uuids(operation: dict, remap: dict) -> dict:
 # Mirrors the tool handlers in agent.py — same svc_* calls, same code path.
 # ---------------------------------------------------------------------------
 
-def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> None:
+def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> str | None:
+    """Apply one operation. Returns the new node UUID for create_node, None otherwise."""
     op_type = op.get("type")
 
     if op_type == "create_node":
@@ -88,7 +100,9 @@ def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> Non
         )
         if not res["ok"]:
             raise RuntimeError(f"replay create_node failed: {res['error']}")
-        log_fn(f"  [replay] create_node '{op['title']}' → {res['node']['id']}")
+        new_id = res["node"]["id"]
+        log_fn(f"  [replay] create_node '{op['title']}' → {new_id}")
+        return new_id
 
     elif op_type == "write_node":
         res = svc_update_node(vault_id, op["node_id"], agent_user_id,
@@ -126,6 +140,7 @@ def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> Non
             f"replay: unknown operation type '{op_type}' — "
             "recording may be corrupt or from a newer version."
         )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +186,12 @@ async def _run_replay(
         raise RuntimeError(f"replay: recording file is not valid JSON — {exc}") from exc
 
     steps = recording.get("steps", [])
+    # created_node_ids: list of live UUIDs from the real agent run, in create_node order.
+    # We use these to build a per-guest remap so every reference to a dynamically-created
+    # node is translated to the guest vault's own newly-created UUID.
+    recording_created_ids = recording.get("created_node_ids", [])
+    create_node_counter = 0
+
     log_fn(f"Replay: {len(steps)} step(s) from '{recording_path}'")
 
     for i, step in enumerate(steps, 1):
@@ -191,7 +212,16 @@ async def _run_replay(
             ) from exc
 
         with flask_app.app_context():
-            _apply_operation(op, vault_id, agent_user_id, log_fn)
+            new_uuid = _apply_operation(op, vault_id, agent_user_id, log_fn)
+
+        # If this was a create_node, register the new UUID in the remap so
+        # subsequent steps that reference this node (e.g. move_node into it)
+        # are translated correctly. This fixes the "Tree rehydrate" bug where
+        # nodes created mid-recording were not found on subsequent references.
+        if new_uuid is not None and create_node_counter < len(recording_created_ids):
+            original_uuid = recording_created_ids[create_node_counter]
+            remap[original_uuid] = new_uuid
+            create_node_counter += 1
 
     # Unlock the vault's demo state
     with flask_app.app_context():
