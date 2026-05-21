@@ -360,64 +360,218 @@ function VaultsSection() {
     );
 }
 
-// ── B8 Replay Tester ─────────────────────────────────────────────────────────
+// ── Developer Tools ─────────────────────────────────────────────────────────
 
-function ReplayTester() {
+function DemoScriptExtractor() {
     const toast = useToast();
-    const [selectedVaultId, setSelectedVaultId] = useState('');
-    const [lastResult, setLastResult] = useState(null);
+    const [taskId, setTaskId] = useState('');
+    const [script, setScript] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleExtract = async () => {
+        if (!taskId.trim()) return;
+        setIsLoading(true);
+        try {
+            const res = await apiClient.get(`/api/tasks/${taskId.trim()}`);
+            const task = res.data;
+            const ops = task.operations || [];
+
+            // Format as a safe Python string that parses JSON
+            const opsJson = JSON.stringify(ops, null, 4);
+            const outputCode = `import json
+
+DEMO_INSTRUCTION = ${JSON.stringify(task.instruction || "")}
+
+DEMO_FINISH_SUMMARY = ${JSON.stringify(task.finish_summary || "")}
+
+DEMO_OPERATIONS = json.loads(r"""
+${opsJson}
+""")
+`;
+            setScript(outputCode);
+            toast.success('Script extracted!');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to fetch task details.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <Card className="h-100 border-info">
+            <Card.Header as="h6" className="d-flex align-items-center gap-2">
+                🛠️ Demo Script Extractor
+                <Badge bg="info" className="ms-auto text-dark">Dev Tool</Badge>
+            </Card.Header>
+            <Card.Body className="d-flex flex-column">
+                <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
+                    Turn a real agent run into a free Demo Script. Enter a Task ID below to extract its operations into Python code.
+                </p>
+                <InputGroup size="sm" className="mb-3">
+                    <BootstrapForm.Control
+                        placeholder="Task ID (e.g. 123...)"
+                        value={taskId}
+                        onChange={e => setTaskId(e.target.value)}
+                    />
+                    <Button variant="info" onClick={handleExtract} disabled={!taskId || isLoading}>
+                        {isLoading ? 'Fetching...' : 'Extract Script'}
+                    </Button>
+                </InputGroup>
+
+                {script && (
+                    <div className="mt-auto">
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                            <span className="fw-semibold small">Generated Python Code</span>
+                            <Button
+                                variant="outline-secondary"
+                                size="sm"
+                                style={{ fontSize: '0.7rem', padding: '2px 6px' }}
+                                onClick={() => { navigator.clipboard.writeText(script); toast.success('Copied!'); }}
+                            >
+                                Copy Code
+                            </Button>
+                        </div>
+                        <BootstrapForm.Control
+                            as="textarea"
+                            className="font-monospace bg-light text-dark"
+                            style={{ fontSize: '0.75rem', height: '200px', resize: 'vertical' }}
+                            readOnly
+                            value={script}
+                        />
+                    </div>
+                )}
+            </Card.Body>
+        </Card>
+    );
+}
+
+function DeveloperToolsSection() {
+    const toast = useToast();
+    const [demoVaultId, setDemoVaultId] = useState('');
+    const [resetVaultId, setResetVaultId] = useState('');
+    const [snapshotFile, setSnapshotFile] = useState(null);
 
     const { data: vaults, isLoading: isLoadingVaults } = useQuery({
         queryKey: ['admin', 'allVaults'],
         queryFn: () => apiClient.get('/api/admin/vaults').then(res => res.data),
     });
 
-    const triggerMutation = useMutation({
+    // 1. Trigger the Demo Agent
+    const triggerDemoMutation = useMutation({
         mutationFn: (vaultId) => apiClient.post('/api/admin/replay-test', { vault_id: parseInt(vaultId, 10) }),
-        onSuccess: (res) => { setLastResult({ ok: true, task_id: res.data.task_id, vault_id: res.data.vault_id }); toast.success(`Replay task queued — task ID ${res.data.task_id}`); },
-        onError: (err) => { const msg = err.response?.data?.error || 'Failed to queue replay task.'; setLastResult({ ok: false, error: msg }); toast.error(msg); },
+        onSuccess: (res) => toast.success(`Demo task queued — task ID ${res.data.task_id}`),
+        onError: (err) => toast.error(err.response?.data?.error || 'Failed to queue demo task.'),
     });
 
+    // 2. Reset Vault to Snapshot
+    const resetMutation = useMutation({
+        mutationFn: async ({ vaultId, file }) => {
+            const text = await file.text();
+            const snapshot = JSON.parse(text);
+            return apiClient.post(`/api/admin/vaults/${vaultId}/reset-to-snapshot`, { snapshot });
+        },
+        onSuccess: (res) => {
+            toast.success(`Vault reset! Restored ${res.data.node_count} nodes.`);
+            setSnapshotFile(null);
+            document.getElementById('snapshot-upload').value = '';
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Failed to reset vault.'),
+    });
+
+    const handleResetSubmit = () => {
+        if (!resetVaultId || !snapshotFile) return;
+        if (window.confirm('Are you sure? This will WIPE the current vault nodes and replace them with the snapshot.')) {
+            resetMutation.mutate({ vaultId: resetVaultId, file: snapshotFile });
+        }
+    };
+
     return (
-        <Card className="mb-4 border-warning">
-            <Card.Header as="h5" className="d-flex align-items-center gap-2">
-                🔁 B8 Replay Engine Test
-                <Badge bg="warning" text="dark" className="ms-1">Dev only</Badge>
-            </Card.Header>
-            <Card.Body>
-                <p className="text-muted mb-3" style={{ fontSize: '0.9rem' }}>
-                    Creates a <code>pending_demo</code> task on any vault and lets the runner pick it up.
-                </p>
-                <Row className="align-items-end g-2">
-                    <Col sm={7}>
-                        <BootstrapForm.Label className="fw-semibold">Target vault</BootstrapForm.Label>
-                        {isLoadingVaults
-                            ? <BootstrapForm.Control disabled placeholder="Loading vaults…" />
-                            : (
-                                <BootstrapForm.Select value={selectedVaultId} onChange={e => setSelectedVaultId(e.target.value)}>
-                                    <option value="">— select a vault —</option>
+        <>
+            <Row className="g-4 mb-4">
+                {/* Tool 1: Reset from Snapshot */}
+                <Col lg={6}>
+                    <Card className="h-100 border-primary">
+                        <Card.Header as="h6" className="d-flex align-items-center gap-2">
+                            ⏪ Snapshot Reset (Manual Undo)
+                            <Badge bg="primary" className="ms-auto">Dev Tool</Badge>
+                        </Card.Header>
+                        <Card.Body className="d-flex flex-column">
+                            <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
+                                Simulate the "Undo Agent" feature. Upload a <code>.nexidion</code> export file to instantly wipe and restore a vault to that snapshot.
+                            </p>
+                            <BootstrapForm.Group className="mb-2">
+                                <BootstrapForm.Label className="fw-semibold small">1. Target Vault</BootstrapForm.Label>
+                                <BootstrapForm.Select size="sm" value={resetVaultId} onChange={e => setResetVaultId(e.target.value)}>
+                                    <option value="">— select a vault to overwrite —</option>
                                     {vaults?.map(v => (
-                                        <option key={v.id} value={v.id}>[{v.id}] {v.name}{v.owner_username ? ` (${v.owner_username})` : ''}</option>
+                                        <option key={v.id} value={v.id}>[{v.id}] {v.name} ({v.owner_username})</option>
                                     ))}
                                 </BootstrapForm.Select>
-                            )}
-                    </Col>
-                    <Col sm="auto">
-                        <Button variant="warning" onClick={() => { setLastResult(null); triggerMutation.mutate(selectedVaultId); }}
-                            disabled={!selectedVaultId || triggerMutation.isPending}>
-                            {triggerMutation.isPending ? <><Spinner size="sm" className="me-1" />Queuing…</> : '▶ Queue replay task'}
-                        </Button>
-                    </Col>
-                </Row>
-                {lastResult && (
-                    <Alert variant={lastResult.ok ? 'success' : 'danger'} className="mt-3 mb-0">
-                        {lastResult.ok
-                            ? <>Task <code>{lastResult.task_id}</code> queued on vault <code>{lastResult.vault_id}</code>.</>
-                            : lastResult.error}
-                    </Alert>
-                )}
-            </Card.Body>
-        </Card>
+                            </BootstrapForm.Group>
+                            <BootstrapForm.Group className="mb-3">
+                                <BootstrapForm.Label className="fw-semibold small">2. Snapshot File (.nexidion)</BootstrapForm.Label>
+                                <BootstrapForm.Control
+                                    size="sm"
+                                    type="file"
+                                    id="snapshot-upload"
+                                    accept=".nexidion,application/json"
+                                    onChange={e => setSnapshotFile(e.target.files[0])}
+                                />
+                            </BootstrapForm.Group>
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                className="w-100 mt-auto"
+                                onClick={handleResetSubmit}
+                                disabled={!resetVaultId || !snapshotFile || resetMutation.isPending}
+                            >
+                                {resetMutation.isPending ? 'Restoring...' : 'Wipe & Restore Snapshot'}
+                            </Button>
+                        </Card.Body>
+                    </Card>
+                </Col>
+
+                {/* Tool 2: Demo Agent Replay */}
+                <Col lg={6}>
+                    <Card className="h-100 border-warning">
+                        <Card.Header as="h6" className="d-flex align-items-center gap-2">
+                            🔁 Demo Agent Simulator
+                            <Badge bg="warning" text="dark" className="ms-auto">Dev Tool</Badge>
+                        </Card.Header>
+                        <Card.Body className="d-flex flex-column">
+                            <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
+                                Creates a fake <code>pending_demo</code> task on a vault. The background runner will pick this up and execute the pre-recorded tutorial animation.
+                            </p>
+                            <BootstrapForm.Group className="mb-3">
+                                <BootstrapForm.Label className="fw-semibold small">Target Vault</BootstrapForm.Label>
+                                <BootstrapForm.Select size="sm" value={demoVaultId} onChange={e => setDemoVaultId(e.target.value)}>
+                                    <option value="">— select a vault —</option>
+                                    {vaults?.map(v => (
+                                        <option key={v.id} value={v.id}>[{v.id}] {v.name} ({v.owner_username})</option>
+                                    ))}
+                                </BootstrapForm.Select>
+                            </BootstrapForm.Group>
+                            <Button
+                                variant="warning"
+                                size="sm"
+                                className="w-100 mt-auto"
+                                onClick={() => triggerDemoMutation.mutate(demoVaultId)}
+                                disabled={!demoVaultId || triggerDemoMutation.isPending}
+                            >
+                                {triggerDemoMutation.isPending ? 'Queuing...' : '▶ Queue Demo Task'}
+                            </Button>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
+
+            {/* Tool 3: Script Extractor */}
+            <Row className="g-4 mb-4">
+                <Col lg={12}>
+                    <DemoScriptExtractor />
+                </Col>
+            </Row>
+        </>
     );
 }
 
@@ -451,17 +605,18 @@ export default function AdminDashboard() {
             <p className="text-muted mb-3">All vaults in the system, including demo vaults owned by guest accounts.</p>
             <VaultsSection />
 
-            {/* ── Developer Tools ── */}
-            <hr className="my-4" />
-            <h4 className="mb-1">Developer Tools</h4>
-            <p className="text-muted">Internal testing utilities — not visible to normal users.</p>
-            <ReplayTester />
-
             {/* ── Vault Access Management ── */}
             <hr className="my-4" />
             <h4 className="mb-1">Vault Access Management</h4>
-            <p className="text-muted">Assign human users and LLM agents to vaults.</p>
+            <p className="text-muted mb-3">Assign human users and LLM agents to vaults.</p>
             <VaultAccessManager />
+
+            {/* ── Developer Tools ── */}
+            <hr className="my-4" />
+            <h4 className="mb-1">Developer Tools</h4>
+            <p className="text-muted mb-3">Internal testing utilities — not visible to normal users.</p>
+            <DeveloperToolsSection />
+
         </Container>
     );
 }
