@@ -26,7 +26,6 @@ from agent.helpers import (
     is_blacklisted,
     is_read_locked,
 )
-from agent.replay import RecordingWriter
 from agent.svc import (
     svc_create_node,
     svc_get_node,
@@ -319,7 +318,7 @@ def run_agent(task_row: dict, audit,
               max_loop_turns: int, max_tool_fetches: int,
               blacklist_icon: str, read_lock_icon: str,
               log_fn,
-              recording: RecordingWriter | None = None) -> tuple[str, RecordingWriter | None]:
+              record_full_text: bool = False) -> str:
 
     instruction      = task_row["instruction"]
     vault_id         = task_row["vault_id"]
@@ -378,9 +377,6 @@ def run_agent(task_row: dict, audit,
     # ------------------------------------------------------------------
     # OpenAI client
     # ------------------------------------------------------------------
-    # TLS verification is disabled only when targeting a local LLM endpoint
-    # (LM Studio, Ollama, etc.) which typically use self-signed or no TLS.
-    # When calling the real OpenAI API, full certificate verification is kept.
     tls_verify = not bool(local_llm_url)
     client_kwargs = {
         "api_key": gpt_token if gpt_token else local_llm_api_key,
@@ -528,9 +524,6 @@ def run_agent(task_row: dict, audit,
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "ok", msg)
                     audit.record_write("rename_node", node_id, {"title": title})
-                    if recording:
-                        recording.begin_step(f"Renaming node to '{title}'…")
-                        recording.record_operation("rename_node", node_id=node_id, title=title)
                 else:
                     _append(input_list, item.call_id, f"Rename failed: {res['error']}")
                     audit.record_tool(name, args, "error", res["error"])
@@ -558,7 +551,7 @@ def run_agent(task_row: dict, audit,
                     log_fn(f"  ✅ write_node (summary only): {node_id}")
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "ok", msg)
-                    audit.record_write("write_node_summary_only", node_id, {"summary": ai_summary})
+                    audit.record_write("write_node", node_id, {"ai_summary": ai_summary})
                     continue
 
                 res = _svc_update_node(vault_id, node_id, content=content)
@@ -578,13 +571,12 @@ def run_agent(task_row: dict, audit,
                 msg = f"Node {node_id} written successfully."
                 _append(input_list, item.call_id, msg)
                 audit.record_tool(name, args, "ok", msg)
-                audit.record_write("write_node", node_id,
-                                   {"content_length": len(content), "summary": ai_summary})
-                if recording:
-                    recording.begin_step("Writing node…")
-                    recording.record_operation(
-                        "write_node", node_id=node_id, content=content, ai_summary=ai_summary
-                    )
+                detail = {"ai_summary": ai_summary}
+                if record_full_text:
+                    detail["content"] = content
+                else:
+                    detail["content_length"] = len(content)
+                audit.record_write("write_node", node_id, detail)
 
             # ── patch_node ───────────────────────────────────────────────
             elif name == "patch_node":
@@ -611,7 +603,7 @@ def run_agent(task_row: dict, audit,
                         log_fn(f"  ✅ patch_node (summary only): {node_id}")
                         _append(input_list, item.call_id, msg)
                         audit.record_tool(name, args, "ok", msg)
-                        audit.record_write("patch_node_summary_only", node_id, {"summary": ai_summary})
+                        audit.record_write("patch_node", node_id, {"ai_summary": ai_summary})
                         continue
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "blocked", msg)
@@ -658,14 +650,12 @@ def run_agent(task_row: dict, audit,
                 msg = f"Node {node_id} patched ({len(patches)} patch(es))."
                 _append(input_list, item.call_id, msg)
                 audit.record_tool(name, args, "ok", msg)
-                audit.record_write("patch_node", node_id,
-                                   {"num_patches": len(patches),
-                                    "summary_updated": bool(ai_summary)})
-                if recording:
-                    recording.begin_step("Patching node…")
-                    recording.record_operation(
-                        "patch_node", node_id=node_id, content=current, ai_summary=ai_summary or ""
-                    )
+                detail = {"ai_summary": ai_summary} if ai_summary else {}
+                if record_full_text:
+                    detail["content"] = current
+                else:
+                    detail["num_patches"] = len(patches)
+                audit.record_write("patch_node", node_id, detail)
 
             # ── move_node ────────────────────────────────────────────────
             elif name == "move_node":
@@ -679,11 +669,6 @@ def run_agent(task_row: dict, audit,
                     audit.record_tool(name, args, "ok", "Moved successfully.")
                     audit.record_write("move_node", node_id,
                                        {"new_parent_id": new_parent_id})
-                    if recording:
-                        recording.begin_step("Moving node…")
-                        recording.record_operation(
-                            "move_node", node_id=node_id, new_parent_id=new_parent_id
-                        )
                 else:
                     _append(input_list, item.call_id, f"Move failed: {res['error']}")
                     audit.record_tool(name, args, "error", res["error"])
@@ -714,22 +699,11 @@ def run_agent(task_row: dict, audit,
                     msg = f"Created '{title}' with UUID {new_id} under {parent_id}."
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "ok", msg)
-                    audit.record_write("create_node", new_id,
-                                       {"parent_id": parent_id, "title": title})
-                    if recording:
-                        recording.begin_step(f"Creating '{title}'…")
-                        # Record the agent's original parent_id (pre-live UUID).
-                        # The replay remap table translates it for each guest vault.
-                        recording.record_operation(
-                            "create_node",
-                            title=title,
-                            parent_id=parent_id,
-                            content=content or "",
-                            ai_summary=ai_summary or "",
-                        )
-                        # Register this new node's live UUID in the recording remap
-                        # so subsequent operations that reference it are remapped correctly.
-                        recording.register_created_node(new_id)
+                    detail = {"parent_id": parent_id, "title": title}
+                    if record_full_text:
+                        detail["content"] = content
+                        detail["ai_summary"] = ai_summary
+                    audit.record_write("create_node", new_id, detail)
                 else:
                     _append(input_list, item.call_id, f"Create failed: {res['error']}")
                     audit.record_tool(name, args, "error", res["error"])
@@ -772,4 +746,4 @@ def run_agent(task_row: dict, audit,
         audit.end_turn(time.time() - t0)
 
     log_fn(f"\nAgent done: {loop_count} turn(s), {fetch_call_count} fetch(es).")
-    return finish_summary or "Completed.", recording
+    return finish_summary or "Completed."

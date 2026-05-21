@@ -8,7 +8,9 @@ Sie wird von der API-Schicht (Blueprints) aufgerufen und interagiert
 direkt mit den Datenbank-Models.
 """
 
-from backend.models import db, Task, User, DemoState
+from flask import current_app
+from sqlalchemy import or_
+from backend.models import db, Task, User, DemoState, UserType
 from backend.services.vault_service import _verify_vault_access
 
 # Valid status values, used for validation across create and filter operations.
@@ -20,16 +22,29 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
     Erstellt einen neuen Task für einen Vault, nachdem der Zugriff überprüft wurde.
     Wirft Fehler bei ungültigen Daten oder fehlenden Berechtigungen.
     """
-    # Validate inputs before anything else, regardless of user type.
     instruction_stripped = instruction.strip() if isinstance(instruction, str) else ""
     if not instruction_stripped:
         raise ValueError("Instruction cannot be empty.")
     if not isinstance(context_node_ids, list):
         raise ValueError("context_node_ids must be a list.")
 
-    # Always verify vault access — demo guests must own the vault they target.
+    # 1. Always verify HUMAN vault access
     _verify_vault_access(vault_id, user_id)
 
+    # 2. PRE-FLIGHT CHECK: Check if the LLM AGENT has access to the vault!
+    # Resolve the agent user exactly like agent/loop.py does
+    agent = User.query.filter_by(user_type=UserType.LLM_ASSISTANT).first()
+    if not agent:
+        raise PermissionError("System Error: No AI Agent user found in the database. Please run 'flask create-llm-agent' first.")
+
+    try:
+        # Test if the AI Agent is a member of this vault
+        _verify_vault_access(vault_id, agent.id)
+    except PermissionError:
+        # If the LLM has no access, block the queue and throw an error to the frontend!
+        raise PermissionError("Warning: The AI Agent does not have access to this vault. Please add the Agent as a member first.")
+
+    # 3. Create the task
     user = db.session.get(User, user_id)
     if user and user.is_guest:
         if user.demo_state == DemoState.READ_ONLY:

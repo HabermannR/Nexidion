@@ -37,7 +37,7 @@ from backend.models import db, User, UserType
 from backend.services.vault_service import get_vault_access
 from agent.audit import Audit
 from agent.agent import run_agent
-from agent.replay import _run_replay, RecordingWriter
+from agent.replay import _run_replay
 
 flask_app = create_app()
 
@@ -115,16 +115,20 @@ def claim_oldest_task(conn):
     """Atomically grab the oldest pending task and mark it processing."""
     with conn.cursor() as cur:
         cur.execute("""
-            UPDATE tasks
-            SET    status = 'processing'
-            WHERE  id = (
-                SELECT id FROM tasks
-                WHERE  status IN ('pending', 'pending_demo')
-                ORDER  BY created_at ASC
-                LIMIT  1
+            WITH grabbed AS (
+                SELECT id, vault_id, instruction, context_node_ids, created_at, status
+                FROM tasks
+                WHERE status IN ('pending', 'pending_demo')
+                ORDER BY created_at ASC
+                LIMIT 1
                 FOR UPDATE SKIP LOCKED
+            ),
+            updated AS (
+                UPDATE tasks
+                SET status = 'processing'
+                WHERE id = (SELECT id FROM grabbed)
             )
-            RETURNING id, vault_id, instruction, context_node_ids, created_at, status
+            SELECT * FROM grabbed;
         """)
         row = cur.fetchone()
         conn.commit()
@@ -137,7 +141,7 @@ def mark_task_raw(conn, task_id: str, status: str,
     """Update task status via raw connection (used for the claimed task)."""
     with conn.cursor() as cur:
         if status in ('completed', 'failed'):
-            now      = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
             ops_json = json.dumps(operations) if operations is not None else None
             cur.execute("""
                 UPDATE tasks
@@ -147,15 +151,13 @@ def mark_task_raw(conn, task_id: str, status: str,
                     completed_at   = %s
                 WHERE id = %s
             """, (status, summary, ops_json, now, task_id))
-        elif log is not None:
-            cur.execute("""
-                UPDATE tasks
-                SET status = %s, status_log = %s
-                WHERE id = %s
-            """, (status, log, task_id))
         else:
+            # Removed the `status_log` query since the column doesn't exist.
+            # We just update the status (e.g. to 'processing').
             cur.execute("UPDATE tasks SET status = %s WHERE id = %s", (status, task_id))
+
         conn.commit()
+
     _log(f"Task {task_id} → {status}" + (f" ({log})" if log else ""))
 
 
@@ -211,45 +213,36 @@ def _execute_task(task_row: dict, conn) -> None:
                 audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
                 _log(f"✅ {summary}")
 
+
             else:
                 _log("Mode: REAL LLM")
-                recording = RecordingWriter()
-                summary, recording = run_agent(
-                    task_row          = task_row,
-                    audit             = audit,
-                    agent_user_id     = AGENT_USER_ID,
-                    gpt_token         = GPT_TOKEN,
-                    gpt_model         = GPT_MODEL,
-                    local_llm_url     = LOCAL_LLM_URL,
-                    local_llm_api_key = LOCAL_LLM_API_KEY,
-                    max_loop_turns    = MAX_LOOP_TURNS,
-                    max_tool_fetches  = MAX_TOOL_FETCHES,
-                    blacklist_icon    = BLACKLIST_ICON,
-                    read_lock_icon    = READ_LOCK_ICON,
-                    log_fn            = _log,
-                    recording         = recording,
+                # Check if this environment is configured as a Studio/Demo setup
+                record_full_text = flask_app.config.get("DEMO_MODE_ENABLED", False)
+                summary = run_agent(
+                    task_row=task_row,
+                    audit=audit,
+                    agent_user_id=AGENT_USER_ID,
+                    gpt_token=GPT_TOKEN,
+                    gpt_model=GPT_MODEL,
+                    local_llm_url=LOCAL_LLM_URL,
+                    local_llm_api_key=LOCAL_LLM_API_KEY,
+                    max_loop_turns=MAX_LOOP_TURNS,
+                    max_tool_fetches=MAX_TOOL_FETCHES,
+                    blacklist_icon=BLACKLIST_ICON,
+                    read_lock_icon=READ_LOCK_ICON,
+                    log_fn=_log,
+                    record_full_text=record_full_text  # <-- Pass the flag here
                 )
-                # Write recording to DEMO_RECORDING_PATH if demo mode is active.
-                # The file is overwritten on every successful real run — the admin
-                # decides whether to keep it by resetting or re-running the task.
-                demo_recording_path = flask_app.config.get("DEMO_RECORDING_PATH")
-                if demo_recording_path and recording and recording.steps:
-                    import json as _json
-                    from pathlib import Path as _Path
-                    try:
-                        _Path(demo_recording_path).write_text(
-                            _json.dumps(recording.to_dict(), ensure_ascii=False, indent=2),
-                            encoding="utf-8",
-                        )
-                        _log(f"📼 Recording saved to {demo_recording_path} ({len(recording.steps)} steps)")
-                    except OSError as write_err:
-                        _log(f"⚠️  Could not write recording: {write_err}")
+                # Saving the exact operations to the DB tasks table is already
+                # natively handled below by `operations=audit.writes`!
                 mark_task_raw(conn, task_id, "completed", summary=summary,
                               operations=audit.writes)
                 audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
                 _log(f"✅ {summary}")
 
+
         except Exception as e:
+            conn.rollback()  # <-- ADD THIS LINE to clear the aborted transaction
             _log(f"✗ Task failed: {e}")
             mark_task_raw(conn, task_id, "failed", summary=str(e),
                           operations=audit.writes)

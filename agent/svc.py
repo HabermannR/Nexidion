@@ -120,3 +120,10 @@ def svc_create_node(vault_id: int, title: str, parent_id: str,
         return {"ok": True, "node": {"id": new_node.id}}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+def svc_delete_node(vault_id: int, node_id: str, agent_user_id: int) -> dict:
+    try:
+        node_service.delete_node(node_id, vault_id, agent_user_id)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

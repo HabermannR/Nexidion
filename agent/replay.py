@@ -1,147 +1,118 @@
 """
 agent/replay.py
 ========================
-Demo replay engine (B8).
+Demo replay engine.
 
-_run_replay() reads a pre-recorded operation log, remaps demo UUIDs to the
-live vault's UUIDs, replays every operation through the real node_service
-layer (so version history is genuine and rollback works), and unlocks the
-vault's demo state on completion.
-
-Status messages and inter-step delays come from the recording, making the
-replay indistinguishable from a live agent run.
+_run_replay() reads the hardcoded script from agent.demo_script, remaps
+demo UUIDs to the live vault's UUIDs, replays every operation through
+the real node_service layer, and unlocks the vault's demo state on completion.
 """
 
 import asyncio
-import json
 import time
-from pathlib import Path
 
 from agent.svc import (
     svc_create_node,
     svc_move_node,
     svc_update_node,
     svc_update_summary,
+    svc_delete_node
 )
 
-
-# ---------------------------------------------------------------------------
-# RecordingWriter
-# Captures operations during a real agent run so they can be replayed later.
-# ---------------------------------------------------------------------------
-
-class RecordingWriter:
-    def __init__(self):
-        self.steps = []
-        self._step_start: float | None = None
-        self._pending_message: str = ""
-        # Maps created node index (0-based, per create_node step) → live UUID
-        # so the replay engine can build the remap table correctly.
-        self.created_node_ids: list[str] = []
-
-    def begin_step(self, status_message: str):
-        self._step_start      = time.monotonic()
-        self._pending_message = status_message
-
-    def record_operation(self, op_type: str, **kwargs):
-        delay = round(time.monotonic() - self._step_start, 2)
-        self.steps.append({
-            "status_message": self._pending_message,
-            "delay_seconds":  delay,
-            "operation":      {"type": op_type, **kwargs},
-        })
-
-    def register_created_node(self, live_uuid: str):
-        """Call after a create_node succeeds to record the live UUID for replay remap."""
-        self.created_node_ids.append(live_uuid)
-
-    def to_dict(self) -> dict:
-        return {
-            "nexidion_recording_version": 1,
-            "steps": self.steps,
-            "created_node_ids": self.created_node_ids,
-        }
-
+# Import the script you extracted from the UI!
+from agent.demo_script import DEMO_OPERATIONS, DEMO_FINISH_SUMMARY
 
 # ---------------------------------------------------------------------------
 # UUID remapping
 # ---------------------------------------------------------------------------
 
 def _remap_uuids(operation: dict, remap: dict) -> dict:
-    """Return a copy of *operation* with every remap key replaced by its value."""
+    """Recursively remaps exact UUID fields AND partial matches inside content text."""
     result = {}
     for k, v in operation.items():
-        if isinstance(v, str) and v in remap:
-            result[k] = remap[v]
+        if isinstance(v, str):
+            if v in remap:
+                # Exact match (e.g., "node_id", "parent_id")
+                result[k] = remap[v]
+            else:
+                # Partial match (e.g., [[uuid]] links embedded in "content")
+                new_str = v
+                for old_u, new_u in remap.items():
+                    if old_u in new_str:
+                        new_str = new_str.replace(old_u, new_u)
+                result[k] = new_str
         elif isinstance(v, dict):
             result[k] = _remap_uuids(v, remap)
+        elif isinstance(v, list):
+            # For lists, we just recursively map items if they are dicts/strings
+            result[k] = [
+                _remap_uuids(item, remap) if isinstance(item, dict) else
+                (remap.get(item, item) if isinstance(item, str) else item)
+                for item in v
+            ]
         else:
             result[k] = v
     return result
 
-
 # ---------------------------------------------------------------------------
 # Operation dispatcher
-# Mirrors the tool handlers in agent.py — same svc_* calls, same code path.
 # ---------------------------------------------------------------------------
 
 def _apply_operation(op: dict, vault_id: int, agent_user_id: int, log_fn) -> str | None:
-    """Apply one operation. Returns the new node UUID for create_node, None otherwise."""
-    op_type = op.get("type")
+    """Apply one operation from the DB format. Returns new UUID for create_node."""
+    op_type = op.get("operation")
+    node_id = op.get("node_id")
+    detail = op.get("detail", {})
 
     if op_type == "create_node":
         res = svc_create_node(
             vault_id      = vault_id,
-            title         = op["title"],
-            parent_id     = op["parent_id"],
+            title         = detail.get("title", "Untitled"),
+            parent_id     = detail.get("parent_id"),
             agent_user_id = agent_user_id,
-            content       = op.get("content", ""),
-            ai_summary    = op.get("ai_summary", ""),
+            content       = detail.get("content", ""),
+            ai_summary    = detail.get("ai_summary", ""),
         )
         if not res["ok"]:
             raise RuntimeError(f"replay create_node failed: {res['error']}")
         new_id = res["node"]["id"]
-        log_fn(f"  [replay] create_node '{op['title']}' → {new_id}")
+        log_fn(f"  [replay] create_node '{detail.get('title')}' → {new_id}")
         return new_id
 
-    elif op_type == "write_node":
-        res = svc_update_node(vault_id, op["node_id"], agent_user_id,
-                              content=op.get("content"))
+    elif op_type in ("write_node", "patch_node", "rename_node"):
+        # The DB log treats these very similarly; we just apply whatever is in 'detail'
+        res = svc_update_node(
+            vault_id, node_id, agent_user_id,
+            title=detail.get("title"),
+            content=detail.get("content")
+        )
         if not res["ok"]:
-            raise RuntimeError(f"replay write_node failed: {res['error']}")
-        if op.get("ai_summary"):
-            svc_update_summary(vault_id, op["node_id"], agent_user_id, op["ai_summary"])
-        log_fn(f"  [replay] write_node {op['node_id']}")
+            raise RuntimeError(f"replay {op_type} failed: {res['error']}")
+
+        if detail.get("ai_summary"):
+            svc_update_summary(vault_id, node_id, agent_user_id, detail["ai_summary"])
+        log_fn(f"  [replay] {op_type} {node_id}")
 
     elif op_type == "move_node":
-        res = svc_move_node(vault_id, op["node_id"], op["new_parent_id"], agent_user_id)
+        res = svc_move_node(vault_id, node_id, detail.get("new_parent_id"), agent_user_id)
         if not res["ok"]:
             raise RuntimeError(f"replay move_node failed: {res['error']}")
-        log_fn(f"  [replay] move_node {op['node_id']} → {op['new_parent_id']}")
+        log_fn(f"  [replay] move_node {node_id} → {detail.get('new_parent_id')}")
 
-    elif op_type == "rename_node":
-        res = svc_update_node(vault_id, op["node_id"], agent_user_id,
-                              title=op.get("title"))
-        if not res["ok"]:
-            raise RuntimeError(f"replay rename_node failed: {res['error']}")
-        log_fn(f"  [replay] rename_node {op['node_id']} → '{op['title']}'")
 
-    elif op_type == "patch_node":
-        res = svc_update_node(vault_id, op["node_id"], agent_user_id,
-                              content=op.get("content"))
+    elif op_type == "delete_node":
+
+        res = svc_delete_node(vault_id, node_id, agent_user_id)
+
         if not res["ok"]:
-            raise RuntimeError(f"replay patch_node failed: {res['error']}")
-        if op.get("ai_summary"):
-            svc_update_summary(vault_id, op["node_id"], agent_user_id, op["ai_summary"])
-        log_fn(f"  [replay] patch_node {op['node_id']}")
+            raise RuntimeError(f"replay delete_node failed: {res['error']}")
+
+        log_fn(f"  [replay] delete_node {node_id}")
 
     else:
-        raise RuntimeError(
-            f"replay: unknown operation type '{op_type}' — "
-            "recording may be corrupt or from a newer version."
-        )
-    return None
+        log_fn(f"  [replay] unknown op type '{op_type}', skipping.")
 
+    return None
 
 # ---------------------------------------------------------------------------
 # Main replay coroutine
@@ -152,7 +123,7 @@ async def _run_replay(
     vault_id:         int,
     agent_user_id:    int,
     remap:            dict,
-    recording_path:   str,
+    recording_path:   str, # Ignored now, we use demo_script.py!
     flask_app,
     db,
     Vault,
@@ -160,68 +131,47 @@ async def _run_replay(
     update_status_fn,
     log_fn,
 ) -> str:
-    """
-    Execute a recorded demo task.
+    """Execute the hardcoded demo script imported from agent.demo_script."""
 
-    Parameters
-    ----------
-    task_row         : dict from claim_oldest_task
-    vault_id         : resolved vault ID
-    agent_user_id    : AGENT_USER_ID constant
-    remap            : UUID translation table — {recording_uuid: guest_vault_uuid}
-                       fetched from vault.owner.demo_remap in loop.py
-    recording_path   : path to the .nexidion recording file, from config
-    flask_app        : the Flask application instance (for app context)
-    db               : SQLAlchemy db object
-    Vault            : Vault model class
-    DemoState        : DemoState enum
-    update_status_fn : callable(task_id, status, log=...) — wraps mark_task_raw
-    log_fn           : callable(str) — the _log function from loop.py
-    """
-    try:
-        recording = json.loads(Path(recording_path).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raise RuntimeError(f"replay: recording not found at '{recording_path}'.")
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"replay: recording file is not valid JSON — {exc}") from exc
+    steps = DEMO_OPERATIONS
+    log_fn(f"Replay: {len(steps)} step(s) from demo_script.py")
 
-    steps = recording.get("steps", [])
-    # created_node_ids: list of live UUIDs from the real agent run, in create_node order.
-    # We use these to build a per-guest remap so every reference to a dynamically-created
-    # node is translated to the guest vault's own newly-created UUID.
-    recording_created_ids = recording.get("created_node_ids", [])
-    create_node_counter = 0
+    for i, raw_op in enumerate(steps, 1):
+        op_type = raw_op.get("operation")
 
-    log_fn(f"Replay: {len(steps)} step(s) from '{recording_path}'")
-
-    for i, step in enumerate(steps, 1):
-        status_msg = step.get("status_message", f"Step {i}…")
-        delay      = step.get("delay_seconds", 0)
-        raw_op     = step.get("operation", {})
+        # 1. Generate a realistic-looking status message
+        if op_type == "create_node":
+            status_msg = f"Creating node: {raw_op.get('detail', {}).get('title', 'Untitled')}"
+        elif op_type == "write_node":
+            status_msg = "Writing content..."
+        elif op_type == "patch_node":
+            status_msg = "Refining node..."
+        elif op_type == "move_node":
+            status_msg = "Organizing vault structure..."
+        else:
+            status_msg = f"Processing ({op_type})..."
 
         update_status_fn(task_row["id"], "processing", log=status_msg)
-        log_fn(f"  [replay {i}/{len(steps)}] {status_msg} (delay {delay}s)")
+        log_fn(f"  [replay {i}/{len(steps)}] {status_msg}")
 
-        await asyncio.sleep(delay)
+        # 2. Fake the LLM "thinking/typing" delay (1.5 seconds per step)
+        await asyncio.sleep(1.5)
 
+        # 3. Remap all UUIDs using our live dictionary
         try:
             op = _remap_uuids(raw_op, remap)
         except Exception as exc:
-            raise RuntimeError(
-                f"replay: UUID remap failed on step {i} ({raw_op.get('type')}): {exc}"
-            ) from exc
+            raise RuntimeError(f"replay: UUID remap failed on step {i}: {exc}") from exc
 
+        # 4. Execute the actual action against the DB
         with flask_app.app_context():
             new_uuid = _apply_operation(op, vault_id, agent_user_id, log_fn)
 
-        # If this was a create_node, register the new UUID in the remap so
-        # subsequent steps that reference this node (e.g. move_node into it)
-        # are translated correctly. This fixes the "Tree rehydrate" bug where
-        # nodes created mid-recording were not found on subsequent references.
-        if new_uuid is not None and create_node_counter < len(recording_created_ids):
-            original_uuid = recording_created_ids[create_node_counter]
-            remap[original_uuid] = new_uuid
-            create_node_counter += 1
+        # 5. If we created a node, store the mapping so future steps can find it!
+        if op_type == "create_node" and new_uuid:
+            original_uuid = raw_op.get("node_id")
+            if original_uuid:
+                remap[original_uuid] = new_uuid
 
     # Unlock the vault's demo state
     with flask_app.app_context():
@@ -232,5 +182,6 @@ async def _run_replay(
         db.session.commit()
         log_fn(f"Demo state → UNLOCKED for vault {vault_id}")
 
-    update_status_fn(task_row["id"], "completed", log="Done. Vault is now unlocked.")
+    # Set the final output!
+    update_status_fn(task_row["id"], "completed", log=DEMO_FINISH_SUMMARY)
     return "Replay complete. Vault is now unlocked."

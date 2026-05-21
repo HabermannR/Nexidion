@@ -141,7 +141,18 @@ def _create_node_from_export(
             if ts_str:
                 # Remove Z and attach actual timezone info for python 3.10 compat, or use fromisoformat if upgraded
                 if ts_str.endswith('Z'):
-                    ts_str = ts_str[:-1] + '+00:00'
+                    ts_str = ts_str[:-1]
+
+                    # Extract the time portion to safely check for an existing timezone offset
+                    time_part = ts_str
+                    if 'T' in ts_str:
+                        time_part = ts_str.split('T')[-1]
+                    elif ' ' in ts_str:
+                        time_part = ts_str.split(' ')[-1]
+
+                    # Only append +00:00 if an offset is not already present
+                    if '+' not in time_part and '-' not in time_part:
+                        ts_str += '+00:00'
                 ts = datetime.fromisoformat(ts_str)
             else:
                 ts = datetime.now(timezone.utc)

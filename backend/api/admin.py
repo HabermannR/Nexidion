@@ -316,6 +316,8 @@ def reset_vault_to_snapshot(vault_id):
         remap[node_data["id"]] = new_id
 
     _rewrite_internal_links(vault_id, remap)
+    owner = db.session.get(User, vault.owner_id)
+    owner.demo_remap = remap
     db.session.commit()
 
     invalidate_vault_list_cache(vault.owner_id)

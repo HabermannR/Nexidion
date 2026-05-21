@@ -1,0 +1,56 @@
+{
+  "nexidion_export_version": 1,
+  "exported_at": "2026-05-21T09:53:12Z",
+  "vault": {
+    "name": "Test Demo Vault"
+  },
+  "nodes": [
+    {
+      "id": "13734866-6481-4d2d-96fd-1b23714780c8",
+      "parent_id": null,
+      "icon": "bxs-folder",
+      "ai_summary": null,
+      "summary_is_current": false,
+      "title": "Summary",
+      "content": "This is the root node for the 'Test Demo Vault' vault.",
+      "created_at": "2026-05-21T10:59:16.008288+02:00Z",
+      "updated_at": "2026-05-21T10:59:16.008288+02:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "Summary",
+          "content": "This is the root node for the 'Test Demo Vault' vault.",
+          "created_at": "2026-05-21T10:59:16.008288+02:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "f9e941b2-b9bf-45a9-8657-77c519c0bce6",
+      "parent_id": "13734866-6481-4d2d-96fd-1b23714780c8",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- This node contains placeholder dummy content for testing purposes\n- The text includes standard lorem ipsum paragraphs as filler material\n- Content can be replaced with actual notes or information as needed",
+      "summary_is_current": true,
+      "title": "Test 1",
+      "content": "# Test 1\n\nThis is the first paragraph of dummy content for Test 1. It serves as a placeholder to demonstrate how content is structured within a Nexidion vault node. You can replace this text with any information you find useful, such as notes, references, or personal thoughts.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n\nExcepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.",
+      "created_at": "2026-05-21T10:59:21.382305+02:00Z",
+      "updated_at": "2026-05-21T11:49:25.339968+02:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "Test 1",
+          "content": "",
+          "created_at": "2026-05-21T10:59:21.382305+02:00Z",
+          "author_display_name": "Admin"
+        },
+        {
+          "version": 2,
+          "title": "Test 1",
+          "content": "# Test 1\n\nThis is the first paragraph of dummy content for Test 1. It serves as a placeholder to demonstrate how content is structured within a Nexidion vault node. You can replace this text with any information you find useful, such as notes, references, or personal thoughts.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n\nExcepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.",
+          "created_at": "2026-05-21T11:49:25.339968+02:00Z",
+          "author_display_name": "Nexidion AI"
+        }
+      ]
+    }
+  ]
+}

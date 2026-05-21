@@ -107,7 +107,7 @@ def test_agent_workflow_write_node(mock_openai_class, setup_agent_env, db_sessio
     db_session.session.expire_all()
     updated_node = db_session.session.get(Node, node.id)
 
-    assert result_summary == ('I updated the node.', None)
+    assert result_summary == 'I updated the node.'
     assert updated_node.current_version_object.content == "This is the newly written content by the agent."
     assert updated_node.ai_summary == "- Bullet 1\n- Bullet 2\n- Bullet 3"
 
