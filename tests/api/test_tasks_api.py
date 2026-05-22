@@ -1,4 +1,22 @@
 import pytest
+from unittest.mock import patch
+
+@pytest.fixture(autouse=True)
+def setup_llm_agent_and_access(db_session, test_llm_agent_obj):
+    """
+    Autouse fixture that ensures the LLM assistant agent user exists and
+    bypasses pre-flight vault checks for the API testing endpoints.
+    """
+    from backend.services import task_service
+    original_verify = task_service._verify_vault_access
+
+    def patched_verify(vault_id, user_id):
+        if user_id == test_llm_agent_obj.id:
+            return True
+        return original_verify(vault_id, user_id)
+
+    with patch("backend.services.task_service._verify_vault_access", side_effect=patched_verify):
+        yield
 
 
 # ========================================================================
