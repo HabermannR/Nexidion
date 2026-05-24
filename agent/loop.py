@@ -152,9 +152,16 @@ def mark_task_raw(conn, task_id: str, status: str,
                 WHERE id = %s
             """, (status, summary, ops_json, now, task_id))
         else:
-            # Removed the `status_log` query since the column doesn't exist.
-            # We just update the status (e.g. to 'processing').
-            cur.execute("UPDATE tasks SET status = %s WHERE id = %s", (status, task_id))
+            # Write the log message into finish_summary during processing so the
+            # frontend's polling can show live step progress ("Creating node...", etc.)
+            # without needing a separate status_log column.
+            if log:
+                cur.execute(
+                    "UPDATE tasks SET status = %s, finish_summary = %s WHERE id = %s",
+                    (status, log, task_id)
+                )
+            else:
+                cur.execute("UPDATE tasks SET status = %s WHERE id = %s", (status, task_id))
 
         conn.commit()
 

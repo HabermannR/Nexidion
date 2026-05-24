@@ -1,12 +1,14 @@
 // src/features/agent/AgentTab.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
+import { useUserQuery } from '../auth/useUserQuery';
 import apiClient from '../../api/apiClient';
 import { useToast } from '../../components/ToastProvider';
+import { useSystemConfigQuery } from '../auth/useSystemConfigQuery';
 
 import './AgentTab.css';
 
@@ -142,14 +144,18 @@ function RetryButton({ task, vaultId }) {
 
 // ─── TaskDetail — fetched on expand ──────────────────────────────────────────
 
-function TaskDetail({ taskId, vaultId }) {
+function TaskDetail({ taskId, vaultId, taskStatus }) {
+    const isLive = taskStatus === 'processing';
+
     const { data, isLoading, isError } = useQuery({
         queryKey: ['agentTask', taskId],
         queryFn: async () => {
             const res = await apiClient.get(`/api/tasks/${taskId}`);
             return res.data;
         },
-        staleTime: 10_000,
+        staleTime: isLive ? 0 : 10_000,
+        // Poll every 2s while processing so step messages appear live.
+        refetchInterval: isLive ? 2000 : false,
     });
 
     if (isLoading) return <div className="text-muted small py-2">Loading…</div>;
@@ -167,11 +173,13 @@ function TaskDetail({ taskId, vaultId }) {
             </div>
 
             <div>
-                <div className="agent-task-section-title">Output</div>
+                <div className="agent-task-section-title">
+                    {isLive ? '⟳ In progress' : 'Output'}
+                </div>
                 <div className="agent-task-box">
                     {data.finish_summary
                         ? data.finish_summary
-                        : <span className="text-muted fst-italic">No output yet</span>
+                        : <span className="text-muted fst-italic">{isLive ? 'Starting…' : 'No output yet'}</span>
                     }
                 </div>
             </div>
@@ -234,8 +242,16 @@ function TaskCard({ task, vaultId }) {
                 </div>
 
                 <div className="agent-task-card-meta">
-                    <span className="agent-task-card-id">
-                        {String(task.id).substring(0, 8)}
+                    <span
+                        className="agent-task-card-id"
+                        title={task.id}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(task.id).catch(() => {});
+                        }}
+                    >
+                        {String(task.id).substring(0, 8)}&thinsp;⎘
                     </span>
                     <div className="d-flex gap-2 align-items-center">
                         {task.created_at && (
@@ -257,7 +273,7 @@ function TaskCard({ task, vaultId }) {
 
             {expanded && (
                 <div className="agent-task-card-body">
-                    <TaskDetail taskId={task.id} vaultId={vaultId} />
+                    <TaskDetail taskId={task.id} vaultId={vaultId} taskStatus={task.status} />
                 </div>
             )}
         </div>
@@ -286,6 +302,19 @@ export default function AgentTab() {
             .sort((a, b) => a.title.localeCompare(b.title));
     }, [selectedNodeIds, allNodesFlat]);
 
+    const { data: user } = useUserQuery();
+    const { data: systemConfig } = useSystemConfigQuery();
+
+    // For READ_ONLY demo guests, prefill the instruction with the scripted demo task.
+    const isReadOnlyGuest = user?.is_guest && user?.demo_state === 1;
+    const demoInstruction = systemConfig?.demo_instruction || '';
+
+    useEffect(() => {
+        if (isReadOnlyGuest && demoInstruction && !instruction) {
+            setInstruction(demoInstruction);
+        }
+    }, [isReadOnlyGuest, demoInstruction]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const { data: tasks = [], isLoading: loadingTasks } = useQuery({
         queryKey: ['agentTasks', vaultId, statusFilter],
         queryFn: async () => {
@@ -296,6 +325,33 @@ export default function AgentTab() {
         },
         refetchInterval: 5000,
     });
+
+    // Track previous task statuses so we can detect completions.
+    const prevTaskStatusesRef = useRef({});
+    useEffect(() => {
+        if (!tasks.length) return;
+
+        const prev = prevTaskStatusesRef.current;
+        let anyJustCompleted = false;
+
+        tasks.forEach(task => {
+            const wasProcessing = prev[task.id] && prev[task.id] !== 'completed' && prev[task.id] !== 'failed';
+            const isNowDone = task.status === 'completed' || task.status === 'failed';
+            if (wasProcessing && isNowDone && task.status === 'completed') {
+                anyJustCompleted = true;
+            }
+        });
+
+        // Update the ref with current statuses for next comparison.
+        prevTaskStatusesRef.current = Object.fromEntries(tasks.map(t => [t.id, t.status]));
+
+        if (anyJustCompleted) {
+            // Refresh the vault tree so new/moved/deleted nodes appear immediately.
+            queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
+            // Refresh the user so demo_state changes (READ_ONLY → UNLOCKED) are reflected.
+            queryClient.invalidateQueries({ queryKey: ['user'] });
+        }
+    }, [tasks, vaultId, queryClient]);
 
     const handleSend = async () => {
         if (!instruction.trim() || isSending) return;
@@ -361,6 +417,13 @@ export default function AgentTab() {
                     disabled={isSending}
                     style={{ resize: 'vertical', fontSize: '0.82rem' }}
                 />
+
+                {isReadOnlyGuest && (
+                    <div className="mt-2 px-1 d-flex align-items-start gap-2" style={{ fontSize: '0.78rem', color: 'var(--bs-info)' }}>
+                        <span>💡</span>
+                        <span>This is the scripted demo task. Hit <strong>Queue Task</strong> to watch the AI agent work live.</span>
+                    </div>
+                )}
 
                 <div className="d-grid mt-3">
                     <Button
