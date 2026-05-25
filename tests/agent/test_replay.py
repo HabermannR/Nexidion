@@ -48,6 +48,32 @@ def _make_task(status: str = "pending_demo", meta: dict | None = None) -> dict:
         }),
     }
 
+from unittest.mock import patch
+
+# We parse it as a native Python list of dicts to replace the real DEMO_OPERATIONS
+MOCK_DEMO_OPERATIONS = [
+    {
+        "detail": {
+            "ai_summary": "Summary 1",
+            "content": "Content 1",
+            "parent_id": "f9e941b2-b9bf-45a9-8657-77c519c0bce6",
+            "title": "Test Node"
+        },
+        "node_id": "c4a347e5-facd-4224-97b4-7c811f6e23c2",
+        "operation": "create_node",
+        "timestamp": "2026-05-21T09:53:58.928320+00:00"
+    },
+    {
+        "detail": {
+            "ai_summary": "Summary 2",
+            "content": "Content 2 with link [[Test Node|c4a347e5-facd-4224-97b4-7c811f6e23c2]]"
+        },
+        "node_id": "f9e941b2-b9bf-45a9-8657-77c519c0bce6",
+        "operation": "write_node",
+        "timestamp": "2026-05-21T09:54:08.525233+00:00"
+    }
+]
+
 
 def _build_replay_mocks():
     """Return a dict of mock dependencies for _run_replay."""
@@ -157,6 +183,7 @@ class TestRunReplay:
             ))
 
     # 1. Replay completes; status stages appear in order
+    @patch("agent.replay.DEMO_OPERATIONS", MOCK_DEMO_OPERATIONS)
     def test_status_stages_in_order(self):
         task = _make_task()
         mocks = _build_replay_mocks()
@@ -183,6 +210,7 @@ class TestRunReplay:
         mocks["db"].session.commit.assert_called()
 
     # 3. Node structure matches expected post-agent state (Dynamic Remapping)
+    @patch("agent.replay.DEMO_OPERATIONS", MOCK_DEMO_OPERATIONS)
     def test_operations_dispatched_correctly(self):
         from agent.replay import _run_replay
         task = _make_task()
@@ -223,6 +251,7 @@ class TestRunReplay:
         assert "[[Test Node|live-child-uuid]]" in update_kwargs["content"]
 
     # 4. Version history authored by agent user
+    @patch("agent.replay.DEMO_OPERATIONS", MOCK_DEMO_OPERATIONS)
     def test_agent_user_id_passed_to_svc(self):
         from agent.replay import _run_replay
         task = _make_task()
@@ -247,6 +276,7 @@ class TestRunReplay:
         assert mock_create.call_args.kwargs["agent_user_id"] == 7
 
     # 5. Rollback restores pre-agent content (version creation boundary verification)
+    @patch("agent.replay.DEMO_OPERATIONS", MOCK_DEMO_OPERATIONS)
     def test_write_node_produces_version_via_svc(self):
         from agent.replay import _run_replay
         task = _make_task()

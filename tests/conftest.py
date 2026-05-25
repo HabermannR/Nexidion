@@ -2,8 +2,22 @@ import os
 import sys
 import time
 import pytest
+import jwt
 from datetime import timedelta
 from dotenv import load_dotenv
+
+# --- FIX: Verhindere 'The token is not yet valid (iat/nbf)' Exceptions dauerhaft ---
+# Tritt bei schnellen Tests oder bei asynchronen Zeit-Mocks (wie freezegun) in der Test-Suite auf.
+_original_jwt_decode = jwt.decode
+def _patched_jwt_decode(*args, **kwargs):
+    options = kwargs.get("options")
+    if options is None:
+        options = {}
+    options["verify_iat"] = False
+    options["verify_nbf"] = False
+    kwargs["options"] = options
+    return _original_jwt_decode(*args, **kwargs)
+jwt.decode = _patched_jwt_decode
 
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -199,9 +213,6 @@ def auth_headers_1(client, test_user_1_obj):
     assert login_res.status_code == 200, "Login für user1 fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
 
-    # Verhindert PyJWT 'The token is not yet valid (iat)' Exceptions bei schnellen Tests
-    time.sleep(0.05)
-
     return {'Authorization': f'Bearer {access_token}'}
 
 
@@ -212,9 +223,6 @@ def auth_headers_2(client, test_user_2_obj):
     assert login_res.status_code == 200, "Login für user2 fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
 
-    # Verhindert PyJWT 'The token is not yet valid (iat)' Exceptions bei schnellen Tests
-    time.sleep(0.05)
-
     return {'Authorization': f'Bearer {access_token}'}
 
 
@@ -224,9 +232,6 @@ def admin_headers(client, test_admin_obj):
                             json={'username': 'admin', 'password': 'admin123'})
     assert login_res.status_code == 200, "Login für admin fehlgeschlagen"
     access_token = login_res.get_json()['access_token']
-
-    # Verhindert PyJWT 'The token is not yet valid (iat)' Exceptions bei schnellen Tests
-    time.sleep(0.05)
 
     return {'Authorization': f'Bearer {access_token}'}
 
