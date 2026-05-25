@@ -374,6 +374,67 @@ function VaultsSection() {
     );
 }
 
+// ── Demo Analytics ───────────────────────────────────────────────────────────
+
+function StatCard({ label, value, sub, color = 'primary' }) {
+    const colors = {
+        primary: { bg: '#e8f0fe', text: '#1a56db', border: '#93b4f7' },
+        success: { bg: '#e3f9ee', text: '#0a7a45', border: '#6ee7a9' },
+        warning: { bg: '#fef9e3', text: '#92610a', border: '#f5d76e' },
+        info:    { bg: '#e8f4fd', text: '#0e6ca5', border: '#7ec8f0' },
+        purple:  { bg: '#f2effe', text: '#5b21b6', border: '#c4b5fd' },
+        pink:    { bg: '#fdf2f8', text: '#9d174d', border: '#f9a8d4' },
+    };
+    const c = colors[color] || colors.primary;
+    return (
+        <div style={{
+            background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10,
+            padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: c.text, opacity: 0.8 }}>{label}</div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, color: c.text, lineHeight: 1 }}>{value}</div>
+            {sub && <div style={{ fontSize: '0.78rem', color: c.text, opacity: 0.65 }}>{sub}</div>}
+        </div>
+    );
+}
+
+function DemoAnalyticsSection() {
+    const { data, isLoading, isError, refetch, isFetching } = useQuery({
+        queryKey: ['admin', 'demo-stats'],
+        queryFn: () => apiClient.get('/api/admin/demo-stats').then(r => r.data),
+        staleTime: 30_000,
+    });
+
+    return (
+        <Card>
+            <Card.Header as="h5" className="d-flex align-items-center gap-2">
+                📊 Demo Analytics
+                <Button
+                    variant="outline-secondary" size="sm" className="ms-auto"
+                    onClick={() => refetch()} disabled={isFetching}
+                    style={{ fontSize: '0.75rem' }}
+                >
+                    {isFetching ? 'Refreshing…' : '↻ Refresh'}
+                </Button>
+            </Card.Header>
+            <Card.Body>
+                {isLoading && <div className="text-center py-3"><Spinner size="sm" /> Loading stats…</div>}
+                {isError && <Alert variant="danger">Failed to load demo stats.</Alert>}
+                {data && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
+                        <StatCard label="Guest Logins (Total)" value={data.total_guest_logins} sub="All-time guest accounts" color="primary" />
+                        <StatCard label="Active Now" value={data.active_guests_now} sub="Sessions not yet expired" color="success" />
+                        <StatCard label="Phase-2 Unlocks" value={data.phase2_completions} sub="Guests who went interactive" color="purple" />
+                        <StatCard label="Conversion Rate" value={`${data.conversion_rate_pct}%`} sub="Logins → Phase-2" color="pink" />
+                        <StatCard label="Completed Demo Tasks" value={data.completed_demo_tasks} sub="Agent runs finished" color="info" />
+                        <StatCard label="Nodes Created by Guests" value={data.node_creates_by_guests} sub="Nodes guests made themselves" color="warning" />
+                    </div>
+                )}
+            </Card.Body>
+        </Card>
+    );
+}
+
 // ── Developer Tools ─────────────────────────────────────────────────────────
 
 function DemoScriptExtractor() {
@@ -620,6 +681,12 @@ export default function AdminDashboard() {
             {/* ── Users ── */}
             <h4 className="mb-3">Users</h4>
             <UsersSection />
+
+            {/* ── Demo Analytics ── */}
+            <hr className="my-4" />
+            <h4 className="mb-1">Demo Analytics</h4>
+            <p className="text-muted mb-3">Live stats from the demo mode guest session funnel.</p>
+            <DemoAnalyticsSection />
 
             {/* ── Vaults ── */}
             <hr className="my-4" />

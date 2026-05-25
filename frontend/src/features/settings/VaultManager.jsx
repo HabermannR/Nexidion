@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useOutletContext, useNavigate, useParams } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-    Container, Row, Col, Card, Button,
+    Container, Row, Col, Card, Button, Badge,
     Form as BootstrapForm, Table, Alert, Spinner, InputGroup,
 } from 'react-bootstrap';
 import apiClient from '../../api/apiClient.js';
@@ -17,6 +17,7 @@ import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
 
 function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutation }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [showAccess, setShowAccess] = useState(false);
 
     const isRenaming = renameMutation.isPending && renameMutation.variables?.vaultId === vault.id;
     const isDeleting = deleteMutation.isPending && deleteMutation.variables === vault.id;
@@ -40,6 +41,7 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
     };
 
     return (
+        <>
         <tr>
             <td>
                 {isEditing ? (
@@ -84,6 +86,15 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
                             Rename
                         </Button>
                         <Button
+                            variant={showAccess ? 'secondary' : 'outline-info'}
+                            size="sm"
+                            onClick={() => setShowAccess(v => !v)}
+                            disabled={isDeleting || isRenaming}
+                            title="Manage who has access to this vault"
+                        >
+                            {showAccess ? 'Hide Access' : 'Access'}
+                        </Button>
+                        <Button
                             variant="outline-danger" size="sm"
                             onClick={handleDelete}
                             disabled={isDeleting || isRenaming || vaultsCount <= 1}
@@ -95,6 +106,14 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
                 )}
             </td>
         </tr>
+        {showAccess && (
+            <tr>
+                <td colSpan={3} style={{ background: '#f8f9fa', padding: '12px 20px' }}>
+                    <VaultAccessPanel vaultId={vault.id} vaultName={vault.name} />
+                </td>
+            </tr>
+        )}
+        </>
     );
 }
 
@@ -122,6 +141,133 @@ function ActivateVaultLink({ vaultId }) {
             onClick={handleActivate}>
             Activate
         </a>
+    );
+}
+
+// ─── VaultAccessPanel ─────────────────────────────────────────────────────────
+// Lets the vault owner manage which users/LLM agents have access to a specific vault.
+
+function VaultAccessPanel({ vaultId, vaultName }) {
+    const queryClient = useQueryClient();
+    const toast = useToast();
+    const [selectedUserId, setSelectedUserId] = useState('');
+
+    const qk = ['vault-access-owner', vaultId];
+
+    const { data, isLoading, isError } = useQuery({
+        queryKey: qk,
+        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/access`).then(r => r.data),
+        enabled: !!vaultId,
+    });
+
+    const invalidate = () => {
+        queryClient.invalidateQueries({ queryKey: qk });
+        queryClient.invalidateQueries({ queryKey: ['allVaults'] });
+    };
+
+    const grantMutation = useMutation({
+        mutationFn: (userId) => apiClient.post(`/api/vaults/${vaultId}/access`, { user_id: userId }),
+        onSuccess: () => { setSelectedUserId(''); invalidate(); toast.success('Access granted.'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Failed to grant access.'),
+    });
+
+    const revokeMutation = useMutation({
+        mutationFn: (userId) => apiClient.delete(`/api/vaults/${vaultId}/access/${userId}`),
+        onSuccess: () => { invalidate(); toast.success('Access revoked.'); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Failed to revoke access.'),
+    });
+
+    if (isLoading) return <div className="text-center py-3"><Spinner size="sm" /> Loading access…</div>;
+    if (isError) return <Alert variant="danger" className="mt-2">Failed to load access data.</Alert>;
+    if (!data) return null;
+
+    const { vault, access_list, available_users } = data;
+
+    return (
+        <div className="mt-2">
+            <h6 className="mb-2 text-muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Current access
+            </h6>
+            <Table size="sm" bordered className="mb-3">
+                <thead className="table-light">
+                    <tr>
+                        <th>User</th>
+                        <th>Username</th>
+                        <th>Type</th>
+                        <th>Role</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr className="table-secondary">
+                        <td>{vault.owner_display_name}</td>
+                        <td><code className="text-body">{vault.owner_username}</code></td>
+                        <td><Badge bg="warning" text="dark">Owner</Badge></td>
+                        <td>owner</td>
+                        <td></td>
+                    </tr>
+                    {access_list.length === 0 ? (
+                        <tr>
+                            <td colSpan={5} className="text-muted text-center py-2" style={{ fontSize: '0.85rem' }}>
+                                No additional users have access.
+                            </td>
+                        </tr>
+                    ) : (
+                        access_list.map(u => (
+                            <tr key={u.user_id}>
+                                <td>{u.display_name}</td>
+                                <td><code className="text-body">{u.username}</code></td>
+                                <td>
+                                    {u.user_type === 'llm_assistant'
+                                        ? <Badge bg="info">LLM</Badge>
+                                        : <Badge bg="secondary">Human</Badge>}
+                                </td>
+                                <td>{u.role}</td>
+                                <td>
+                                    <Button
+                                        variant="outline-danger" size="sm"
+                                        disabled={revokeMutation.isPending}
+                                        onClick={() => revokeMutation.mutate(u.user_id)}
+                                    >
+                                        Revoke
+                                    </Button>
+                                </td>
+                            </tr>
+                        ))
+                    )}
+                </tbody>
+            </Table>
+
+            <h6 className="mb-2 text-muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Grant access
+            </h6>
+            {available_users.length === 0 ? (
+                <p className="text-muted" style={{ fontSize: '0.85rem' }}>All users already have access.</p>
+            ) : (
+                <div className="d-flex gap-2 align-items-center">
+                    <BootstrapForm.Select
+                        size="sm"
+                        style={{ maxWidth: 320 }}
+                        value={selectedUserId}
+                        onChange={e => setSelectedUserId(e.target.value)}
+                    >
+                        <option value="">— Select a user or LLM agent —</option>
+                        {available_users.map(u => (
+                            <option key={u.user_id} value={u.user_id}>
+                                {u.display_name} ({u.username}){u.user_type === 'llm_assistant' ? ' [LLM]' : ''}
+                            </option>
+                        ))}
+                    </BootstrapForm.Select>
+                    <Button
+                        variant="primary" size="sm"
+                        disabled={!selectedUserId || grantMutation.isPending}
+                        onClick={() => grantMutation.mutate(parseInt(selectedUserId, 10))}
+                    >
+                        {grantMutation.isPending ? <Spinner size="sm" /> : 'Add'}
+                    </Button>
+                </div>
+            )}
+        </div>
     );
 }
 

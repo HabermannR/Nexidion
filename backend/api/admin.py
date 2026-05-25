@@ -236,6 +236,61 @@ def revoke_vault_access(vault_id, user_id):
 # Demo Studio endpoints (DEMO_MODE_ENABLED=true only)
 # ---------------------------------------------------------------------------
 
+@admin_bp.route('/demo-stats', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_demo_stats():
+    """[ADMIN] Lightweight demo analytics: login counts, phase-2 completions, node creates."""
+    from backend.models import User, Task, Version, DemoState
+    from sqlalchemy import func
+    from datetime import datetime, timezone
+
+    # Total guest accounts ever created
+    total_logins = db.session.query(func.count(User.id)).filter(
+        User.is_guest == True
+    ).scalar() or 0
+
+    # Phase-2 completions: guests whose demo_state == UNLOCKED (2)
+    phase2_completions = db.session.query(func.count(User.id)).filter(
+        User.is_guest == True,
+        User.demo_state == DemoState.UNLOCKED
+    ).scalar() or 0
+
+    # Active guests right now (not expired)
+    active_guests = db.session.query(func.count(User.id)).filter(
+        User.is_guest == True,
+        User.expires_at > datetime.now(timezone.utc),
+    ).scalar() or 0
+
+    # Nodes created by guests: Version rows where version==1 and author is a guest.
+    # version==1 means it's the initial creation of a node (not an edit).
+    guest_ids = db.session.query(User.id).filter(User.is_guest == True).subquery()
+    raw_node_creates = db.session.query(func.count(Version.id)).filter(
+        Version.version == 1,
+        Version.author_id.in_(guest_ids),
+    ).scalar() or 0
+
+    # Remove 12 nodes per guest user, because these are the 12 start nodes
+    node_creates = max(0, raw_node_creates - (total_logins * 12))
+
+    # Completed demo tasks on guest-owned vaults (kept as a useful signal)
+    from backend.models import Vault
+    guest_vault_ids = db.session.query(Vault.id).filter(Vault.owner_id.in_(guest_ids)).subquery()
+    completed_tasks = db.session.query(func.count(Task.id)).filter(
+        Task.vault_id.in_(guest_vault_ids),
+        Task.status == 'completed',
+    ).scalar() or 0
+
+    return jsonify({
+        "total_guest_logins": total_logins,
+        "phase2_completions": phase2_completions,
+        "completed_demo_tasks": completed_tasks,
+        "node_creates_by_guests": node_creates,
+        "active_guests_now": active_guests,
+        "conversion_rate_pct": round(phase2_completions / total_logins * 100, 1) if total_logins else 0,
+    }), 200
+
+
 @admin_bp.route('/replay-test', methods=['POST'])
 @jwt_required()
 @admin_required
