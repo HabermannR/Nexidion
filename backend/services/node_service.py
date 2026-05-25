@@ -9,7 +9,7 @@ import re
 
 # Importiere die Services und Modelle (inkl. _verify_vault_access für Lesevorgänge!)
 from backend.services.vault_service import get_vault_access, assert_write_allowed, _verify_vault_access
-from backend.models import db, Node, Version, Vault, User
+from backend.models import db, Node, Version, Vault, User, DemoState
 
 DEFAULT_NODE_ICON = "bxs-file-doc"
 icon_groups: List[Dict[str, Any]] = [
@@ -633,6 +633,12 @@ def create_node(
         author_id=author_id
     )
     db.session.add(initial_version)
+
+    # Track nodes created manually by guests in phase 2 (UNLOCKED).
+    # Phase-1 nodes are bulk-created during vault import and are NOT counted.
+    if user and user.is_guest and user.demo_state == DemoState.UNLOCKED:
+        from backend.models import DemoEvent
+        db.session.add(DemoEvent(event_type='node_created'))
 
     db.session.commit()
     rebuild_vault_tree_cache(vault_id)

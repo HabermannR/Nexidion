@@ -329,7 +329,7 @@ export default function AgentTab() {
         refetchInterval: (query) => {
             const current = query.state.data ?? [];
             const active = current.some(t => t.status === 'processing' || t.status === 'pending');
-            return active ? 3000 : 30000;
+            return active ? 3000 : 5000;
         },
     });
 

@@ -179,6 +179,8 @@ async def _run_replay(
         if vault is None:
             raise RuntimeError(f"replay: vault {vault_id} not found when unlocking demo state.")
         vault.owner.demo_state = DemoState.UNLOCKED
+        from backend.models import DemoEvent
+        db.session.add(DemoEvent(event_type='phase2_unlock'))
         db.session.commit()
         log_fn(f"Demo state → UNLOCKED for vault {vault_id}")
 

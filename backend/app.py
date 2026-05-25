@@ -14,7 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 load_dotenv()
 
 from backend.config import Config
-from backend.models import db, User, VaultAccess, Vault
+from backend.models import db, User
 
 # Import API Blueprints
 from backend.api.auth import auth_bp
@@ -84,24 +84,28 @@ def create_app(config_class=Config):
     # Frontend Serving (for production)
     register_frontend_serving(app)
 
-    # Guest cleanup scheduler
-    def _cleanup_expired_guests():
-        with app.app_context():
-            expired = User.query.filter(
-                User.is_guest == True,
-                User.expires_at < datetime.now(timezone.utc)
-            ).all()
-            for user in expired:
-                for vault in Vault.query.filter_by(owner_id=user.id).all():
-                    db.session.delete(vault)
-                VaultAccess.query.filter_by(user_id=user.id).delete()
-                db.session.delete(user)
-            if expired:
-                db.session.commit()
+    # Guest cleanup scheduler — only needed when demo mode is active
+    if app.config.get("DEMO_MODE_ENABLED", False):
+        from backend.services.user_service import delete_guest_user
 
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_cleanup_expired_guests, 'interval', hours=1)
-    scheduler.start()
+        def _cleanup_expired_guests():
+            with app.app_context():
+                expired = User.query.filter(
+                    User.is_guest == True,
+                    User.expires_at < datetime.now(timezone.utc)
+                ).all()
+                for user in expired:
+                    try:
+                        delete_guest_user(user.id)
+                    except Exception as exc:
+                        logging.warning(
+                            f"[guest-cleanup] Failed to delete guest {user.id} "
+                            f"('{user.username}'): {exc}"
+                        )
+
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(_cleanup_expired_guests, 'interval', minutes=15)
+        scheduler.start()
 
     return app
 

@@ -338,3 +338,27 @@ class Task(db.Model):
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
 
+
+class DemoEvent(db.Model):
+    """
+    Persistent counter rows for demo analytics.
+
+    Survives guest-user deletion — guest rows are wiped every 2 h,
+    but these tiny event records stay forever so cumulative stats
+    remain meaningful over time.
+
+    event_type values:
+        guest_login      – a new guest session was created
+        phase2_unlock    – the replay finished and the guest went interactive
+        node_created     – a guest manually created a node (phase 2 only,
+                           the auto-created phase-1 nodes are NOT counted)
+    """
+    __tablename__ = 'demo_events'
+
+    id         = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    event_type = db.Column(db.String(32), nullable=False, index=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )

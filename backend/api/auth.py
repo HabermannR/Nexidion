@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 from backend.extensions import limiter
-from backend.models import db, User, UserType, VaultAccess, VaultRole, DemoState
+from backend.models import db, User, UserType, VaultAccess, VaultRole, DemoState, DemoEvent
 from backend.services import auth_service
 from backend.services.import_service import import_vault
 
@@ -68,7 +68,7 @@ def change_user_password():
 
 
 @auth_bp.route('/guest', methods=['POST'], strict_slashes=False)
-@limiter.limit("3 per hour")
+@limiter.limit("30 per hour")
 def guest_login():
     if not current_app.config["DEMO_MODE_ENABLED"]:
         return jsonify({"error": "Demo mode is not enabled."}), 403
@@ -100,6 +100,7 @@ def guest_login():
         user_id=agent.id,
         role=VaultRole.EDITOR,
     ))
+    db.session.add(DemoEvent(event_type='guest_login'))
     db.session.commit()
 
     token = create_access_token(

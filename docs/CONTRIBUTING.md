@@ -105,7 +105,7 @@ Open **[http://localhost:5173](http://localhost:5173)** in your browser. The Vit
 If you want to develop or test the Task Runner, add your `OPENAI_API_KEY` (or a local LLM URL — see [Section 9](#9-ai-task-runner)) to `.env`, then start with the extra profile:
 
 ```bash
-docker compose -f docker-compose.dev.yml --profile with-postgres --profile with-task-agent up --build
+docker compose -f docker-compose.dev.yml --profile with-postgres --profile with-task-runner up --build
 ```
 
 ### Stopping the stack
@@ -332,6 +332,12 @@ flask db upgrade
 flask db downgrade
 ```
 
+> **Docker mode:** always run migration commands inside the backend container, not on your host shell. The hostname `postgres` only resolves inside Docker's network. Use:
+> ```bash
+> docker compose -f docker-compose.dev.yml exec backend flask db migrate -m "describe your change"
+> docker compose -f docker-compose.dev.yml exec backend flask db upgrade
+> ```
+
 In Docker dev mode, `flask db upgrade` runs automatically on backend container start (see the `command` in `docker-compose.dev.yml`).
 
 ---
@@ -358,7 +364,7 @@ cd frontend && npm run lint
 
 These are tracked issues that contributors should be aware of before touching the related areas:
 
-- **AI buttons always visible:** The frontend currently shows AI Agent UI controls even when no Task Runner is running. Tasks queue silently to `pending` with no user feedback. A planned fix is an endpoint that exposes worker status to the React app so buttons can be hidden or disabled dynamically.
+- **AI buttons always visible:** The frontend currently shows AI Agent UI controls even when no Task Runner is running. Tasks queue silently to `pending` with no user feedback. A worker-status endpoint to drive dynamic UI hiding is a known open item.
 - **No image upload UI:** Images must be placed in `SECURE_IMAGE_FOLDER` manually by an admin. A file upload endpoint and UI are planned.
 - **Image syntax differs from node links:** Images use `![alt](/api/image/file.png)` while internal node links use `[[text|uuid]]`. This inconsistency is a known UX issue but will not be changed in the near term to avoid breaking existing notes.
 - **Lock icon protects content, not title:** Both the write-lock (`bxs-lock-alt`) and full-privacy lock (`bxs-no-entry`) still allow the agent to see a node's title and tree position. Only the content body is protected. If the title itself is sensitive, use a generic name.

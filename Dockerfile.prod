@@ -1,23 +1,44 @@
-FROM python:3.13-slim
+# ==========================================
+# STAGE 1: Build the React Frontend
+# ==========================================
+FROM node:20-slim AS frontend-builder
+WORKDIR /workspace
 
-# Matches the working_dir: /app in your docker-compose.yml task-runner service
+# Copy the custom plugin AND the frontend code
+COPY remark-internal-links ./remark-internal-links
+COPY frontend ./frontend
+
+# Install dependencies and build the static files
+WORKDIR /workspace/frontend
+RUN npm install
+RUN npm run build
+
+# ==========================================
+# STAGE 2: Setup Python Backend & Run
+# ==========================================
+FROM python:3.13-slim
 WORKDIR /app
+
+# Install system dependencies (needed for Postgres/psycopg2)
+RUN apt-get update && apt-get install -y libpq-dev gcc bash && rm -rf /var/lib/apt/lists/*
 
 # Fix security warnings and install uv
 RUN pip install --upgrade pip setuptools wheel uv
 
-# Copy the requirements file from the backend directory
-COPY backend/requirements.txt .
-
-# Install dependencies extremely fast
-RUN uv pip install --system --no-cache -r requirements.txt
-
-# Copy the backend folder as a proper Python package
+# Copy configuration and code
+COPY pyproject.toml .
 COPY backend/ ./backend/
-
-# Copy the orchestration scripts from the root
 COPY agent/   ./agent/
 COPY wsgi.py task_runner.py ./
 
-# Run the app via gunicorn (this gets overridden by task-runner's command in docker-compose)
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "wsgi:app"]
+# MAGIC TRICK: Copy the compiled frontend from Stage 1 into the exact folder
+# your backend expects to find it!
+COPY --from=frontend-builder /workspace/frontend/dist ./frontend/dist
+
+# Install dependencies AND build the project directly from pyproject.toml
+RUN uv pip install --system --no-cache .
+
+EXPOSE 5001
+
+# Default command (will be overridden by docker-compose)
+CMD ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5001", "wsgi:app"]

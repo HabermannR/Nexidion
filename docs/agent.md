@@ -5,7 +5,7 @@ Nexidion includes an optional, autonomous background worker (the AI Task Runner)
 > **⚠️ Prerequisite: The Task Runner must be running.**
 > The AI Agent only works when Nexidion was launched with the `with-task-runner` Docker profile. If you started with the standard command, tasks you create will stay in a `pending` state forever — no worker is running to pick them up. To enable the agent, launch with:
 > ```bash
-> docker compose --profile with-postgres --profile with-task-agent up -d --force-recreate --build
+> docker compose --profile with-postgres --profile with-task-runner up -d --force-recreate --build
 > ```
 > See the [README](../README.md) for all deployment scenarios.
 

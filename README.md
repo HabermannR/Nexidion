@@ -101,7 +101,7 @@ The application will be built and accessible at `http://localhost:5001`.
 Nexidion includes a background Task Runner (`task_runner.py`) that acts as an autonomous editor. If you want to enable the AI agent, add your `OPENAI_API_KEY` to the `.env` file and launch using the full stack + Task Runner profile:
 
 ```bash
-docker compose --profile with-postgres --profile with-task-agent up -d --force-recreate --build
+docker compose --profile with-postgres --profile with-task-runner up -d --force-recreate --build
 ```
 
 *(Note: If you do not want to use the AI features, simply run the standard command in Step 3. The worker will remain offline, and no external requests will be made).*
@@ -126,7 +126,7 @@ The only external calls the application can make are **opt-in connections to Lar
 ### ⚠️ A Quick Note on the Frontend UI
 If you do *not* boot up the worker, the AI Agent UI buttons will currently still appear in the frontend. Clicking them will simply create tasks in the database that sit in a `pending` status forever because no worker is running. 
 
-If you didn't boot the worker profile, simply ignore the AI buttons for now. (In a future update, we will add an endpoint that tells the React app whether the worker is enabled to hide the buttons dynamically).
+If you didn't boot the worker profile, simply ignore the AI buttons for now.
 
 ---
 

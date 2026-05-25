@@ -22,6 +22,7 @@ dependencies = [
     "Flask-JWT-Extended",
     "Flask-Migrate",         # This automatically includes 'alembic'
     "Flask-SQLAlchemy",
+    "gunicorn",
     # Database driver (Required for the agent)
     "psycopg2-binary",
     # AI Interfaces

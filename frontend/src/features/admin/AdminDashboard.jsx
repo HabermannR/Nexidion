@@ -111,6 +111,16 @@ function UsersSection() {
         onError: (err) => { toast.error(err.response?.data?.error || 'Error deleting user.'); closeModal(); },
     });
 
+    const deleteAllGuestsMutation = useMutation({
+        mutationFn: () => apiClient.delete('/api/admin/guests'),
+        onSuccess: (res) => {
+            toast.success(`Deleted ${res.data.deleted} guest account(s).`);
+            invalidate();
+            queryClient.invalidateQueries({ queryKey: ['admin', 'demo-stats'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Error deleting guests.'),
+    });
+
     const passwordMutation = useMutation({
         mutationFn: ({ userId, new_password }) => apiClient.put(`/api/admin/users/${userId}/password`, { new_password }),
         onSuccess: () => { toast.success('Password reset.'); passwordFormRef.current?.reset(); closeModal(); },
@@ -167,8 +177,21 @@ function UsersSection() {
                 {/* User list */}
                 <Col lg={8}>
                     <Card>
-                        <Card.Header as="h5">
+                        <Card.Header as="h5" className="d-flex align-items-center gap-2">
                             All Users {users ? <Badge bg="secondary" className="ms-1">{users.length}</Badge> : null}
+                            {users?.some(u => u.is_guest) && (
+                                <Button
+                                    variant="outline-danger" size="sm" className="ms-auto"
+                                    disabled={deleteAllGuestsMutation.isPending}
+                                    onClick={() => {
+                                        if (window.confirm('Delete ALL guest accounts and their vaults? This cannot be undone.')) {
+                                            deleteAllGuestsMutation.mutate();
+                                        }
+                                    }}
+                                >
+                                    {deleteAllGuestsMutation.isPending ? 'Deleting…' : '🗑 Delete All Guests'}
+                                </Button>
+                            )}
                         </Card.Header>
                         <Card.Body className="p-0">
                             {isLoading && <div className="text-center p-4"><Spinner animation="border" size="sm" /> Loading…</div>}
@@ -426,8 +449,7 @@ function DemoAnalyticsSection() {
                         <StatCard label="Active Now" value={data.active_guests_now} sub="Sessions not yet expired" color="success" />
                         <StatCard label="Phase-2 Unlocks" value={data.phase2_completions} sub="Guests who went interactive" color="purple" />
                         <StatCard label="Conversion Rate" value={`${data.conversion_rate_pct}%`} sub="Logins → Phase-2" color="pink" />
-                        <StatCard label="Completed Demo Tasks" value={data.completed_demo_tasks} sub="Agent runs finished" color="info" />
-                        <StatCard label="Nodes Created by Guests" value={data.node_creates_by_guests} sub="Nodes guests made themselves" color="warning" />
+                        <StatCard label="Nodes Created by Guests" value={data.node_creates_by_guests} sub="Nodes guests made (phase 2 only)" color="warning" />
                     </div>
                 )}
             </Card.Body>
