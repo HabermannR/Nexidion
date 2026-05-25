@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useOutletContext, useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Container, Row, Col, Card, Button,
     Form as BootstrapForm, Table, Alert, Spinner, InputGroup,
@@ -10,6 +10,8 @@ import {
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { useToast } from '../../components/ToastProvider.jsx';
+import { useVaultsQuery } from '../vaults/hooks/useVaultsQuery.js';
+import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
 
 // ─── VaultRow ─────────────────────────────────────────────────────────────────
 
@@ -141,10 +143,7 @@ export default function VaultManager() {
     const formRef  = useRef();
     const inputRef = useRef();
 
-    const { data: vaults, isLoading, isError, error: loaderError } = useQuery({
-        queryKey: ['vaults'],
-        queryFn:  () => apiClient.get('/api/vaults/').then(res => res.data),
-    });
+    const { data: vaults, isLoading, isError, error: loaderError } = useVaultsQuery();
 
     // --- Mutations ---
 
@@ -152,7 +151,6 @@ export default function VaultManager() {
         mutationFn: (name) => apiClient.post('/api/vaults/', { name }),
         onSuccess: (response) => {
             const newVault = response.data;
-            queryClient.invalidateQueries({ queryKey: ['vaults'] });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
             setSuccessMsg(`Vault "${newVault.name}" was successfully created.`);
             if (isBatchMode) {
@@ -169,7 +167,6 @@ export default function VaultManager() {
         mutationFn: ({ vaultId, newName }) =>
             apiClient.put(`/api/vaults/${vaultId}`, { name: newName }),
         onSuccess: (response) => {
-            queryClient.invalidateQueries({ queryKey: ['vaults'] });
             queryClient.invalidateQueries({ queryKey: ['allVaults'] });
             setSuccessMsg(`Vault successfully renamed to "${response.data.name}".`);
         },
@@ -178,19 +175,50 @@ export default function VaultManager() {
 
     const deleteVaultMutation = useMutation({
         mutationFn: (vaultId) => apiClient.delete(`/api/vaults/${vaultId}`),
-        onSuccess: (_, vaultIdToDelete) => {
-            queryClient.invalidateQueries({ queryKey: ['vaults'] }).then(() => {
-                const remaining = queryClient.getQueryData(['vaults']);
-                if (activeVault?.id === vaultIdToDelete) {
-                    navigate(
-                        remaining?.length > 0
-                            ? `/vaults/${remaining[0].id}`
-                            : '/settings/vaults'
-                    );
-                }
-            });
-            queryClient.invalidateQueries({ queryKey: ['allVaults'] });
+        onSuccess: async (_, vaultIdToDelete) => {
             setSuccessMsg('Vault was successfully deleted.');
+
+            // Fetch the fresh vault list from the server — invalidateQueries only
+            // marks the cache stale but does not await the refetch, so getQueryData
+            // immediately after would still return the stale list including the
+            // deleted vault. refetchQueries actually awaits the network round-trip.
+            await queryClient.refetchQueries({ queryKey: ['allVaults'] });
+
+            if (activeVault?.id !== vaultIdToDelete) {
+                // User was not on the deleted vault — no redirect needed.
+                return;
+            }
+
+            const remaining = queryClient.getQueryData(['allVaults']);
+            if (!remaining?.length) {
+                navigate('/settings/vaults');
+                return;
+            }
+
+            // Navigate to the root node of the first remaining vault so the user
+            // lands on a valid node rather than a bare /vaults/:id URL.
+            const nextVaultId = remaining[0].id;
+            try {
+                const res = await apiClient.get(`/api/vaults/${nextVaultId}/nodes/`);
+                const tree = res.data;
+                const allFlat = [];
+                const stack = Array.isArray(tree) ? [...tree] : [];
+                while (stack.length) {
+                    const node = stack.pop();
+                    if (!node) continue;
+                    const { children, ...rest } = node;
+                    allFlat.push(rest);
+                    if (Array.isArray(children)) stack.push(...children);
+                }
+                const rootNode = allFlat.find(n => n.parent_id === null);
+                if (rootNode) {
+                    navigate(`/vaults/${nextVaultId}/nodes/${rootNode.id}`);
+                } else {
+                    navigate(`/vaults/${nextVaultId}`);
+                }
+            } catch {
+                navigate(`/vaults/${nextVaultId}`);
+            }
         },
         onError: (err) => toast.error(err.response?.data?.error || 'Deletion failed.'),
     });

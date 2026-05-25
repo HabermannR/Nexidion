@@ -83,7 +83,7 @@ def guest_login():
         user_type    = UserType.HUMAN,
         is_guest     = True,
         demo_state   = DemoState.READ_ONLY,
-        expires_at   = datetime.now(timezone.utc) + timedelta(hours=24),
+        expires_at   = datetime.now(timezone.utc) + timedelta(hours=2),
     )
     db.session.add(guest)
     db.session.flush()
@@ -104,6 +104,6 @@ def guest_login():
 
     token = create_access_token(
         identity=str(guest.id),
-        expires_delta=timedelta(hours=24),
+        expires_delta=timedelta(hours=2),
     )
     return jsonify(access_token=token, user=guest.to_dict()), 201

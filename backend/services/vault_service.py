@@ -20,10 +20,14 @@ from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Versio
 # Internal helpers
 # ---------------------------------------------------------------------------
 def assert_write_allowed(role: VaultRole, user: User):
-    if role < VaultRole.EDITOR:
+    # Support both VaultRole enum and raw int values safely
+    role_val = role.value if hasattr(role, 'value') else int(role)
+    editor_val = VaultRole.EDITOR.value if hasattr(VaultRole.EDITOR, 'value') else int(VaultRole.EDITOR)
+    if role_val < editor_val:
         raise InsufficientVaultRoleError("You have read-only access to this vault.")
     if user.is_guest and user.demo_state == DemoState.READ_ONLY:
         raise DemoLockError("Complete the demo task to unlock editing.")
+
 
 def get_vault_access(vault_id: int, user_id: int) -> tuple[Vault, VaultRole]:
     vault = db.session.get(Vault, vault_id)
@@ -38,9 +42,11 @@ def get_vault_access(vault_id: int, user_id: int) -> tuple[Vault, VaultRole]:
         return vault, VaultRole(row.role)
     raise PermissionError("You do not have permission to access this vault.")
 
+
 def _verify_vault_access(vault_id: int, user_id: int) -> Vault:
     vault, _ = get_vault_access(vault_id, user_id)
     return vault
+
 
 def _build_vault_list(user_id: int) -> list:
     """Raw query — owned + granted vaults, no cache. Returns list of dicts."""
@@ -165,7 +171,7 @@ def create_vault(name: str, owner_id: int) -> Vault:
             raise DemoLockError(f"Demo accounts are limited to {limit} vault(s).")
 
     if db.session.execute(
-        db.select(Vault).filter_by(name=name_stripped, owner_id=owner_id)
+            db.select(Vault).filter_by(name=name_stripped, owner_id=owner_id)
     ).first():
         raise ValueError(f"You already own a vault named '{name_stripped}'.")
     try:
@@ -200,7 +206,6 @@ def create_vault(name: str, owner_id: int) -> Vault:
 
 
 def rename_vault(vault_id: int, new_name: str, user_id: int) -> Vault:
-    # +++ NEU: 3-line check +++
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
     assert_write_allowed(role, user)
@@ -226,12 +231,10 @@ def rename_vault(vault_id: int, new_name: str, user_id: int) -> Vault:
 
 
 def delete_vault(vault_id: int, user_id: int):
-    # +++ NEU: 3-line check +++
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
     assert_write_allowed(role, user)
 
-    # Optional but highly recommended: explicitly ensure ONLY the owner can delete the vault!
     if vault.owner_id != user_id:
         raise PermissionError("Only the vault owner can delete it.")
 
@@ -252,13 +255,22 @@ def delete_vault(vault_id: int, user_id: int):
 # ---------------------------------------------------------------------------
 
 def get_all_vaults() -> list:
-    """[Admin] All vaults with owner info and access count."""
-    vaults = Vault.query.order_by(Vault.name).all()
+    """[Admin] All vaults with owner info and access count — single query."""
+    access_count_subq = (
+        db.select(VaultAccess.vault_id, db.func.count().label("cnt"))
+        .group_by(VaultAccess.vault_id)
+        .subquery()
+    )
+    rows = (
+        db.session.execute(
+            db.select(Vault, access_count_subq.c.cnt)
+            .outerjoin(access_count_subq, access_count_subq.c.vault_id == Vault.id)
+            .order_by(Vault.name)
+        ).all()
+    )
+
     result = []
-    for v in vaults:
-        access_count = db.session.execute(
-            db.select(db.func.count()).select_from(VaultAccess).filter_by(vault_id=v.id)
-        ).scalar()
+    for v, cnt in rows:
         owner = db.session.get(User, v.owner_id)
         result.append({
             "id": v.id,
@@ -267,7 +279,8 @@ def get_all_vaults() -> list:
             "owner_id": v.owner_id,
             "owner_display_name": owner.display_name if owner else "Unknown",
             "owner_username": owner.username if owner else "unknown",
-            "access_count": access_count,
+            "is_guest_vault": owner.is_guest if owner else False,
+            "access_count": cnt or 0,
         })
     return result
 

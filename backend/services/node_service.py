@@ -274,7 +274,7 @@ def get_nodes_as_tree(vault_id: int, user_id: int, format_type: str = 'tree', cl
         raise ValueError("Vault not found.")
     is_ui = (format_type == 'tree')
     target_etag = vault.cached_ui_tree_etag if is_ui else vault.cached_agent_tree_etag
-    if target_etag and client_etag == target_etag:
+    if target_etag and client_etag and client_etag.strip('"') == target_etag:
         return None, target_etag, True
     target_tree = vault.cached_ui_tree if is_ui else vault.cached_agent_tree
     if not target_tree:
@@ -598,7 +598,6 @@ def create_node(
 ) -> Node:
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     vault, role = get_vault_access(vault_id, author_id)
-    user = db.session.get(User, author_id)
     user = db.session.get(User, author_id)
     if user and user.is_guest:
         count = Node.query.filter_by(vault_id=vault_id).count()

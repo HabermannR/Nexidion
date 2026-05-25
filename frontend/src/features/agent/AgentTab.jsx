@@ -283,7 +283,7 @@ function TaskCard({ task, vaultId }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AgentTab() {
-    const { vaultId } = useParams();
+    const { vaultId, nodeId } = useParams();
     const queryClient = useQueryClient();
     const toast = useToast();
     const [instruction, setInstruction] = useState('');
@@ -291,6 +291,7 @@ export default function AgentTab() {
     const [statusFilter, setStatusFilter] = useState('');
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
+    const isEditingNode = useWorkspaceStore(state => state.isEditingNode);
     const { data: queryData } = useVaultTreeQuery(vaultId);
     const allNodesFlat = useMemo(() => queryData?.allNodesFlat || [], [queryData]);
 
@@ -323,8 +324,16 @@ export default function AgentTab() {
             const res = await apiClient.get('/api/tasks', { params });
             return Array.isArray(res.data) ? res.data : (res.data.tasks || []);
         },
-        refetchInterval: 5000,
+        // Poll fast when something is actively running, slow when idle.
+        // The function form re-evaluates against the latest cached data each cycle.
+        refetchInterval: (query) => {
+            const current = query.state.data ?? [];
+            const active = current.some(t => t.status === 'processing' || t.status === 'pending');
+            return active ? 3000 : 30000;
+        },
     });
+
+    const hasActiveTask = tasks.some(t => t.status === 'processing' || t.status === 'pending');
 
     // Track previous task statuses so we can detect completions.
     const prevTaskStatusesRef = useRef({});
@@ -350,8 +359,14 @@ export default function AgentTab() {
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
             // Refresh the user so demo_state changes (READ_ONLY → UNLOCKED) are reflected.
             queryClient.invalidateQueries({ queryKey: ['user'] });
+            // Reload the open node's content — but not if the user is mid-edit,
+            // which would silently discard their unsaved changes.
+            if (nodeId && !isEditingNode) {
+                queryClient.invalidateQueries({ queryKey: ['nodeContent', vaultId, nodeId] });
+                queryClient.invalidateQueries({ queryKey: ['versions', vaultId, nodeId] });
+            }
         }
-    }, [tasks, vaultId, queryClient]);
+    }, [tasks, vaultId, nodeId, isEditingNode, queryClient]);
 
     const handleSend = async () => {
         if (!instruction.trim() || isSending) return;

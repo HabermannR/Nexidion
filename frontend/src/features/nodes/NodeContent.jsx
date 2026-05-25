@@ -63,6 +63,7 @@ export default function NodeContent() {
     });
 
     const setBreadcrumbPath = useWorkspaceStore((state) => state.setBreadcrumbPath);
+    const setIsEditingNode = useWorkspaceStore((state) => state.setIsEditingNode);
     const toast = useToast();
 
     const [isEditing, setIsEditing] = useState(false);
@@ -117,6 +118,13 @@ export default function NodeContent() {
         setLocalContent('');
         setIsEditingSummary(false); // Reset summary edit mode on navigation
     }, [nodeId, versionParam]);
+
+    // Keep the global store in sync so AgentTab knows not to clobber an
+    // in-progress edit when it invalidates nodeContent on task completion.
+    useEffect(() => {
+        setIsEditingNode(isEditing);
+        return () => setIsEditingNode(false); // clear on unmount
+    }, [isEditing, setIsEditingNode]);
 
     useEffect(() => {
         if (vaultTreeData?.tree && nodeId) {

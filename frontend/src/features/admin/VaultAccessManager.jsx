@@ -8,6 +8,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/apiClient';
 import { useToast } from '../../components/ToastProvider';
 
+// Shared query key — must match AdminDashboard so cache and invalidation are unified
+const QK_ALL_VAULTS = ['admin', 'allVaults'];
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -24,7 +27,7 @@ function UserTypeBadge({ userType }) {
 
 function VaultList({ selectedVaultId, onSelect }) {
     const { data: vaults, isLoading, isError } = useQuery({
-        queryKey: ['admin', 'vaults'],
+        queryKey: QK_ALL_VAULTS,
         queryFn: () => apiClient.get('/api/admin/vaults').then(r => r.data),
     });
 
@@ -69,7 +72,7 @@ function VaultAccessPanel({ vaultId }) {
 
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ['admin', 'vault-access', vaultId] });
-        queryClient.invalidateQueries({ queryKey: ['admin', 'vaults'] });
+        queryClient.invalidateQueries({ queryKey: QK_ALL_VAULTS });
     };
 
     const grantMutation = useMutation({

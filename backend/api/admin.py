@@ -318,9 +318,13 @@ def reset_vault_to_snapshot(vault_id):
     _rewrite_internal_links(vault_id, remap)
     owner = db.session.get(User, vault.owner_id)
     owner.demo_remap = remap
+
+    # Invalidate the vault-list cache before committing so the null
+    # is written in the same transaction as the new nodes.
+    invalidate_vault_list_cache(vault.owner_id)
     db.session.commit()
 
-    invalidate_vault_list_cache(vault.owner_id)
+    # Tree cache rebuild reads committed data, so it must come after commit.
     rebuild_vault_tree_cache(vault_id)
 
     return jsonify({

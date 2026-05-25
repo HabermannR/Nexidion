@@ -1,29 +1,18 @@
 // src/features/nodes/hooks/useVaultTreeQuery.js
 
-import { useQuery } from '@tanstack/react-query';
+import { useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../../api/apiClient.js';
 
-/**
- * Wandelt eine hierarchische Baumstruktur in eine flache Liste um.
- * @param {Array} tree - Die hierarchische Baumstruktur (Array von Wurzelknoten).
- * @returns {Array} Eine flache Liste aller Knoten im Baum.
- */
 const flattenTree = (tree) => {
     const flatList = [];
     if (!Array.isArray(tree)) return flatList;
-
-    const stack = [...tree]; // Starte mit den Wurzelknoten
-
+    const stack = [...tree];
     while (stack.length > 0) {
-        const node = stack.pop(); // Nimm den nächsten Knoten vom Stapel
+        const node = stack.pop();
         if (!node) continue;
-
-        // Füge den aktuellen Knoten zur flachen Liste hinzu
-        // WICHTIG: Wir extrahieren den Knoten OHNE seine Kinder, um unendliche Rekursionen in der Darstellung zu vermeiden
         const { children, ...nodeWithoutChildren } = node;
         flatList.push(nodeWithoutChildren);
-
-        // Wenn der Knoten Kinder hat, füge sie dem Stapel hinzu, um sie als Nächstes zu verarbeiten
         if (Array.isArray(children) && children.length > 0) {
             stack.push(...children);
         }
@@ -32,30 +21,34 @@ const flattenTree = (tree) => {
 };
 
 export const useVaultTreeQuery = (vaultId) => {
+    const etagRef = useRef(null);
+    const queryClient = useQueryClient();
+
     return useQuery({
-        // ACHTUNG: Der queryKey ist immer noch 'vaultTree', das ist ok.
         queryKey: ['vaultTree', vaultId],
-
-        // Wir rufen jetzt den Endpunkt auf, der den Baum liefert.
-        // Falls es einen expliziten Endpunkt für den Baum gibt, wäre `?format=tree` hier sinnvoll.
-        // Wenn `?format=list` den Baum zurückgibt, ist das auch okay, aber verwirrend benannt.
-        // Wir nehmen an, der gezeigte Endpunkt ist der richtige.
-        queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/`).then(res => res.data),
+        queryFn: async () => {
+            const headers = {};
+            if (etagRef.current) {
+                headers['If-None-Match'] = etagRef.current;
+            }
+            const res = await apiClient.get(
+                `/api/vaults/${vaultId}/nodes/`,
+                { headers, validateStatus: s => s < 500 }
+            );
+            if (res.status === 304) {
+                // Return the current cached value — TQ v5 forbids returning undefined.
+                return queryClient.getQueryData(['vaultTree', vaultId]);
+            }
+            const etag = res.headers['etag'];
+            if (etag) etagRef.current = etag;
+            return res.data;
+        },
         enabled: !!vaultId,
-
-        // DER `select`-TEIL IST JETZT KORRIGIERT.
         select: (apiResponseTree) => {
-            // Die API gibt uns direkt die Baumstruktur. Das ist super!
             const tree = apiResponseTree || [];
-
-            // Wir berechnen jetzt die flache Liste aus dem Baum.
-            const allNodesFlat = flattenTree(tree);
-
-
-            // Wir geben die Struktur zurück, die alle Komponenten erwarten.
             return {
-                tree: tree, // Die originale Baumstruktur
-                allNodesFlat: allNodesFlat, // Die neu generierte flache Liste
+                tree,
+                allNodesFlat: flattenTree(tree),
             };
         },
     });

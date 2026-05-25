@@ -22,6 +22,7 @@ export const useWorkspaceStore = create(
 
             // UI layout
             activeContextTab: 'agent',
+            isEditingNode: false,
             breadcrumbPath: [],
 
             // Print Preview State (Not persisted)
@@ -48,6 +49,8 @@ export const useWorkspaceStore = create(
             // UI layout
             setActiveContextTab: (tabKey) => set({ activeContextTab: tabKey }),
             setBreadcrumbPath: (path) => set({ breadcrumbPath: path }),
+
+            setIsEditingNode: (editing) => set({ isEditingNode: editing }),
 
             // Tree/selection actions
             toggleNodeSelection: (nodeId) => set((state) => {

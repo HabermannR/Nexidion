@@ -20,6 +20,8 @@ if os.getenv("DB_HOST") == "postgres" and not os.path.exists("/.dockerenv"):
 # Always use the test database for everything that runs in this process
 os.environ["DB_NAME"] = "nexidion_test"
 
+os.environ["TESTING"] = "true"
+
 from backend.app import create_app
 from backend.models import db, User, Vault, Node, Version, Task, VaultAccess, UserType, VaultRole
 from backend.config import Config

@@ -70,6 +70,11 @@ function InlineRename({ value, onSave, disabled }) {
     );
 }
 
+// ── Query key constants (single source of truth) ─────────────────────────────
+
+const QK_USERS      = ['admin', 'users'];
+const QK_ALL_VAULTS = ['admin', 'allVaults'];
+
 // ── Users section ─────────────────────────────────────────────────────────────
 
 function UsersSection() {
@@ -77,14 +82,16 @@ function UsersSection() {
     const queryClient = useQueryClient();
     const createUserFormRef = useRef();
     const passwordFormRef = useRef();
-    const [modal, setModal] = useState({ type: null, user: null }); // 'delete' | 'password'
+    const [modal, setModal] = useState({ type: null, user: null }); // 'deleteUser' | 'password'
+
+    const closeModal = () => setModal({ type: null, user: null });
 
     const { data: users, isLoading, isError, error } = useQuery({
-        queryKey: ['admin', 'users'],
+        queryKey: QK_USERS,
         queryFn: () => apiClient.get('/api/admin/users').then(r => r.data),
     });
 
-    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: QK_USERS });
 
     const createMutation = useMutation({
         mutationFn: (payload) => apiClient.post('/api/admin/users', payload),
@@ -100,13 +107,13 @@ function UsersSection() {
 
     const deleteMutation = useMutation({
         mutationFn: (userId) => apiClient.delete(`/api/admin/users/${userId}`),
-        onSuccess: () => { toast.success('User deleted.'); invalidate(); setModal({ type: null, user: null }); },
-        onError: (err) => { toast.error(err.response?.data?.error || 'Error deleting user.'); setModal({ type: null, user: null }); },
+        onSuccess: () => { toast.success('User deleted.'); invalidate(); closeModal(); },
+        onError: (err) => { toast.error(err.response?.data?.error || 'Error deleting user.'); closeModal(); },
     });
 
     const passwordMutation = useMutation({
         mutationFn: ({ userId, new_password }) => apiClient.put(`/api/admin/users/${userId}/password`, { new_password }),
-        onSuccess: () => { toast.success('Password reset.'); passwordFormRef.current?.reset(); setModal({ type: null, user: null }); },
+        onSuccess: () => { toast.success('Password reset.'); passwordFormRef.current?.reset(); closeModal(); },
         onError: (err) => toast.error(err.response?.data?.error || 'Error resetting password.'),
     });
 
@@ -194,12 +201,15 @@ function UsersSection() {
                                                     {u.is_guest && <Badge bg="warning" text="dark" className="ms-1">Guest</Badge>}
                                                 </td>
                                                 <td className="text-end">
-                                                    <Button
-                                                        variant="outline-secondary" size="sm" className="me-2"
-                                                        onClick={() => setModal({ type: 'password', user: u })}
-                                                    >
-                                                        Reset password
-                                                    </Button>
+                                                    {/* Guests have no password — hide the reset button for them */}
+                                                    {!u.is_guest && (
+                                                        <Button
+                                                            variant="outline-secondary" size="sm" className="me-2"
+                                                            onClick={() => setModal({ type: 'password', user: u })}
+                                                        >
+                                                            Reset password
+                                                        </Button>
+                                                    )}
                                                     <Button
                                                         variant="outline-danger" size="sm"
                                                         onClick={() => setModal({ type: 'deleteUser', user: u })}
@@ -219,13 +229,16 @@ function UsersSection() {
             </Row>
 
             {/* Delete user modal */}
-            <Modal show={modal.type === 'deleteUser'} onHide={() => setModal({ type: null, user: null })} centered>
+            <Modal show={modal.type === 'deleteUser'} onHide={closeModal} centered>
                 <Modal.Header closeButton><Modal.Title>Delete User</Modal.Title></Modal.Header>
                 <Modal.Body>
-                    Permanently delete <strong>{modal.user?.username}</strong>? Their vaults will be transferred to the admin account. This cannot be undone.
+                    {modal.user?.is_guest
+                        ? <>Permanently delete guest <strong>{modal.user?.username}</strong>? Their demo vault will be wiped. This cannot be undone.</>
+                        : <>Permanently delete <strong>{modal.user?.username}</strong>? Their vaults will be transferred to the admin account. This cannot be undone.</>
+                    }
                 </Modal.Body>
                 <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setModal({ type: null, user: null })}>Cancel</Button>
+                    <Button variant="secondary" onClick={closeModal}>Cancel</Button>
                     <Button variant="danger" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(modal.user.id)}>
                         {deleteMutation.isPending ? 'Deleting…' : 'Delete permanently'}
                     </Button>
@@ -233,12 +246,12 @@ function UsersSection() {
             </Modal>
 
             {/* Password modal */}
-            <Modal show={modal.type === 'password'} onHide={() => setModal({ type: null, user: null })} centered>
+            <Modal show={modal.type === 'password'} onHide={closeModal} centered>
                 <BootstrapForm ref={passwordFormRef} onSubmit={handlePasswordSubmit}>
                     <Modal.Header closeButton><Modal.Title>Reset password — {modal.user?.username}</Modal.Title></Modal.Header>
                     <Modal.Body><PasswordInput name="new_password" label="New Password" /></Modal.Body>
                     <Modal.Footer>
-                        <Button variant="secondary" onClick={() => setModal({ type: null, user: null })}>Cancel</Button>
+                        <Button variant="secondary" onClick={closeModal}>Cancel</Button>
                         <Button variant="primary" type="submit" disabled={passwordMutation.isPending}>
                             {passwordMutation.isPending ? 'Saving…' : 'Save Password'}
                         </Button>
@@ -257,11 +270,11 @@ function VaultsSection() {
     const [confirmDelete, setConfirmDelete] = useState(null); // vault object
 
     const { data: vaults, isLoading, isError, error } = useQuery({
-        queryKey: ['admin', 'allVaults'],
+        queryKey: QK_ALL_VAULTS,
         queryFn: () => apiClient.get('/api/admin/vaults').then(r => r.data),
     });
 
-    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'allVaults'] });
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: QK_ALL_VAULTS });
 
     const renameMutation = useMutation({
         mutationFn: ({ vaultId, name }) => apiClient.put(`/api/admin/vaults/${vaultId}`, { name }),
@@ -317,7 +330,8 @@ function VaultsSection() {
                                             <span className="text-muted" style={{ fontSize: '0.85rem' }}>({v.owner_username})</span>
                                         </td>
                                         <td>
-                                            {v.owner_username?.startsWith('guest_')
+                                            {/* is_guest_vault is now a proper boolean from the API */}
+                                            {v.is_guest_vault
                                                 ? <Badge bg="warning" text="dark">Demo</Badge>
                                                 : <Badge bg="secondary">Normal</Badge>}
                                         </td>
@@ -376,18 +390,8 @@ function DemoScriptExtractor() {
             const task = res.data;
             const ops = task.operations || [];
 
-            // Format as a safe Python string that parses JSON
             const opsJson = JSON.stringify(ops, null, 4);
-            const outputCode = `import json
-
-DEMO_INSTRUCTION = ${JSON.stringify(task.instruction || "")}
-
-DEMO_FINISH_SUMMARY = ${JSON.stringify(task.finish_summary || "")}
-
-DEMO_OPERATIONS = json.loads(r"""
-${opsJson}
-""")
-`;
+            const outputCode = `import json\n\nDEMO_INSTRUCTION = ${JSON.stringify(task.instruction || "")}\n\nDEMO_FINISH_SUMMARY = ${JSON.stringify(task.finish_summary || "")}\n\nDEMO_OPERATIONS = json.loads(r"""\n${opsJson}\n""")\n`;
             setScript(outputCode);
             toast.success('Script extracted!');
         } catch (err) {
@@ -405,13 +409,14 @@ ${opsJson}
             </Card.Header>
             <Card.Body className="d-flex flex-column">
                 <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
-                    Turn a real agent run into a free Demo Script. Enter a Task ID below to extract its operations into Python code.
+                    Turn a real agent run into a Demo Script. Enter a Task ID below to extract its operations into Python code.
                 </p>
                 <InputGroup size="sm" className="mb-3">
                     <BootstrapForm.Control
                         placeholder="Task ID (e.g. 123...)"
                         value={taskId}
                         onChange={e => setTaskId(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleExtract()}
                     />
                     <Button variant="info" onClick={handleExtract} disabled={!taskId || isLoading}>
                         {isLoading ? 'Fetching...' : 'Extract Script'}
@@ -450,20 +455,20 @@ function DeveloperToolsSection() {
     const [demoVaultId, setDemoVaultId] = useState('');
     const [resetVaultId, setResetVaultId] = useState('');
     const [snapshotFile, setSnapshotFile] = useState(null);
+    const [confirmReset, setConfirmReset] = useState(false);
+    const snapshotInputRef = useRef();
 
-    const { data: vaults, isLoading: isLoadingVaults } = useQuery({
-        queryKey: ['admin', 'allVaults'],
+    const { data: vaults } = useQuery({
+        queryKey: QK_ALL_VAULTS,
         queryFn: () => apiClient.get('/api/admin/vaults').then(res => res.data),
     });
 
-    // 1. Trigger the Demo Agent
     const triggerDemoMutation = useMutation({
         mutationFn: (vaultId) => apiClient.post('/api/admin/replay-test', { vault_id: parseInt(vaultId, 10) }),
         onSuccess: (res) => toast.success(`Demo task queued — task ID ${res.data.task_id}`),
         onError: (err) => toast.error(err.response?.data?.error || 'Failed to queue demo task.'),
     });
 
-    // 2. Reset Vault to Snapshot
     const resetMutation = useMutation({
         mutationFn: async ({ vaultId, file }) => {
             const text = await file.text();
@@ -473,17 +478,14 @@ function DeveloperToolsSection() {
         onSuccess: (res) => {
             toast.success(`Vault reset! Restored ${res.data.node_count} nodes.`);
             setSnapshotFile(null);
-            document.getElementById('snapshot-upload').value = '';
+            setResetVaultId('');
+            setConfirmReset(false);
+            if (snapshotInputRef.current) snapshotInputRef.current.value = '';
         },
-        onError: (err) => toast.error(err.response?.data?.error || 'Failed to reset vault.'),
+        onError: (err) => { toast.error(err.response?.data?.error || 'Failed to reset vault.'); setConfirmReset(false); },
     });
 
-    const handleResetSubmit = () => {
-        if (!resetVaultId || !snapshotFile) return;
-        if (window.confirm('Are you sure? This will WIPE the current vault nodes and replace them with the snapshot.')) {
-            resetMutation.mutate({ vaultId: resetVaultId, file: snapshotFile });
-        }
-    };
+    const selectedVaultName = vaults?.find(v => String(v.id) === String(resetVaultId))?.name;
 
     return (
         <>
@@ -497,7 +499,7 @@ function DeveloperToolsSection() {
                         </Card.Header>
                         <Card.Body className="d-flex flex-column">
                             <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
-                                Simulate the "Undo Agent" feature. Upload a <code>.nexidion</code> export file to instantly wipe and restore a vault to that snapshot.
+                                Upload a <code>.nexidion</code> export file to wipe and restore a vault to that snapshot.
                             </p>
                             <BootstrapForm.Group className="mb-2">
                                 <BootstrapForm.Label className="fw-semibold small">1. Target Vault</BootstrapForm.Label>
@@ -513,7 +515,7 @@ function DeveloperToolsSection() {
                                 <BootstrapForm.Control
                                     size="sm"
                                     type="file"
-                                    id="snapshot-upload"
+                                    ref={snapshotInputRef}
                                     accept=".nexidion,application/json"
                                     onChange={e => setSnapshotFile(e.target.files[0])}
                                 />
@@ -522,7 +524,7 @@ function DeveloperToolsSection() {
                                 variant="primary"
                                 size="sm"
                                 className="w-100 mt-auto"
-                                onClick={handleResetSubmit}
+                                onClick={() => setConfirmReset(true)}
                                 disabled={!resetVaultId || !snapshotFile || resetMutation.isPending}
                             >
                                 {resetMutation.isPending ? 'Restoring...' : 'Wipe & Restore Snapshot'}
@@ -540,7 +542,7 @@ function DeveloperToolsSection() {
                         </Card.Header>
                         <Card.Body className="d-flex flex-column">
                             <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
-                                Creates a fake <code>pending_demo</code> task on a vault. The background runner will pick this up and execute the pre-recorded tutorial animation.
+                                Creates a <code>pending_demo</code> task on a vault. The background runner will pick it up and execute the pre-recorded demo animation.
                             </p>
                             <BootstrapForm.Group className="mb-3">
                                 <BootstrapForm.Label className="fw-semibold small">Target Vault</BootstrapForm.Label>
@@ -571,6 +573,26 @@ function DeveloperToolsSection() {
                     <DemoScriptExtractor />
                 </Col>
             </Row>
+
+            {/* Snapshot reset confirmation modal */}
+            <Modal show={confirmReset} onHide={() => setConfirmReset(false)} centered>
+                <Modal.Header closeButton><Modal.Title>Confirm Snapshot Reset</Modal.Title></Modal.Header>
+                <Modal.Body>
+                    This will <strong>permanently wipe</strong> all nodes in vault{' '}
+                    <strong>"{selectedVaultName}"</strong> and replace them with the snapshot contents.
+                    This cannot be undone.
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setConfirmReset(false)}>Cancel</Button>
+                    <Button
+                        variant="danger"
+                        disabled={resetMutation.isPending}
+                        onClick={() => resetMutation.mutate({ vaultId: resetVaultId, file: snapshotFile })}
+                    >
+                        {resetMutation.isPending ? 'Restoring...' : 'Wipe & Restore'}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </>
     );
 }

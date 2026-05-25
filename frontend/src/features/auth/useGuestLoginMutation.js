@@ -15,8 +15,9 @@ export function useGuestLoginMutation() {
             queryClient.clear();
             navigate('/');
         },
-        onError: (error) => {
-            console.error('Guest login failed:', error);
-        }
+        // No onError override — letting the error propagate to the mutation's `error`
+        // state so LoginPage can render the guestError alert block. Previously this
+        // was swallowing all errors with only a console.error, leaving the user with
+        // a de-spun button and no feedback (soft-lock).
     });
 }
