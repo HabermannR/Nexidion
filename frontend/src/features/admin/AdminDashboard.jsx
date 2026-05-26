@@ -2,12 +2,11 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Container, Card, Button, Table, Alert, Spinner, Modal,
-    Form as BootstrapForm, Row, Col, InputGroup, Badge
+    Form as BootstrapForm, Row, Col, InputGroup, Badge, Nav
 } from 'react-bootstrap';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../api/apiClient';
-import VaultAccessManager from './VaultAccessManager';
 import { useToast } from '../../components/ToastProvider';
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -27,7 +26,6 @@ function PasswordInput({ name, label, required = true }) {
     );
 }
 
-// Inline rename input that saves on Enter / blur
 function InlineRename({ value, onSave, disabled }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
@@ -70,7 +68,7 @@ function InlineRename({ value, onSave, disabled }) {
     );
 }
 
-// ── Query key constants (single source of truth) ─────────────────────────────
+// ── Query key constants ──────────────────────────────────────────────────────
 
 const QK_USERS      = ['admin', 'users'];
 const QK_ALL_VAULTS = ['admin', 'allVaults'];
@@ -82,7 +80,7 @@ function UsersSection() {
     const queryClient = useQueryClient();
     const createUserFormRef = useRef();
     const passwordFormRef = useRef();
-    const [modal, setModal] = useState({ type: null, user: null }); // 'deleteUser' | 'password'
+    const [modal, setModal] = useState({ type: null, user: null });
 
     const closeModal = () => setModal({ type: null, user: null });
 
@@ -148,7 +146,6 @@ function UsersSection() {
     return (
         <>
             <Row className="g-4">
-                {/* Create user */}
                 <Col lg={4}>
                     <Card>
                         <Card.Header as="h5">Create New User</Card.Header>
@@ -174,7 +171,6 @@ function UsersSection() {
                     </Card>
                 </Col>
 
-                {/* User list */}
                 <Col lg={8}>
                     <Card>
                         <Card.Header as="h5" className="d-flex align-items-center gap-2">
@@ -224,7 +220,6 @@ function UsersSection() {
                                                     {u.is_guest && <Badge bg="warning" text="dark" className="ms-1">Guest</Badge>}
                                                 </td>
                                                 <td className="text-end">
-                                                    {/* Guests have no password — hide the reset button for them */}
                                                     {!u.is_guest && (
                                                         <Button
                                                             variant="outline-secondary" size="sm" className="me-2"
@@ -251,7 +246,6 @@ function UsersSection() {
                 </Col>
             </Row>
 
-            {/* Delete user modal */}
             <Modal show={modal.type === 'deleteUser'} onHide={closeModal} centered>
                 <Modal.Header closeButton><Modal.Title>Delete User</Modal.Title></Modal.Header>
                 <Modal.Body>
@@ -268,7 +262,6 @@ function UsersSection() {
                 </Modal.Footer>
             </Modal>
 
-            {/* Password modal */}
             <Modal show={modal.type === 'password'} onHide={closeModal} centered>
                 <BootstrapForm ref={passwordFormRef} onSubmit={handlePasswordSubmit}>
                     <Modal.Header closeButton><Modal.Title>Reset password — {modal.user?.username}</Modal.Title></Modal.Header>
@@ -285,12 +278,203 @@ function UsersSection() {
     );
 }
 
+// ── Vault Access Panel (inline, admin version) ────────────────────────────────
+// Mirrors the owner VaultAccessPanel style: shown inline per vault row.
+
+function AdminVaultAccessPanel({ vaultId }) {
+    const queryClient = useQueryClient();
+    const toast = useToast();
+    const [selectedUserId, setSelectedUserId] = useState('');
+
+    const qk = ['admin', 'vault-access', vaultId];
+
+    const { data, isLoading, isError } = useQuery({
+        queryKey: qk,
+        queryFn: () => apiClient.get(`/api/admin/vaults/${vaultId}/access`).then(r => r.data),
+        enabled: !!vaultId,
+    });
+
+    const invalidate = () => {
+        queryClient.invalidateQueries({ queryKey: qk });
+        queryClient.invalidateQueries({ queryKey: QK_ALL_VAULTS });
+    };
+
+    const grantMutation = useMutation({
+        mutationFn: (userId) => apiClient.post(`/api/admin/vaults/${vaultId}/access`, { user_id: userId }),
+        onSuccess: () => { setSelectedUserId(''); invalidate(); },
+        onError: (e) => toast.error(e.response?.data?.error || 'Failed to grant access.'),
+    });
+
+    const revokeMutation = useMutation({
+        mutationFn: (userId) => apiClient.delete(`/api/admin/vaults/${vaultId}/access/${userId}`),
+        onSuccess: () => invalidate(),
+        onError: (e) => toast.error(e.response?.data?.error || 'Failed to revoke access.'),
+    });
+
+    if (isLoading) return <div className="text-center py-3"><Spinner size="sm" /> Loading access…</div>;
+    if (isError) return <Alert variant="danger" className="mt-2">Failed to load access data.</Alert>;
+    if (!data) return null;
+
+    const { vault, access_list, available_users } = data;
+
+    return (
+        <div className="mt-2">
+            <h6 className="mb-2 text-muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Current access
+            </h6>
+            <Table size="sm" bordered className="mb-3">
+                <thead className="table-light">
+                    <tr>
+                        <th>User</th>
+                        <th>Username</th>
+                        <th>Type</th>
+                        <th>Role</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr className="table-secondary">
+                        <td>{vault.owner_display_name}</td>
+                        <td><code className="text-body">{vault.owner_username}</code></td>
+                        <td><Badge bg="warning" text="dark">Owner</Badge></td>
+                        <td>owner</td>
+                        <td></td>
+                    </tr>
+                    {access_list.length === 0 ? (
+                        <tr>
+                            <td colSpan={5} className="text-muted text-center py-2" style={{ fontSize: '0.85rem' }}>
+                                No additional users have access.
+                            </td>
+                        </tr>
+                    ) : (
+                        access_list.map(u => (
+                            <tr key={u.user_id}>
+                                <td>{u.display_name}</td>
+                                <td><code className="text-body">{u.username}</code></td>
+                                <td>
+                                    {u.user_type === 'llm_assistant'
+                                        ? <Badge bg="info">LLM</Badge>
+                                        : <Badge bg="secondary">Human</Badge>}
+                                </td>
+                                <td>{u.role}</td>
+                                <td>
+                                    <Button
+                                        variant="outline-danger" size="sm"
+                                        disabled={revokeMutation.isPending}
+                                        onClick={() => revokeMutation.mutate(u.user_id)}
+                                    >
+                                        Revoke
+                                    </Button>
+                                </td>
+                            </tr>
+                        ))
+                    )}
+                </tbody>
+            </Table>
+
+            <h6 className="mb-2 text-muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Grant access
+            </h6>
+            {available_users.length === 0 ? (
+                <p className="text-muted" style={{ fontSize: '0.85rem' }}>All users already have access.</p>
+            ) : (
+                <div className="d-flex gap-2 align-items-center">
+                    <BootstrapForm.Select
+                        size="sm"
+                        style={{ maxWidth: 320 }}
+                        value={selectedUserId}
+                        onChange={e => setSelectedUserId(e.target.value)}
+                    >
+                        <option value="">— Select a user or LLM agent —</option>
+                        {available_users.map(u => (
+                            <option key={u.user_id} value={u.user_id}>
+                                {u.display_name} ({u.username}){u.user_type === 'llm_assistant' ? ' [LLM]' : ''}
+                            </option>
+                        ))}
+                    </BootstrapForm.Select>
+                    <Button
+                        variant="primary" size="sm"
+                        disabled={!selectedUserId || grantMutation.isPending}
+                        onClick={() => grantMutation.mutate(parseInt(selectedUserId, 10))}
+                    >
+                        {grantMutation.isPending ? <Spinner size="sm" /> : 'Add'}
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Vault row with inline access expand ──────────────────────────────────────
+
+function VaultRow({ vault, renameMutation, deleteMutation }) {
+    const [showAccess, setShowAccess] = useState(false);
+    const isDeleting = deleteMutation.isPending && deleteMutation.variables === vault.id;
+
+    return (
+        <>
+            <tr>
+                <td className="text-muted" style={{ width: 50 }}>{vault.id}</td>
+                <td>
+                    <InlineRename
+                        value={vault.name}
+                        onSave={(name) => renameMutation.mutate({ vaultId: vault.id, name })}
+                        disabled={renameMutation.isPending}
+                    />
+                </td>
+                <td>
+                    {vault.owner_display_name}{' '}
+                    <span className="text-muted" style={{ fontSize: '0.85rem' }}>({vault.owner_username})</span>
+                </td>
+                <td>
+                    {vault.is_guest_vault
+                        ? <Badge bg="warning" text="dark">Demo</Badge>
+                        : <Badge bg="secondary">Normal</Badge>}
+                </td>
+                <td>{vault.access_count}</td>
+                <td className="text-muted" style={{ fontSize: '0.85rem' }}>
+                    {new Date(vault.created_at).toLocaleDateString()}
+                </td>
+                <td className="text-end">
+                    <div className="btn-group" role="group">
+                        <Button
+                            variant={showAccess ? 'info' : 'outline-info'}
+                            size="sm"
+                            onClick={() => setShowAccess(v => !v)}
+                            disabled={isDeleting}
+                        >
+                            {showAccess ? 'Hide Access' : 'Access'}
+                        </Button>
+                        <Button
+                            variant="outline-danger" size="sm"
+                            onClick={() => {
+                                // handled by parent via setConfirmDelete
+                                deleteMutation._triggerConfirm(vault);
+                            }}
+                            disabled={isDeleting}
+                        >
+                            {isDeleting ? <Spinner size="sm" /> : 'Delete'}
+                        </Button>
+                    </div>
+                </td>
+            </tr>
+            {showAccess && (
+                <tr>
+                    <td colSpan={7} style={{ background: '#f8f9fa', padding: '12px 20px' }}>
+                        <AdminVaultAccessPanel vaultId={vault.id} />
+                    </td>
+                </tr>
+            )}
+        </>
+    );
+}
+
 // ── Vaults section ────────────────────────────────────────────────────────────
 
 function VaultsSection() {
     const toast = useToast();
     const queryClient = useQueryClient();
-    const [confirmDelete, setConfirmDelete] = useState(null); // vault object
+    const [confirmDelete, setConfirmDelete] = useState(null);
 
     const { data: vaults, isLoading, isError, error } = useQuery({
         queryKey: QK_ALL_VAULTS,
@@ -311,6 +495,9 @@ function VaultsSection() {
         onError: (err) => { toast.error(err.response?.data?.error || 'Error deleting vault.'); setConfirmDelete(null); },
     });
 
+    // Attach a helper so VaultRow can trigger the confirm modal
+    deleteMutation._triggerConfirm = setConfirmDelete;
+
     return (
         <>
             <Card>
@@ -318,7 +505,7 @@ function VaultsSection() {
                     All Vaults
                     {vaults ? <Badge bg="secondary">{vaults.length}</Badge> : null}
                     <span className="ms-auto text-muted fw-normal" style={{ fontSize: '0.8rem' }}>
-                        Click a vault name to rename it inline
+                        Click a vault name to rename · click Access to manage users
                     </span>
                 </Card.Header>
                 <Card.Body className="p-0">
@@ -339,39 +526,12 @@ function VaultsSection() {
                             </thead>
                             <tbody>
                                 {vaults.map(v => (
-                                    <tr key={v.id}>
-                                        <td className="text-muted">{v.id}</td>
-                                        <td>
-                                            <InlineRename
-                                                value={v.name}
-                                                onSave={(name) => renameMutation.mutate({ vaultId: v.id, name })}
-                                                disabled={renameMutation.isPending}
-                                            />
-                                        </td>
-                                        <td>
-                                            {v.owner_display_name}{' '}
-                                            <span className="text-muted" style={{ fontSize: '0.85rem' }}>({v.owner_username})</span>
-                                        </td>
-                                        <td>
-                                            {/* is_guest_vault is now a proper boolean from the API */}
-                                            {v.is_guest_vault
-                                                ? <Badge bg="warning" text="dark">Demo</Badge>
-                                                : <Badge bg="secondary">Normal</Badge>}
-                                        </td>
-                                        <td>{v.access_count}</td>
-                                        <td className="text-muted" style={{ fontSize: '0.85rem' }}>
-                                            {new Date(v.created_at).toLocaleDateString()}
-                                        </td>
-                                        <td className="text-end">
-                                            <Button
-                                                variant="outline-danger" size="sm"
-                                                onClick={() => setConfirmDelete(v)}
-                                                disabled={deleteMutation.isPending && deleteMutation.variables === v.id}
-                                            >
-                                                Delete
-                                            </Button>
-                                        </td>
-                                    </tr>
+                                    <VaultRow
+                                        key={v.id}
+                                        vault={v}
+                                        renameMutation={renameMutation}
+                                        deleteMutation={deleteMutation}
+                                    />
                                 ))}
                             </tbody>
                         </Table>
@@ -379,7 +539,6 @@ function VaultsSection() {
                 </Card.Body>
             </Card>
 
-            {/* Delete vault modal */}
             <Modal show={!!confirmDelete} onHide={() => setConfirmDelete(null)} centered>
                 <Modal.Header closeButton><Modal.Title>Delete Vault</Modal.Title></Modal.Header>
                 <Modal.Body>
@@ -429,9 +588,9 @@ function DemoAnalyticsSection() {
     });
 
     return (
-        <Card>
+        <Card className="mb-4">
             <Card.Header as="h5" className="d-flex align-items-center gap-2">
-                📊 Demo Analytics
+                📊 Analytics
                 <Button
                     variant="outline-secondary" size="sm" className="ms-auto"
                     onClick={() => refetch()} disabled={isFetching}
@@ -457,7 +616,77 @@ function DemoAnalyticsSection() {
     );
 }
 
-// ── Developer Tools ─────────────────────────────────────────────────────────
+// ── Guest management (in Demo tab) ───────────────────────────────────────────
+
+function GuestManagementSection() {
+    const toast = useToast();
+    const queryClient = useQueryClient();
+
+    const { data: users, isLoading } = useQuery({
+        queryKey: QK_USERS,
+        queryFn: () => apiClient.get('/api/admin/users').then(r => r.data),
+    });
+
+    const deleteAllGuestsMutation = useMutation({
+        mutationFn: () => apiClient.delete('/api/admin/guests'),
+        onSuccess: (res) => {
+            toast.success(`Deleted ${res.data.deleted} guest account(s).`);
+            queryClient.invalidateQueries({ queryKey: QK_USERS });
+            queryClient.invalidateQueries({ queryKey: ['admin', 'demo-stats'] });
+        },
+        onError: (err) => toast.error(err.response?.data?.error || 'Error deleting guests.'),
+    });
+
+    const guests = users?.filter(u => u.is_guest) ?? [];
+
+    return (
+        <Card>
+            <Card.Header as="h5" className="d-flex align-items-center gap-2">
+                Guest Accounts
+                {guests.length > 0 && <Badge bg="warning" text="dark">{guests.length}</Badge>}
+                {guests.length > 0 && (
+                    <Button
+                        variant="outline-danger" size="sm" className="ms-auto"
+                        disabled={deleteAllGuestsMutation.isPending}
+                        onClick={() => {
+                            if (window.confirm('Delete ALL guest accounts and their vaults? This cannot be undone.')) {
+                                deleteAllGuestsMutation.mutate();
+                            }
+                        }}
+                    >
+                        {deleteAllGuestsMutation.isPending ? 'Deleting…' : '🗑 Delete All Guests'}
+                    </Button>
+                )}
+            </Card.Header>
+            <Card.Body className="p-0">
+                {isLoading && <div className="text-center p-4"><Spinner size="sm" /> Loading…</div>}
+                {!isLoading && guests.length === 0 && (
+                    <p className="text-muted p-3 mb-0">No active guest accounts.</p>
+                )}
+                {guests.length > 0 && (
+                    <Table responsive hover className="mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Display Name</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {guests.map(u => (
+                                <tr key={u.id}>
+                                    <td><code className="text-body">{u.username}</code></td>
+                                    <td>{u.display_name}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
+                )}
+            </Card.Body>
+        </Card>
+    );
+}
+
+// ── Developer Tools ──────────────────────────────────────────────────────────
 
 function DemoScriptExtractor() {
     const toast = useToast();
@@ -472,7 +701,6 @@ function DemoScriptExtractor() {
             const res = await apiClient.get(`/api/tasks/${taskId.trim()}`);
             const task = res.data;
             const ops = task.operations || [];
-
             const opsJson = JSON.stringify(ops, null, 4);
             const outputCode = `import json\n\nDEMO_INSTRUCTION = ${JSON.stringify(task.instruction || "")}\n\nDEMO_FINISH_SUMMARY = ${JSON.stringify(task.finish_summary || "")}\n\nDEMO_OPERATIONS = json.loads(r"""\n${opsJson}\n""")\n`;
             setScript(outputCode);
@@ -505,14 +733,12 @@ function DemoScriptExtractor() {
                         {isLoading ? 'Fetching...' : 'Extract Script'}
                     </Button>
                 </InputGroup>
-
                 {script && (
                     <div className="mt-auto">
                         <div className="d-flex justify-content-between align-items-center mb-1">
                             <span className="fw-semibold small">Generated Python Code</span>
                             <Button
-                                variant="outline-secondary"
-                                size="sm"
+                                variant="outline-secondary" size="sm"
                                 style={{ fontSize: '0.7rem', padding: '2px 6px' }}
                                 onClick={() => { navigator.clipboard.writeText(script); toast.success('Copied!'); }}
                             >
@@ -573,11 +799,10 @@ function DeveloperToolsSection() {
     return (
         <>
             <Row className="g-4 mb-4">
-                {/* Tool 1: Reset from Snapshot */}
                 <Col lg={6}>
                     <Card className="h-100 border-primary">
                         <Card.Header as="h6" className="d-flex align-items-center gap-2">
-                            ⏪ Snapshot Reset (Manual Undo)
+                            ⏪ Snapshot Reset
                             <Badge bg="primary" className="ms-auto">Dev Tool</Badge>
                         </Card.Header>
                         <Card.Body className="d-flex flex-column">
@@ -596,17 +821,13 @@ function DeveloperToolsSection() {
                             <BootstrapForm.Group className="mb-3">
                                 <BootstrapForm.Label className="fw-semibold small">2. Snapshot File (.nexidion)</BootstrapForm.Label>
                                 <BootstrapForm.Control
-                                    size="sm"
-                                    type="file"
-                                    ref={snapshotInputRef}
+                                    size="sm" type="file" ref={snapshotInputRef}
                                     accept=".nexidion,application/json"
                                     onChange={e => setSnapshotFile(e.target.files[0])}
                                 />
                             </BootstrapForm.Group>
                             <Button
-                                variant="primary"
-                                size="sm"
-                                className="w-100 mt-auto"
+                                variant="primary" size="sm" className="w-100 mt-auto"
                                 onClick={() => setConfirmReset(true)}
                                 disabled={!resetVaultId || !snapshotFile || resetMutation.isPending}
                             >
@@ -616,7 +837,6 @@ function DeveloperToolsSection() {
                     </Card>
                 </Col>
 
-                {/* Tool 2: Demo Agent Replay */}
                 <Col lg={6}>
                     <Card className="h-100 border-warning">
                         <Card.Header as="h6" className="d-flex align-items-center gap-2">
@@ -637,9 +857,7 @@ function DeveloperToolsSection() {
                                 </BootstrapForm.Select>
                             </BootstrapForm.Group>
                             <Button
-                                variant="warning"
-                                size="sm"
-                                className="w-100 mt-auto"
+                                variant="warning" size="sm" className="w-100 mt-auto"
                                 onClick={() => triggerDemoMutation.mutate(demoVaultId)}
                                 disabled={!demoVaultId || triggerDemoMutation.isPending}
                             >
@@ -650,14 +868,12 @@ function DeveloperToolsSection() {
                 </Col>
             </Row>
 
-            {/* Tool 3: Script Extractor */}
-            <Row className="g-4 mb-4">
+            <Row className="g-4">
                 <Col lg={12}>
                     <DemoScriptExtractor />
                 </Col>
             </Row>
 
-            {/* Snapshot reset confirmation modal */}
             <Modal show={confirmReset} onHide={() => setConfirmReset(false)} centered>
                 <Modal.Header closeButton><Modal.Title>Confirm Snapshot Reset</Modal.Title></Modal.Header>
                 <Modal.Body>
@@ -668,8 +884,7 @@ function DeveloperToolsSection() {
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setConfirmReset(false)}>Cancel</Button>
                     <Button
-                        variant="danger"
-                        disabled={resetMutation.isPending}
+                        variant="danger" disabled={resetMutation.isPending}
                         onClick={() => resetMutation.mutate({ vaultId: resetVaultId, file: snapshotFile })}
                     >
                         {resetMutation.isPending ? 'Restoring...' : 'Wipe & Restore'}
@@ -682,10 +897,18 @@ function DeveloperToolsSection() {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
+const TABS = [
+    { key: 'users',  label: 'Users' },
+    { key: 'vaults', label: 'Vaults' },
+    { key: 'demo',   label: '📊 Demo & Analytics' },
+    { key: 'dev',    label: '🛠️ Developer Tools' },
+];
+
 export default function AdminDashboard() {
     const navigate = useNavigate();
     const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
     const lastActiveVaultId = useWorkspaceStore(state => state.lastActiveVaultId);
+    const [activeTab, setActiveTab] = useState('users');
 
     const handleBackClick = () => {
         const lastPath = lastActiveVaultId ? lastValidPaths[lastActiveVaultId] : null;
@@ -694,40 +917,36 @@ export default function AdminDashboard() {
 
     return (
         <Container className="p-4" style={{ height: '100%', overflowY: 'auto' }}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
+            <div className="d-flex justify-content-between align-items-center mb-4">
                 <h1 className="mb-0">Admin Dashboard</h1>
                 <Button onClick={handleBackClick} variant="secondary">Back to Workspace</Button>
             </div>
-            <p className="text-muted">Manage users, vaults, and system settings.</p>
 
-            {/* ── Users ── */}
-            <h4 className="mb-3">Users</h4>
-            <UsersSection />
+            <Nav variant="tabs" className="mb-4" activeKey={activeTab} onSelect={k => setActiveTab(k)}>
+                {TABS.map(t => (
+                    <Nav.Item key={t.key}>
+                        <Nav.Link eventKey={t.key}>{t.label}</Nav.Link>
+                    </Nav.Item>
+                ))}
+            </Nav>
 
-            {/* ── Demo Analytics ── */}
-            <hr className="my-4" />
-            <h4 className="mb-1">Demo Analytics</h4>
-            <p className="text-muted mb-3">Live stats from the demo mode guest session funnel.</p>
-            <DemoAnalyticsSection />
+            {activeTab === 'users' && <UsersSection />}
 
-            {/* ── Vaults ── */}
-            <hr className="my-4" />
-            <h4 className="mb-1">Vault Overview</h4>
-            <p className="text-muted mb-3">All vaults in the system, including demo vaults owned by guest accounts.</p>
-            <VaultsSection />
+            {activeTab === 'vaults' && <VaultsSection />}
 
-            {/* ── Vault Access Management ── */}
-            <hr className="my-4" />
-            <h4 className="mb-1">Vault Access Management</h4>
-            <p className="text-muted mb-3">Assign human users and LLM agents to vaults.</p>
-            <VaultAccessManager />
+            {activeTab === 'demo' && (
+                <>
+                    <DemoAnalyticsSection />
+                    <GuestManagementSection />
+                </>
+            )}
 
-            {/* ── Developer Tools ── */}
-            <hr className="my-4" />
-            <h4 className="mb-1">Developer Tools</h4>
-            <p className="text-muted mb-3">Internal testing utilities — not visible to normal users.</p>
-            <DeveloperToolsSection />
-
+            {activeTab === 'dev' && (
+                <>
+                    <p className="text-muted mb-4">Internal testing utilities — not visible to normal users.</p>
+                    <DeveloperToolsSection />
+                </>
+            )}
         </Container>
     );
 }

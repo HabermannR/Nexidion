@@ -123,7 +123,6 @@ async def _run_replay(
     vault_id:         int,
     agent_user_id:    int,
     remap:            dict,
-    recording_path:   str, # Ignored now, we use demo_script.py!
     flask_app,
     db,
     Vault,
@@ -154,8 +153,8 @@ async def _run_replay(
         update_status_fn(task_row["id"], "processing", log=status_msg)
         log_fn(f"  [replay {i}/{len(steps)}] {status_msg}")
 
-        # 2. Fake the LLM "thinking/typing" delay (1.5 seconds per step)
-        await asyncio.sleep(1.5)
+        # 2. Fake the LLM "thinking/typing" delay
+        await asyncio.sleep(3)
 
         # 3. Remap all UUIDs using our live dictionary
         try:

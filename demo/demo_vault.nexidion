@@ -1,54 +1,247 @@
 {
   "nexidion_export_version": 1,
-  "exported_at": "2026-05-21T09:53:12Z",
+  "exported_at": "2026-05-24T20:09:10Z",
   "vault": {
-    "name": "Test Demo Vault"
+    "name": "Demo"
   },
   "nodes": [
     {
-      "id": "13734866-6481-4d2d-96fd-1b23714780c8",
+      "id": "9b8287d7-ac82-4c77-b0be-cda9267e7311",
       "parent_id": null,
-      "icon": "bxs-folder",
-      "ai_summary": null,
-      "summary_is_current": false,
-      "title": "Summary",
-      "content": "This is the root node for the 'Test Demo Vault' vault.",
-      "created_at": "2026-05-21T10:59:16.008288+02:00Z",
-      "updated_at": "2026-05-21T10:59:16.008288+02:00Z",
+      "icon": "bxs-brain",
+      "ai_summary": "- Serves as the landing page and root entry point for the demo vault\n- Explains the two-phase trial design and instructions for the AI agent\n- Directs users to execute the pre-recorded task to unlock personal sandbox access",
+      "summary_is_current": true,
+      "title": "Welcome to the Demo",
+      "content": "# Welcome to the Nexidion Demo\nThis is a live demo of Nexidion. Right now, you are in Phase 1, where editing and file creation are disabled.\n\n## To experience Nexidion's AI agent:\n1. Look at the right-hand panel (when you are on mobile, click the Context Tab in the header first). You will see a pre-configured, pre-recorded AI Task queued up.\n2. Click **\"Queue Task\"**.\n3. Watch the agent process our unstructured notes in real-time.\n\nOnce the agent finishes organizing this vault, it will automatically update this welcome page, unlock your access, and transition you into a **personal sandbox mode** where you can create, edit, and experiment.",
+      "created_at": "2026-05-24T19:36:03+00:00Z",
+      "updated_at": "2026-05-24T19:36:03+00:00Z",
       "versions": [
         {
           "version": 1,
-          "title": "Summary",
-          "content": "This is the root node for the 'Test Demo Vault' vault.",
-          "created_at": "2026-05-21T10:59:16.008288+02:00Z",
+          "title": "Welcome to the Demo",
+          "content": "# Welcome to the Nexidion Demo\nThis is a live demo of Nexidion. Right now, you are in Phase 1, where editing and file creation are disabled.\n\n## To experience Nexidion's AI agent:\n1. Look at the right-hand panel (when you are on mobile, click the Context Tab in the header first). You will see a pre-configured, pre-recorded AI Task queued up.\n2. Click **\"Queue Task\"**.\n3. Watch the agent process our unstructured notes in real-time.\n\nOnce the agent finishes organizing this vault, it will automatically update this welcome page, unlock your access, and transition you into a **personal sandbox mode** where you can create, edit, and experiment.",
+          "created_at": "2026-05-24T19:36:03+00:00Z",
           "author_display_name": "Admin"
         }
       ]
     },
     {
-      "id": "f9e941b2-b9bf-45a9-8657-77c519c0bce6",
-      "parent_id": "13734866-6481-4d2d-96fd-1b23714780c8",
-      "icon": "bxs-file-doc",
-      "ai_summary": "- This node contains placeholder dummy content for testing purposes\n- The text includes standard lorem ipsum paragraphs as filler material\n- Content can be replaced with actual notes or information as needed",
+      "id": "e7c3f9f1-41ad-47bc-a732-f99a8fa353a1",
+      "parent_id": "9b8287d7-ac82-4c77-b0be-cda9267e7311",
+      "icon": "bxs-no-entry",
+      "ai_summary": "- Contains highly sensitive credentials, signatures, and private API keys\n- Acts as a security boundary demonstration for locked nodes in Nexidion\n- Physically isolates content from AI read/write tools at the database layer",
       "summary_is_current": true,
-      "title": "Test 1",
-      "content": "# Test 1\n\nThis is the first paragraph of dummy content for Test 1. It serves as a placeholder to demonstrate how content is structured within a Nexidion vault node. You can replace this text with any information you find useful, such as notes, references, or personal thoughts.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n\nExcepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.",
-      "created_at": "2026-05-21T10:59:21.382305+02:00Z",
-      "updated_at": "2026-05-21T11:49:25.339968+02:00Z",
+      "title": "Team Directory & Private Keys",
+      "content": "# [ACCESS RESTRICTED - NODE LOCKED]\nThis node contains private developer signatures, personal email directories, and development API endpoints. \n*Note for Demo Users:* Because this node is locked, Nexidion's AI agent is physically barred from indexing or reading its contents during the task execution. The agent can still read the title and move the node around.",
+      "created_at": "2026-05-24T19:38:46+00:00Z",
+      "updated_at": "2026-05-24T19:38:46+00:00Z",
       "versions": [
         {
           "version": 1,
-          "title": "Test 1",
-          "content": "",
-          "created_at": "2026-05-21T10:59:21.382305+02:00Z",
+          "title": "Team Directory & Private Keys",
+          "content": "# [ACCESS RESTRICTED - NODE LOCKED]\nThis node contains private developer signatures, personal email directories, and development API endpoints. \n*Note for Demo Users:* Because this node is locked, Nexidion's AI agent is physically barred from indexing or reading its contents during the task execution. The agent can still read the title and move the node around.",
+          "created_at": "2026-05-24T19:38:46+00:00Z",
           "author_display_name": "Admin"
-        },
+        }
+      ]
+    },
+    {
+      "id": "b03b636c-c624-4df2-a492-3488f817aceb",
+      "parent_id": "9b8287d7-ac82-4c77-b0be-cda9267e7311",
+      "icon": "bx-folder-open",
+      "ai_summary": "- Serves as the central directory for team guidelines and specifications\n- Houses formal design standards and document formatting rules\n- Designed to remain static during normal working sessions",
+      "summary_is_current": true,
+      "title": "Core Documentation",
+      "content": "# Core Documentation\nThis directory contains the established guidelines, specifications, and foundational standards for the **Vector & Node Labs** team. \n\nRefer to these documents to maintain consistency across our software architecture and development practices.",
+      "created_at": "2026-05-24T19:38:53+00:00Z",
+      "updated_at": "2026-05-24T19:38:53+00:00Z",
+      "versions": [
         {
-          "version": 2,
-          "title": "Test 1",
-          "content": "# Test 1\n\nThis is the first paragraph of dummy content for Test 1. It serves as a placeholder to demonstrate how content is structured within a Nexidion vault node. You can replace this text with any information you find useful, such as notes, references, or personal thoughts.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n\nExcepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.",
-          "created_at": "2026-05-21T11:49:25.339968+02:00Z",
-          "author_display_name": "Nexidion AI"
+          "version": 1,
+          "title": "Core Documentation",
+          "content": "# Core Documentation\nThis directory contains the established guidelines, specifications, and foundational standards for the **Vector & Node Labs** team. \n\nRefer to these documents to maintain consistency across our software architecture and development practices.",
+          "created_at": "2026-05-24T19:38:53+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "parent_id": "9b8287d7-ac82-4c77-b0be-cda9267e7311",
+      "icon": "bxs-inbox",
+      "ai_summary": "- Functions as the team's intake inbox for raw, unorganized notes\n- Contains transcripts, phone call memos, and rough technical drafts\n- Serves as the primary target for AI restructuring and cataloging tasks",
+      "summary_is_current": true,
+      "title": "Unsorted Notes",
+      "content": "# Unsorted Notes\nThis directory acts as our team inbox. It contains raw thoughts, audio transcriptions, and messy drafts that need to be categorized, summarized, and moved to their proper places within the vault hierarchy.",
+      "created_at": "2026-05-24T19:39:16+00:00Z",
+      "updated_at": "2026-05-24T19:39:16+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "Unsorted Notes",
+          "content": "# Unsorted Notes\nThis directory acts as our team inbox. It contains raw thoughts, audio transcriptions, and messy drafts that need to be categorized, summarized, and moved to their proper places within the vault hierarchy.",
+          "created_at": "2026-05-24T19:39:16+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "a39132be-d748-4f08-93b2-b959a0a6771b",
+      "parent_id": "b03b636c-c624-4df2-a492-3488f817aceb",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Outlines internal wiki layout and markdown structure standards\n- Defines rules for H1, H2, and H3 markdown heading hierarchies\n- Mandates the use of unique UUID-based internal reference link formats",
+      "summary_is_current": true,
+      "title": "Formatting Standards",
+      "content": "# Formatting Standards\nTo keep our knowledge base clean, navigable, and cohesive, please adhere to these formatting guidelines:\n\n## 1. Document Structure\n* Every document must begin with a single `# H1` heading for the title.\n* Use `## H2` and `### H3` for subsequent sections. Do not skip heading levels.\n\n## 2. Formatting Conventions\n* **Internal Links:** Always format links to other nodes as `[[Display Text|UUID]]`. This ensures links remain unbreakable even if files are reorganized.\n* **Code Blocks:** Wrap code blocks in triple backticks with the correct language identifier (e.g., \\`\\`\\`python).\n* **Lists:** Prefer bulleted lists (`*` or `-`) for non-sequential items and numbered lists for sequential processes.",
+      "created_at": "2026-05-24T19:39:03+00:00Z",
+      "updated_at": "2026-05-24T19:39:03+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "Formatting Standards",
+          "content": "# Formatting Standards\nTo keep our knowledge base clean, navigable, and cohesive, please adhere to these formatting guidelines:\n\n## 1. Document Structure\n* Every document must begin with a single `# H1` heading for the title.\n* Use `## H2` and `### H3` for subsequent sections. Do not skip heading levels.\n\n## 2. Formatting Conventions\n* **Internal Links:** Always format links to other nodes as `[[Display Text|UUID]]`. This ensures links remain unbreakable even if files are reorganized.\n* **Code Blocks:** Wrap code blocks in triple backticks with the correct language identifier (e.g., \\`\\`\\`python).\n* **Lists:** Prefer bulleted lists (`*` or `-`) for non-sequential items and numbered lists for sequential processes.",
+          "created_at": "2026-05-24T19:39:03+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "ca4ef0f1-606b-478b-855b-610a282cbc69",
+      "parent_id": "b03b636c-c624-4df2-a492-3488f817aceb",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Explains Project Codex, a local-first semantic indexer\n- Identifies Rust and flat-file index structures as key stack components\n- Establishes goals for zero-cloud local embedding generations",
+      "summary_is_current": true,
+      "title": "Project Codex Spec",
+      "content": "# Project Codex Spec\n**Project Codex** is a lightweight, local-first semantic retrieval engine designed to index offline document hierarchies.\n\n## Core Objectives\n* **Zero-Cloud Dependency:** All embeddings and vector generation must run locally.\n* **Hybrid Retrieval:** Combine traditional TF-IDF full-text search with local vector embeddings.\n* **Resilient Anchoring:** Maintain document associations even if the underlying folder path or filename changes.\n\n## Target Stack\n* Rust for the core indexing and query pipeline.\n* Embedded key-value store with custom flat indexes for metadata storage.\n* Local API compatibility with Ollama and llama.cpp.",
+      "created_at": "2026-05-24T19:39:08+00:00Z",
+      "updated_at": "2026-05-24T19:39:08+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "Project Codex Spec",
+          "content": "# Project Codex Spec\n**Project Codex** is a lightweight, local-first semantic retrieval engine designed to index offline document hierarchies.\n\n## Core Objectives\n* **Zero-Cloud Dependency:** All embeddings and vector generation must run locally.\n* **Hybrid Retrieval:** Combine traditional TF-IDF full-text search with local vector embeddings.\n* **Resilient Anchoring:** Maintain document associations even if the underlying folder path or filename changes.\n\n## Target Stack\n* Rust for the core indexing and query pipeline.\n* Embedded key-value store with custom flat indexes for metadata storage.\n* Local API compatibility with Ollama and llama.cpp.",
+          "created_at": "2026-05-24T19:39:08+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "71ee6e9b-5c77-4b33-9637-abcd495da77c",
+      "parent_id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Evaluates structural design limits of physical file-path folder trees\n- Argues absolute paths cause wiki link rot during reorganization\n- Recommends underlying UUID frameworks to ensure permanent reference linking",
+      "summary_is_current": true,
+      "title": "draft_thoughts_hierarchical",
+      "content": "# draft_thoughts_hierarchical\nSome raw paragraphs on why rigid folder structures fail in long-term wikis.\n\nWhen we group files strictly by folders, we force every idea into a single, arbitrary bucket. Is \"Project Codex Spec\" a product spec or a technical spec? If you put it in `/Specs/Product`, the developers can't find it. If you put it in `/Architecture`, the product managers miss it.\n\nHierarchical trees are great for human navigation, but we need resilient internal links that don't care about where a file sits. Linking via absolute file paths (like `/docs/standards.md`) is fragile. The second you reorganize your folders, every single link breaks.\n\nA better system uses unique, permanent identifiers under the hood. The user sees a readable folder tree, but the system links via IDs. That way, dragging a file from `/Unsorted` to `/Core` preserves every reference instantly.",
+      "created_at": "2026-05-24T19:39:26+00:00Z",
+      "updated_at": "2026-05-24T19:39:26+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "draft_thoughts_hierarchical",
+          "content": "# draft_thoughts_hierarchical\nSome raw paragraphs on why rigid folder structures fail in long-term wikis.\n\nWhen we group files strictly by folders, we force every idea into a single, arbitrary bucket. Is \"Project Codex Spec\" a product spec or a technical spec? If you put it in `/Specs/Product`, the developers can't find it. If you put it in `/Architecture`, the product managers miss it.\n\nHierarchical trees are great for human navigation, but we need resilient internal links that don't care about where a file sits. Linking via absolute file paths (like `/docs/standards.md`) is fragile. The second you reorganize your folders, every single link breaks.\n\nA better system uses unique, permanent identifiers under the hood. The user sees a readable folder tree, but the system links via IDs. That way, dragging a file from `/Unsorted` to `/Core` preserves every reference instantly.",
+          "created_at": "2026-05-24T19:39:26+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "6cbb08d8-5a81-401c-9061-becc988ad096",
+      "parent_id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Outlines action items and technical blocks from the Monday sync\n- Flags high latency issues during simultaneous vector index runs\n- Introduces goals for hybrid search validation and folder bubble-ups",
+      "summary_is_current": true,
+      "title": "raw_notes_monday",
+      "content": "# raw_notes_monday\nQuick sync notes from the Monday standup. Lots of loose ends.\n\n- Sarah is seeing weird latency spikes when the local indexer runs alongside the local embedding generator. Maybe need to throttle embedding batch sizes?\n- We need a better way to structure our research files. The flat list in \"Unsorted Notes\" is getting annoying to navigate.\n- Next milestone is the hybrid search validation. We have traditional keyword search working, but need to merge the scoring with the vector distance.\n- Marcus suggested looking into a custom bubble-up summarization tool for nested folders so we can see what's in a subdirectory without digging through 10 files.",
+      "created_at": "2026-05-24T19:39:21+00:00Z",
+      "updated_at": "2026-05-24T19:39:21+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "raw_notes_monday",
+          "content": "# raw_notes_monday\nQuick sync notes from the Monday standup. Lots of loose ends.\n\n- Sarah is seeing weird latency spikes when the local indexer runs alongside the local embedding generator. Maybe need to throttle embedding batch sizes?\n- We need a better way to structure our research files. The flat list in \"Unsorted Notes\" is getting annoying to navigate.\n- Next milestone is the hybrid search validation. We have traditional keyword search working, but need to merge the scoring with the vector distance.\n- Marcus suggested looking into a custom bubble-up summarization tool for nested folders so we can see what's in a subdirectory without digging through 10 files.",
+          "created_at": "2026-05-24T19:39:21+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "bb77c8cb-5e8e-4b03-86ae-8c06260e7f77",
+      "parent_id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Documents a verbal debate regarding hardware bounds for offline agents\n- Proposes a lightweight two-tier read strategy to reduce local token consumption\n- Highlights database-level access locking requirements for sensitive folders",
+      "summary_is_current": true,
+      "title": "meeting_sync_transcription",
+      "content": "# meeting_sync_transcription\nRaw voice-to-text transcript from our sync regarding local LLM integration. Extremely messy.\n\n\"So, yeah, we were talking about, like, running the agent against local hardware. Marcus, you said you were running Qwen 32B via llama.cpp, right? Yeah, but it's slow on consumer GPUs because of the VRAM limits. We need the agent to be smart about what it actually fetches. If it fetches full 10k-word documents for every search, we're going to choke the context window and wait ten minutes for a response.\n\nWe should probably implement a 'cheap read' tool. Like, the agent should only fetch the title and a brief 3-bullet summary first. We can call it `get_node_summary` or something. If it decides it needs the actual source text, then it can call `get_node_content`. That way, we preserve the token budget and speed up local inference.\n\nAlso, we need to make sure the agent doesn't touch private keys or credential files in our shared vaults. If we lock a node, the read/write APIs must reject the agent's requests at the database layer, not just in the prompt. Safety first.\"",
+      "created_at": "2026-05-24T19:39:29+00:00Z",
+      "updated_at": "2026-05-24T19:39:29+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "meeting_sync_transcription",
+          "content": "# meeting_sync_transcription\nRaw voice-to-text transcript from our sync regarding local LLM integration. Extremely messy.\n\n\"So, yeah, we were talking about, like, running the agent against local hardware. Marcus, you said you were running Qwen 32B via llama.cpp, right? Yeah, but it's slow on consumer GPUs because of the VRAM limits. We need the agent to be smart about what it actually fetches. If it fetches full 10k-word documents for every search, we're going to choke the context window and wait ten minutes for a response.\n\nWe should probably implement a 'cheap read' tool. Like, the agent should only fetch the title and a brief 3-bullet summary first. We can call it `get_node_summary` or something. If it decides it needs the actual source text, then it can call `get_node_content`. That way, we preserve the token budget and speed up local inference.\n\nAlso, we need to make sure the agent doesn't touch private keys or credential files in our shared vaults. If we lock a node, the read/write APIs must reject the agent's requests at the database layer, not just in the prompt. Safety first.\"",
+          "created_at": "2026-05-24T19:39:29+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "346919d9-d73b-4587-9d9e-8d40e0594fdb",
+      "parent_id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Contains a draft system prompt for the Nexidion LLM agent\n- Discusses loop-prevention constraints such as a 20-turn maximum limit\n- Analyzes token-saving strategies by fetching subtrees dynamically on-demand",
+      "summary_is_current": true,
+      "title": "agent_system_prompt_draft",
+      "content": "# agent_system_prompt_draft\nDrafting the initial instructions we send to the LLM agent runner.\n\n\"You are an autonomous editor for Nexidion. Follow user instructions. Keep track of your fetch budget. Do not read locked files.\"\n\nWe need to enforce strict limits to prevent loop issues. Let's make it a max of 20 turns. Also, should we pass the whole tree structure in the system prompt, or make the agent query it dynamically? Passing the whole tree takes up too many context tokens if the vault is huge. We should make it fetch subtrees dynamically on demand.",
+      "created_at": "2026-05-24T19:50:00+00:00Z",
+      "updated_at": "2026-05-24T19:50:00+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "agent_system_prompt_draft",
+          "content": "# agent_system_prompt_draft\nDrafting the initial instructions we send to the LLM agent runner.\n\n\"You are an autonomous editor for Nexidion. Follow user instructions. Keep track of your fetch budget. Do not read locked files.\"\n\nWe need to enforce strict limits to prevent loop issues. Let's make it a max of 20 turns. Also, should we pass the whole tree structure in the system prompt, or make the agent query it dynamically? Passing the whole tree takes up too many context tokens if the vault is huge. We should make it fetch subtrees dynamically on demand.",
+          "created_at": "2026-05-24T19:50:00+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "6eae75db-af3f-448c-be21-1ab14232481a",
+      "parent_id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Compares Qwen 2.5 32B and Llama 3 8B on local hardware\n- Benchmarks inference speed on Mac Studio M2 Max and Nvidia RTX 4090\n- Notes tool-calling accuracy discrepancies and compliance with JSON boundaries",
+      "summary_is_current": true,
+      "title": "benchmark_qwen_vs_llama",
+      "content": "# benchmark_qwen_vs_llama\nRough benchmarks from testing local models on our dev hardware.\n\n* Qwen 2.5 32B (via llama.cpp, Q4_K_M quant):\n  - Speed: ~18 tokens/sec on Mac Studio (M2 Max, 64GB). Very usable.\n  - Quality: Excellent tool-calling accuracy. Follows strict JSON schema perfectly.\n  - Issues: Fails to output exactly 3 bullet points sometimes if context is too noisy.\n  \n* Llama 3 8B (via Ollama):\n  - Speed: ~45 tokens/sec on local RTX 4090. Blazing fast.\n  - Quality: Good, but struggles with multi-step tool reasoning. Likes to hallucinate UUIDs we didn't give it.\n  - Issues: Tends to ignore private/locked node boundaries unless system prompt is extremely heavy.",
+      "created_at": "2026-05-24T19:50:00+00:00Z",
+      "updated_at": "2026-05-24T19:50:00+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "benchmark_qwen_vs_llama",
+          "content": "# benchmark_qwen_vs_llama\nRough benchmarks from testing local models on our dev hardware.\n\n* Qwen 2.5 32B (via llama.cpp, Q4_K_M quant):\n  - Speed: ~18 tokens/sec on Mac Studio (M2 Max, 64GB). Very usable.\n  - Quality: Excellent tool-calling accuracy. Follows strict JSON schema perfectly.\n  - Issues: Fails to output exactly 3 bullet points sometimes if context is too noisy.\n  \n* Llama 3 8B (via Ollama):\n  - Speed: ~45 tokens/sec on local RTX 4090. Blazing fast.\n  - Quality: Good, but struggles with multi-step tool reasoning. Likes to hallucinate UUIDs we didn't give it.\n  - Issues: Tends to ignore private/locked node boundaries unless system prompt is extremely heavy.",
+          "created_at": "2026-05-24T19:50:00+00:00Z",
+          "author_display_name": "Admin"
+        }
+      ]
+    },
+    {
+      "id": "b3906f65-cd11-40c1-8eb8-2ea08669f904",
+      "parent_id": "4862bc69-aac9-433e-bf51-cedb63f330d5",
+      "icon": "bxs-file-doc",
+      "ai_summary": "- Addresses markdown edge cases involving parser boundaries\n- Evaluates how link patterns behave within code blocks and blockquotes\n- Proposes an AST-based filter to prevent accidental tag extractions",
+      "summary_is_current": true,
+      "title": "markdown_parser_edge_cases",
+      "content": "# markdown_parser_edge_cases\nSome edge-case notes on parsing custom markdown wiki links.\n\nWe need to make sure our parser doesn't update link targets if they exist inside code blocks or raw blockquotes. \nFor example, if someone documents standard wiki linking conventions by writing:\n`Use [[My Page|UUID]] format`\n\nThe indexer shouldn't parse that as an active backlink. A simple regex find-and-replace fails here because it doesn't understand context. We should parse the markdown file into an Abstract Syntax Tree (AST) first, identify code blocks, and skip parsing links inside those nodes.",
+      "created_at": "2026-05-24T19:50:00+00:00Z",
+      "updated_at": "2026-05-24T19:50:00+00:00Z",
+      "versions": [
+        {
+          "version": 1,
+          "title": "markdown_parser_edge_cases",
+          "content": "# markdown_parser_edge_cases\nSome edge-case notes on parsing custom markdown wiki links.\n\nWe need to make sure our parser doesn't update link targets if they exist inside code blocks or raw blockquotes. \nFor example, if someone documents standard wiki linking conventions by writing:\n`Use [[My Page|UUID]] format`\n\nThe indexer shouldn't parse that as an active backlink. A simple regex find-and-replace fails here because it doesn't understand context. We should parse the markdown file into an Abstract Syntax Tree (AST) first, identify code blocks, and skip parsing links inside those nodes.",
+          "created_at": "2026-05-24T19:50:00+00:00Z",
+          "author_display_name": "Admin"
         }
       ]
     }

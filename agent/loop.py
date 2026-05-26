@@ -33,7 +33,7 @@ import psycopg2
 import psycopg2.extras
 
 from backend.app import create_app
-from backend.models import db, User, UserType
+from backend.models import db, User, UserType, DemoState, Vault
 from backend.services.vault_service import get_vault_access
 from agent.audit import Audit
 from agent.agent import run_agent
@@ -191,13 +191,10 @@ def _execute_task(task_row: dict, conn) -> None:
             if orig_status == "pending_demo":
                 _log("Mode: REPLAY (pending_demo)")
 
-                from backend.models import db, Vault, User, DemoState  # noqa: PLC0415
-
                 # Fetch remap from the vault owner and recording path from config
                 vault = db.session.get(Vault, vault_id)
                 owner = db.session.get(User, vault.owner_id)
                 remap          = owner.demo_remap or {}
-                recording_path = flask_app.config["DEMO_RECORDING_PATH"]
 
                 def _update_status(tid, status, log=None):
                     mark_task_raw(conn, tid, status, log=log)
@@ -207,7 +204,6 @@ def _execute_task(task_row: dict, conn) -> None:
                     vault_id         = vault_id,
                     agent_user_id    = AGENT_USER_ID,
                     remap            = remap,
-                    recording_path   = recording_path,
                     flask_app        = flask_app,
                     db               = db,
                     Vault            = Vault,
@@ -238,7 +234,7 @@ def _execute_task(task_row: dict, conn) -> None:
                     blacklist_icon=BLACKLIST_ICON,
                     read_lock_icon=READ_LOCK_ICON,
                     log_fn=_log,
-                    record_full_text=record_full_text  # <-- Pass the flag here
+                    record_full_text=record_full_text
                 )
                 # Saving the exact operations to the DB tasks table is already
                 # natively handled below by `operations=audit.writes`!

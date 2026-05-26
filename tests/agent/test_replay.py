@@ -3,7 +3,7 @@
 """
 tests/agent/test_replay.py
 ============================
-B8 — Replay engine test suite.
+Replay engine test suite.
 
 Covers:
   1. Replay completes; all status stages appear in order.
