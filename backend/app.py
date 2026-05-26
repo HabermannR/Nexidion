@@ -7,6 +7,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
+import mimetypes
 from backend.extensions import limiter
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -113,14 +114,24 @@ def create_app(config_class=Config):
 def register_frontend_serving(app):
     """Handles serving the frontend build in production."""
 
+    # FIX 1: Teach the slim Docker container how to identify JS and CSS files
+    mimetypes.add_type('application/javascript', '.js')
+    mimetypes.add_type('text/css', '.css')
+    mimetypes.add_type('image/svg+xml', '.svg')
+
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve_frontend(path):
         if os.getenv('FLASK_ENV') != 'production':
             return "Frontend serving is disabled in development. Use the React dev server.", 404
 
-        static_folder_path = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
-        if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
+        # FIX 2: Use abspath to resolve the ".." so Docker doesn't get lost
+        static_folder_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist'))
+
+        # Check if the requested file actually exists in the assets folder
+        file_path = os.path.join(static_folder_path, path)
+        if path != "" and os.path.exists(file_path):
             return send_from_directory(static_folder_path, path)
         else:
+            # Fallback for React Router
             return send_from_directory(static_folder_path, 'index.html')
