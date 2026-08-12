@@ -84,25 +84,21 @@ trust-boundary problem, and deliver the first non-PDF document connector.
 
 ## LLM and summaries
 
-- [ ] Keep the **Agent** tab as the vault-level AI task center. The 4.3 cleanup
-  removed demo-only behavior, not the core tab; retain task instructions,
-  selected-node context, status/history, operation details, and retry.
-- [ ] Add the shared provider/model selector to the Agent tab as well as summary
-  generation and AI-assisted imports, so all LLM entry points use the same
-  configuration and terminology.
-- [ ] Extend agent tasks and their API contract with `provider` and `model`,
-  persist the resolved values on each task, and make retries reuse them unless
-  the user explicitly changes the selection.
+- [ ] Keep the built-in **Agent** tab out of the planned core product for now.
+  Leave it documented as a possible future capability, but do not expand it in
+  4.3.1; working through the Nexidion MCP server is the preferred interactive AI
+  experience.
+- [ ] Decide separately whether the remaining Agent tab and legacy task-runner UI
+  should be hidden, removed, or retained as an experimental feature after MCP
+  reaches feature parity. Do not let that decision block the 4.3.1 work.
 - [ ] Restore explicit model selection for OpenAI and local OpenAI-compatible
-  providers instead of relying on hardcoded/default model names.
+  providers for summaries and AI-assisted imports instead of relying on
+  hardcoded/default model names.
 - [ ] Add provider model discovery where supported and a manual model field where
   it is not.
-- [ ] Show provider availability and Task Runner health in the Agent tab; disable
-  submission with an actionable explanation when the selected provider or worker
-  is unavailable instead of leaving tasks pending indefinitely.
-- [ ] Keep API keys and endpoint configuration in deployment/admin settings; the
-  Agent tab selects from configured providers and models but does not expose or
-  store secrets.
+- [ ] Keep API keys and endpoint configuration in deployment/admin settings;
+  model selectors may use configured providers but must not expose or store
+  secrets.
 - [ ] Store selected provider/model/prompt version on every curation and summary
   artifact.
 - [ ] Fix default-provider selection: production currently reports `local` as the
