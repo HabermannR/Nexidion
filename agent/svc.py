@@ -52,7 +52,10 @@ def svc_get_node(vault_id: int, node_id: str, agent_user_id: int) -> dict | None
 
 
 def svc_get_node_summary(vault_id: int, node_id: str, agent_user_id: int) -> dict | None:
-    node = svc_get_node(vault_id, node_id, agent_user_id)
+    try:
+        node = svc_get_node(vault_id, node_id, agent_user_id)
+    except PermissionError as exc:
+        return {"error": str(exc)}
     if node is None:
         return {"error": f"Node {node_id} not found."}
     return {

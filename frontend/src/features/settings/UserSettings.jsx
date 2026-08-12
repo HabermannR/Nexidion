@@ -34,7 +34,7 @@ export default function UserSettings() {
     // --- EVENT HANDLERS ---
     const handleSubmit = (e) => {
         e.preventDefault();
-        setAlert(null);
+        setSuccessMsg(null);
 
         const formData = new FormData(e.currentTarget);
         const old_password = formData.get('old_password');

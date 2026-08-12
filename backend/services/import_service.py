@@ -5,8 +5,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.models import db, Node, Vault, Version, User, DemoState
-from backend.exceptions import DemoLockError
+from backend.models import db, Node, Vault, Version, User
 from backend.services.vault_service import invalidate_vault_list_cache
 from backend.services.node_service import rebuild_vault_tree_cache
 
@@ -33,21 +32,6 @@ def import_vault(
     user = db.session.get(User, owner_id)
     if not user:
         raise ValueError(f"User {owner_id} not found.")
-
-    if user.is_guest:
-        limit = 1 if user.demo_state == DemoState.READ_ONLY else 3
-        vault_count = Vault.query.filter_by(owner_id=owner_id).count()
-        if vault_count >= limit:
-            raise DemoLockError(f"Demo accounts are limited to {limit} vault(s).")
-
-        # Also enforce the per-vault node limit so a large import file cannot
-        # bypass the 100-node cap that create_node enforces for guest accounts.
-        incoming_node_count = len(data.get('nodes', []))
-        if incoming_node_count > 100:
-            raise DemoLockError(
-                f"Demo accounts are limited to 100 nodes per vault "
-                f"({incoming_node_count} nodes in import file)."
-            )
 
     vault_name = vault_name_override or data['vault']['name']
     vault_name = vault_name.strip()

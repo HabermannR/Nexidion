@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import pytest
 import jwt
 from datetime import timedelta
@@ -64,10 +63,34 @@ class TestConfig(Config):
     SQLALCHEMY_DATABASE_URI = f"postgresql://{db_user}:{db_password}@{db_host}:5432/nexidion_test"
 
 
-# --- 2. Basis-Fixtures für App und Client ---
 @pytest.fixture(scope='session')
 def app():
     """Creates a standard Flask app for testing."""
+
+    # --- AUTO-CREATE TEST DATABASE ---
+    import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
+    try:
+        # Connect to the default 'postgres' database to issue the CREATE DATABASE command
+        conn = psycopg2.connect(
+            dbname="postgres",  # Default DB that always exists
+            user=TestConfig.db_user,
+            password=TestConfig.db_password,
+            host=TestConfig.db_host,
+            port=5432
+        )
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        with conn.cursor() as cur:
+            # Check if the database already exists
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = 'nexidion_test'")
+            if not cur.fetchone():
+                cur.execute("CREATE DATABASE nexidion_test")
+        conn.close()
+    except Exception as e:
+        print(f"\nWarning: Could not auto-create test database: {e}\n")
+    # ---------------------------------
+
     app = create_app(TestConfig)
 
     with app.app_context():

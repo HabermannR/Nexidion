@@ -99,14 +99,20 @@ def find_root_for_node(node_id: str, tree: list) -> dict | None:
 def is_read_locked(svc_get_node, read_lock_icon: str,
                    vault_id: int, node_id: str) -> bool:
     """Returns True for bxs-no-entry nodes — agent cannot read or write content."""
-    node = svc_get_node(vault_id, node_id)
+    try:
+        node = svc_get_node(vault_id, node_id)
+    except PermissionError:
+        return True
     return node.get("icon") == read_lock_icon if node else False
 
 
 def is_blacklisted(svc_get_node, blacklist_icon: str, read_lock_icon: str,
                    vault_id: int, node_id: str) -> bool:
     """Returns True for bxs-lock-alt (write-lock) OR bxs-no-entry (full lock)."""
-    node = svc_get_node(vault_id, node_id)
+    try:
+        node = svc_get_node(vault_id, node_id)
+    except PermissionError:
+        return True
     if not node:
         return False
     return node.get("icon") in (blacklist_icon, read_lock_icon)

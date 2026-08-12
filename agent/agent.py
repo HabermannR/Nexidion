@@ -355,7 +355,10 @@ def run_agent(task_row: dict, audit,
         root_stub = find_root_for_node(context_node_ids[0], tree)
         if root_stub:
             log_fn(f"Overview: '{root_stub.get('title')}' ({root_stub['id']})")
-            overview_node = _svc_get_node(vault_id, root_stub["id"])
+            try:
+                overview_node = _svc_get_node(vault_id, root_stub["id"])
+            except PermissionError:
+                log_fn("Overview node is private; continuing without its content.")
 
     context_lines = []
     for node_id in context_node_ids:
@@ -398,6 +401,12 @@ def run_agent(task_row: dict, audit,
             f"LLM access check failed — cannot reach the model endpoint: {e}"
         ) from e
 
+    # Make the active endpoint explicit in the log. If LOCAL_LLM_URL is set the agent
+    # talks to the local box and NEVER to OpenAI, even when OPENAI_API_KEY is present —
+    # this line ensures that routing choice can never be silently misread again.
+    log_fn(f"LLM endpoint  : {local_llm_url or 'https://api.openai.com/v1 (OpenAI)'}")
+    log_fn(f"Model         : {gpt_model}")
+
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
@@ -425,6 +434,7 @@ def run_agent(task_row: dict, audit,
                 model=gpt_model,
                 tools=TOOLS,
                 input=input_list,
+                reasoning={"effort": "xhigh"},
             )
         except Exception as e:
             raise RuntimeError(f"OpenAI API error: {e}") from e

@@ -9,14 +9,13 @@ from backend.models import db, User, Vault, VaultRole
 from backend.services import vault_service
 from backend.services.export_service import export_vault
 from backend.services.import_service import import_vault
-from backend.exceptions import DemoLockError, InsufficientVaultRoleError
+from backend.exceptions import InsufficientVaultRoleError
 
 vaults_bp = Blueprint('vaults', __name__, url_prefix='/api/vaults')
 
 def owner_or_admin_required(fn):
     """
     Ensures the user is either an admin or the owner of the vault.
-    Explicitly blocks guest users (Demo mode) from managing access.
     """
     @wraps(fn)
     def wrapper(vault_id, *args, **kwargs):
@@ -29,11 +28,7 @@ def owner_or_admin_required(fn):
         if not vault:
             return jsonify({"error": "Vault not found"}), 404
 
-        # 1. Block guests (Demo mode) from managing access
-        if user.is_guest:
-            return jsonify({"error": "Guest users cannot manage vault access."}), 403
-
-        # 2. Must be either the vault owner or a system admin
+        # Must be either the vault owner or a system admin
         if vault.owner_id != user.id and not user.is_admin:
             return jsonify({"error": "Only the vault owner or an admin can manage access."}), 403
 
@@ -84,8 +79,6 @@ def export_vault_endpoint(vault_id):
         filename = f"{safe_name}.nexidion"
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
 
@@ -128,8 +121,6 @@ def import_vault_endpoint():
         )
         vault = vault_service.get_vault_by_id(vault_id, user_id=current_user_id)
         return jsonify(vault.to_dict()), 201
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except PermissionError as e:
@@ -150,8 +141,6 @@ def create_vault():
     try:
         new_vault = vault_service.create_vault(name=vault_name, owner_id=current_user_id)
         return jsonify(new_vault.to_dict()), 201
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except ValueError as e:
         return jsonify({"error": str(e)}), 409  # 409 Conflict
 
@@ -167,8 +156,6 @@ def rename_vault(vault_id):
     try:
         updated_vault = vault_service.rename_vault(vault_id, new_name, user_id=current_user_id)
         return jsonify(updated_vault.to_dict())
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
@@ -185,8 +172,6 @@ def delete_vault(vault_id):
     try:
         vault_service.delete_vault(vault_id, user_id=current_user_id)
         return jsonify({"message": f"Vault with ID {vault_id} deleted."}), 200
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:

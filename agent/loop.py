@@ -33,11 +33,12 @@ import psycopg2
 import psycopg2.extras
 
 from backend.app import create_app
-from backend.models import db, User, UserType, DemoState, Vault
+from backend.models import db, User, UserType, SummaryArtifact, CurationJob
+from backend.services.summary_generation import process_summary_artifact
+from backend.services.curation_service import process_curation_job, fail_curation_job
 from backend.services.vault_service import get_vault_access
 from agent.audit import Audit
 from agent.agent import run_agent
-from agent.replay import _run_replay
 
 flask_app = create_app()
 
@@ -116,9 +117,10 @@ def claim_oldest_task(conn):
     with conn.cursor() as cur:
         cur.execute("""
             WITH grabbed AS (
-                SELECT id, vault_id, instruction, context_node_ids, created_at, status
+                SELECT id, vault_id, instruction, context_node_ids, created_at, status,
+                       requested_by_id, executed_by_id
                 FROM tasks
-                WHERE status IN ('pending', 'pending_demo')
+                WHERE status = 'pending'
                 ORDER BY created_at ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -173,10 +175,10 @@ def mark_task_raw(conn, task_id: str, status: str,
 # ---------------------------------------------------------------------------
 
 def _execute_task(task_row: dict, conn) -> None:
-    """Run either the real LLM agent or the replay engine, depending on task status."""
+    """Run a queued LLM task."""
     task_id     = task_row["id"]
     vault_id    = task_row["vault_id"]
-    orig_status = task_row["status"]   # value before claim set it to 'processing'
+    task_agent_user_id = task_row.get("executed_by_id") or AGENT_USER_ID
 
     with flask_app.app_context():
         audit = Audit(
@@ -188,60 +190,26 @@ def _execute_task(task_row: dict, conn) -> None:
         )
 
         try:
-            if orig_status == "pending_demo":
-                _log("Mode: REPLAY (pending_demo)")
-
-                # Fetch remap from the vault owner and recording path from config
-                vault = db.session.get(Vault, vault_id)
-                owner = db.session.get(User, vault.owner_id)
-                remap          = owner.demo_remap or {}
-
-                def _update_status(tid, status, log=None):
-                    mark_task_raw(conn, tid, status, log=log)
-
-                summary = asyncio.run(_run_replay(
-                    task_row         = task_row,
-                    vault_id         = vault_id,
-                    agent_user_id    = AGENT_USER_ID,
-                    remap            = remap,
-                    flask_app        = flask_app,
-                    db               = db,
-                    Vault            = Vault,
-                    DemoState        = DemoState,
-                    update_status_fn = _update_status,
-                    log_fn           = _log,
-                ))
-                mark_task_raw(conn, task_id, "completed", summary=summary,
-                              operations=audit.writes)
-                audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
-                _log(f"✅ {summary}")
-
-
-            else:
-                _log("Mode: REAL LLM")
-                # Check if this environment is configured as a Studio/Demo setup
-                record_full_text = flask_app.config.get("DEMO_MODE_ENABLED", False)
-                summary = run_agent(
-                    task_row=task_row,
-                    audit=audit,
-                    agent_user_id=AGENT_USER_ID,
-                    gpt_token=GPT_TOKEN,
-                    gpt_model=GPT_MODEL,
-                    local_llm_url=LOCAL_LLM_URL,
-                    local_llm_api_key=LOCAL_LLM_API_KEY,
-                    max_loop_turns=MAX_LOOP_TURNS,
-                    max_tool_fetches=MAX_TOOL_FETCHES,
-                    blacklist_icon=BLACKLIST_ICON,
-                    read_lock_icon=READ_LOCK_ICON,
-                    log_fn=_log,
-                    record_full_text=record_full_text
-                )
-                # Saving the exact operations to the DB tasks table is already
-                # natively handled below by `operations=audit.writes`!
-                mark_task_raw(conn, task_id, "completed", summary=summary,
-                              operations=audit.writes)
-                audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
-                _log(f"✅ {summary}")
+            _log("Mode: REAL LLM")
+            summary = run_agent(
+                task_row=task_row,
+                audit=audit,
+                agent_user_id=task_agent_user_id,
+                gpt_token=GPT_TOKEN,
+                gpt_model=GPT_MODEL,
+                local_llm_url=LOCAL_LLM_URL,
+                local_llm_api_key=LOCAL_LLM_API_KEY,
+                max_loop_turns=MAX_LOOP_TURNS,
+                max_tool_fetches=MAX_TOOL_FETCHES,
+                blacklist_icon=BLACKLIST_ICON,
+                read_lock_icon=READ_LOCK_ICON,
+                log_fn=_log,
+                record_full_text=False,
+            )
+            mark_task_raw(conn, task_id, "completed", summary=summary,
+                          operations=audit.writes)
+            audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
+            _log(f"✅ {summary}")
 
 
         except Exception as e:
@@ -270,6 +238,37 @@ def run_loop():
     _log("DB connection established.")
 
     while True:
+        with flask_app.app_context():
+            curation_job = (
+                CurationJob.query.filter_by(status="pending")
+                .order_by(CurationJob.created_at.asc())
+                .with_for_update(skip_locked=True).first()
+            )
+            if curation_job:
+                curation_job.status = "processing"
+                db.session.commit()
+                try:
+                    process_curation_job(curation_job)
+                except Exception as exc:
+                    db.session.rollback()
+                    curation_job = db.session.get(CurationJob, curation_job.id)
+                    fail_curation_job(curation_job, exc)
+                _log(f"Curation {curation_job.id} → {curation_job.status}")
+                continue
+
+            artifact = (
+                SummaryArtifact.query.filter_by(status="pending")
+                .order_by(SummaryArtifact.created_at.asc())
+                .with_for_update(skip_locked=True).first()
+            )
+            if artifact:
+                artifact.status = "processing"
+                db.session.commit()
+                process_summary_artifact(artifact)
+                db.session.commit()
+                _log(f"Summary {artifact.id} → {artifact.status}")
+                continue
+
         try:
             task_row = claim_oldest_task(conn)
         except Exception as e:
@@ -294,7 +293,7 @@ def run_loop():
         # "LLM has no access to the vault" after work has already started.
         try:
             with flask_app.app_context():
-                get_vault_access(task_row["vault_id"], AGENT_USER_ID)
+                get_vault_access(task_row["vault_id"], task_row.get("executed_by_id") or AGENT_USER_ID)
         except (PermissionError, ValueError) as e:
             _log(f"✗ Vault access check failed for vault {task_row['vault_id']}: {e}")
             mark_task_raw(conn, task_row["id"], "failed",

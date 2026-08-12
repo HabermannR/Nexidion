@@ -12,8 +12,8 @@ Enthält:
 import hashlib
 import json
 
-from backend.exceptions import InsufficientVaultRoleError, DemoLockError
-from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version, DemoState, UserType
+from backend.exceptions import InsufficientVaultRoleError
+from backend.models import db, Vault, VaultAccess, VaultRole, User, Node, Version, UserType
 
 
 # ---------------------------------------------------------------------------
@@ -25,8 +25,6 @@ def assert_write_allowed(role: VaultRole, user: User):
     editor_val = VaultRole.EDITOR.value if hasattr(VaultRole.EDITOR, 'value') else int(VaultRole.EDITOR)
     if role_val < editor_val:
         raise InsufficientVaultRoleError("You have read-only access to this vault.")
-    if user.is_guest and user.demo_state == DemoState.READ_ONLY:
-        raise DemoLockError("Complete the demo task to unlock editing.")
 
 
 def get_vault_access(vault_id: int, user_id: int) -> tuple[Vault, VaultRole]:
@@ -164,11 +162,6 @@ def create_vault(name: str, owner_id: int) -> Vault:
     if not user:
         raise ValueError(f"Owner with ID {owner_id} not found.")
 
-    if user.is_guest:
-        limit = 1 if user.demo_state == DemoState.READ_ONLY else 3
-        vault_count = Vault.query.filter_by(owner_id=owner_id).count()
-        if vault_count >= limit:
-            raise DemoLockError(f"Demo accounts are limited to {limit} vault(s).")
 
     if db.session.execute(
             db.select(Vault).filter_by(name=name_stripped, owner_id=owner_id)
@@ -279,7 +272,6 @@ def get_all_vaults() -> list:
             "owner_id": v.owner_id,
             "owner_display_name": owner.display_name if owner else "Unknown",
             "owner_username": owner.username if owner else "unknown",
-            "is_guest_vault": owner.is_guest if owner else False,
             "access_count": cnt or 0,
         })
     return result

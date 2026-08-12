@@ -1,9 +1,12 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const projectDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, projectDir, '');
 
   // Default to localhost for baremetal (Windows/Linux)
   // Docker will override this to 'http://backend:5001' using environment variables!
@@ -15,7 +18,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         // Dynamically points to the sibling directory, regardless of OS
-        '@nexidion/remark-internal-links': path.resolve(__dirname, '../remark-internal-links/src/index.js'),
+        '@nexidion/remark-internal-links': path.resolve(projectDir, '../remark-internal-links/src/index.js'),
       },
     },
 
@@ -24,7 +27,7 @@ export default defineConfig(({ mode }) => {
         allow: [
           // This dynamically allows the entire parent Nexidion folder.
           // This replaces your hardcoded '/app' and works on Windows, Linux, and Docker!
-          path.resolve(__dirname, '../')
+          path.resolve(projectDir, '../')
         ]
       },
       proxy: {

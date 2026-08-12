@@ -41,7 +41,7 @@ export default function NodeContent() {
 
     const { data: vaultTreeData, isLoading: isTreeLoading, isError: isTreeError } = useVaultTreeQuery(vaultId);
 
-    const { data: versions, isLoading: isLoadingVersions, isError: isVersionsError } = useQuery({
+    const { isLoading: isLoadingVersions, isError: isVersionsError } = useQuery({
         queryKey: ['versions', vaultId, nodeId],
         queryFn: () => apiClient.get(`/api/vaults/${vaultId}/nodes/${nodeId}/versions`).then(res => res.data),
         enabled: !!nodeId,

@@ -10,7 +10,7 @@ COPY frontend ./frontend
 
 # Install dependencies and build the static files
 WORKDIR /workspace/frontend
-RUN npm install
+RUN npm ci
 RUN npm run build
 
 # ==========================================
@@ -29,7 +29,7 @@ RUN pip install --upgrade pip setuptools wheel uv
 COPY pyproject.toml .
 COPY backend/ ./backend/
 COPY agent/   ./agent/
-COPY wsgi.py task_runner.py ./
+COPY wsgi.py task_runner.py serve.py ./
 
 # MAGIC TRICK: Copy the compiled frontend from Stage 1 into the exact folder
 # your backend expects to find it!

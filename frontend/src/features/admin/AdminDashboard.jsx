@@ -109,16 +109,6 @@ function UsersSection() {
         onError: (err) => { toast.error(err.response?.data?.error || 'Error deleting user.'); closeModal(); },
     });
 
-    const deleteAllGuestsMutation = useMutation({
-        mutationFn: () => apiClient.delete('/api/admin/guests'),
-        onSuccess: (res) => {
-            toast.success(`Deleted ${res.data.deleted} guest account(s).`);
-            invalidate();
-            queryClient.invalidateQueries({ queryKey: ['admin', 'demo-stats'] });
-        },
-        onError: (err) => toast.error(err.response?.data?.error || 'Error deleting guests.'),
-    });
-
     const passwordMutation = useMutation({
         mutationFn: ({ userId, new_password }) => apiClient.put(`/api/admin/users/${userId}/password`, { new_password }),
         onSuccess: () => { toast.success('Password reset.'); passwordFormRef.current?.reset(); closeModal(); },
@@ -175,19 +165,6 @@ function UsersSection() {
                     <Card>
                         <Card.Header as="h5" className="d-flex align-items-center gap-2">
                             All Users {users ? <Badge bg="secondary" className="ms-1">{users.length}</Badge> : null}
-                            {users?.some(u => u.is_guest) && (
-                                <Button
-                                    variant="outline-danger" size="sm" className="ms-auto"
-                                    disabled={deleteAllGuestsMutation.isPending}
-                                    onClick={() => {
-                                        if (window.confirm('Delete ALL guest accounts and their vaults? This cannot be undone.')) {
-                                            deleteAllGuestsMutation.mutate();
-                                        }
-                                    }}
-                                >
-                                    {deleteAllGuestsMutation.isPending ? 'Deleting…' : '🗑 Delete All Guests'}
-                                </Button>
-                            )}
                         </Card.Header>
                         <Card.Body className="p-0">
                             {isLoading && <div className="text-center p-4"><Spinner animation="border" size="sm" /> Loading…</div>}
@@ -217,17 +194,14 @@ function UsersSection() {
                                                     {u.is_admin
                                                         ? <Badge bg="primary">Admin</Badge>
                                                         : <Badge bg="secondary">User</Badge>}
-                                                    {u.is_guest && <Badge bg="warning" text="dark" className="ms-1">Guest</Badge>}
                                                 </td>
                                                 <td className="text-end">
-                                                    {!u.is_guest && (
-                                                        <Button
-                                                            variant="outline-secondary" size="sm" className="me-2"
-                                                            onClick={() => setModal({ type: 'password', user: u })}
-                                                        >
-                                                            Reset password
-                                                        </Button>
-                                                    )}
+                                                    <Button
+                                                        variant="outline-secondary" size="sm" className="me-2"
+                                                        onClick={() => setModal({ type: 'password', user: u })}
+                                                    >
+                                                        Reset password
+                                                    </Button>
                                                     <Button
                                                         variant="outline-danger" size="sm"
                                                         onClick={() => setModal({ type: 'deleteUser', user: u })}
@@ -249,10 +223,7 @@ function UsersSection() {
             <Modal show={modal.type === 'deleteUser'} onHide={closeModal} centered>
                 <Modal.Header closeButton><Modal.Title>Delete User</Modal.Title></Modal.Header>
                 <Modal.Body>
-                    {modal.user?.is_guest
-                        ? <>Permanently delete guest <strong>{modal.user?.username}</strong>? Their demo vault will be wiped. This cannot be undone.</>
-                        : <>Permanently delete <strong>{modal.user?.username}</strong>? Their vaults will be transferred to the admin account. This cannot be undone.</>
-                    }
+                    Permanently delete <strong>{modal.user?.username}</strong>? Their vaults will be transferred to the admin account. This cannot be undone.
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={closeModal}>Cancel</Button>
@@ -427,9 +398,7 @@ function VaultRow({ vault, renameMutation, deleteMutation }) {
                     <span className="text-muted" style={{ fontSize: '0.85rem' }}>({vault.owner_username})</span>
                 </td>
                 <td>
-                    {vault.is_guest_vault
-                        ? <Badge bg="warning" text="dark">Demo</Badge>
-                        : <Badge bg="secondary">Normal</Badge>}
+                    <Badge bg="secondary">Normal</Badge>
                 </td>
                 <td>{vault.access_count}</td>
                 <td className="text-muted" style={{ fontSize: '0.85rem' }}>
@@ -556,352 +525,11 @@ function VaultsSection() {
     );
 }
 
-// ── Demo Analytics ───────────────────────────────────────────────────────────
-
-function StatCard({ label, value, sub, color = 'primary' }) {
-    const colors = {
-        primary: { bg: '#e8f0fe', text: '#1a56db', border: '#93b4f7' },
-        success: { bg: '#e3f9ee', text: '#0a7a45', border: '#6ee7a9' },
-        warning: { bg: '#fef9e3', text: '#92610a', border: '#f5d76e' },
-        info:    { bg: '#e8f4fd', text: '#0e6ca5', border: '#7ec8f0' },
-        purple:  { bg: '#f2effe', text: '#5b21b6', border: '#c4b5fd' },
-        pink:    { bg: '#fdf2f8', text: '#9d174d', border: '#f9a8d4' },
-    };
-    const c = colors[color] || colors.primary;
-    return (
-        <div style={{
-            background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10,
-            padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 4,
-        }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: c.text, opacity: 0.8 }}>{label}</div>
-            <div style={{ fontSize: '2rem', fontWeight: 700, color: c.text, lineHeight: 1 }}>{value}</div>
-            {sub && <div style={{ fontSize: '0.78rem', color: c.text, opacity: 0.65 }}>{sub}</div>}
-        </div>
-    );
-}
-
-function DemoAnalyticsSection() {
-    const { data, isLoading, isError, refetch, isFetching } = useQuery({
-        queryKey: ['admin', 'demo-stats'],
-        queryFn: () => apiClient.get('/api/admin/demo-stats').then(r => r.data),
-        staleTime: 30_000,
-    });
-
-    return (
-        <Card className="mb-4">
-            <Card.Header as="h5" className="d-flex align-items-center gap-2">
-                📊 Analytics
-                <Button
-                    variant="outline-secondary" size="sm" className="ms-auto"
-                    onClick={() => refetch()} disabled={isFetching}
-                    style={{ fontSize: '0.75rem' }}
-                >
-                    {isFetching ? 'Refreshing…' : '↻ Refresh'}
-                </Button>
-            </Card.Header>
-            <Card.Body>
-                {isLoading && <div className="text-center py-3"><Spinner size="sm" /> Loading stats…</div>}
-                {isError && <Alert variant="danger">Failed to load demo stats.</Alert>}
-                {data && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
-                        <StatCard label="Guest Logins (Total)" value={data.total_guest_logins} sub="All-time guest accounts" color="primary" />
-                        <StatCard label="Active Now" value={data.active_guests_now} sub="Sessions not yet expired" color="success" />
-                        <StatCard label="Phase-2 Unlocks" value={data.phase2_completions} sub="Guests who went interactive" color="purple" />
-                        <StatCard label="Conversion Rate" value={`${data.conversion_rate_pct}%`} sub="Logins → Phase-2" color="pink" />
-                        <StatCard label="Nodes Created by Guests" value={data.node_creates_by_guests} sub="Nodes guests made (phase 2 only)" color="warning" />
-                    </div>
-                )}
-            </Card.Body>
-        </Card>
-    );
-}
-
-// ── Guest management (in Demo tab) ───────────────────────────────────────────
-
-function GuestManagementSection() {
-    const toast = useToast();
-    const queryClient = useQueryClient();
-
-    const { data: users, isLoading } = useQuery({
-        queryKey: QK_USERS,
-        queryFn: () => apiClient.get('/api/admin/users').then(r => r.data),
-    });
-
-    const deleteAllGuestsMutation = useMutation({
-        mutationFn: () => apiClient.delete('/api/admin/guests'),
-        onSuccess: (res) => {
-            toast.success(`Deleted ${res.data.deleted} guest account(s).`);
-            queryClient.invalidateQueries({ queryKey: QK_USERS });
-            queryClient.invalidateQueries({ queryKey: ['admin', 'demo-stats'] });
-        },
-        onError: (err) => toast.error(err.response?.data?.error || 'Error deleting guests.'),
-    });
-
-    const guests = users?.filter(u => u.is_guest) ?? [];
-
-    return (
-        <Card>
-            <Card.Header as="h5" className="d-flex align-items-center gap-2">
-                Guest Accounts
-                {guests.length > 0 && <Badge bg="warning" text="dark">{guests.length}</Badge>}
-                {guests.length > 0 && (
-                    <Button
-                        variant="outline-danger" size="sm" className="ms-auto"
-                        disabled={deleteAllGuestsMutation.isPending}
-                        onClick={() => {
-                            if (window.confirm('Delete ALL guest accounts and their vaults? This cannot be undone.')) {
-                                deleteAllGuestsMutation.mutate();
-                            }
-                        }}
-                    >
-                        {deleteAllGuestsMutation.isPending ? 'Deleting…' : '🗑 Delete All Guests'}
-                    </Button>
-                )}
-            </Card.Header>
-            <Card.Body className="p-0">
-                {isLoading && <div className="text-center p-4"><Spinner size="sm" /> Loading…</div>}
-                {!isLoading && guests.length === 0 && (
-                    <p className="text-muted p-3 mb-0">No active guest accounts.</p>
-                )}
-                {guests.length > 0 && (
-                    <Table responsive hover className="mb-0 align-middle">
-                        <thead>
-                            <tr>
-                                <th>Username</th>
-                                <th>Display Name</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {guests.map(u => (
-                                <tr key={u.id}>
-                                    <td><code className="text-body">{u.username}</code></td>
-                                    <td>{u.display_name}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                )}
-            </Card.Body>
-        </Card>
-    );
-}
-
-// ── Developer Tools ──────────────────────────────────────────────────────────
-
-function DemoScriptExtractor() {
-    const toast = useToast();
-    const [taskId, setTaskId] = useState('');
-    const [script, setScript] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-
-    const handleExtract = async () => {
-        if (!taskId.trim()) return;
-        setIsLoading(true);
-        try {
-            const res = await apiClient.get(`/api/tasks/${taskId.trim()}`);
-            const task = res.data;
-            const ops = task.operations || [];
-            const opsJson = JSON.stringify(ops, null, 4);
-            const outputCode = `import json\n\nDEMO_INSTRUCTION = ${JSON.stringify(task.instruction || "")}\n\nDEMO_FINISH_SUMMARY = ${JSON.stringify(task.finish_summary || "")}\n\nDEMO_OPERATIONS = json.loads(r"""\n${opsJson}\n""")\n`;
-            setScript(outputCode);
-            toast.success('Script extracted!');
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Failed to fetch task details.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <Card className="h-100 border-info">
-            <Card.Header as="h6" className="d-flex align-items-center gap-2">
-                🛠️ Demo Script Extractor
-                <Badge bg="info" className="ms-auto text-dark">Dev Tool</Badge>
-            </Card.Header>
-            <Card.Body className="d-flex flex-column">
-                <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
-                    Turn a real agent run into a Demo Script. Enter a Task ID below to extract its operations into Python code.
-                </p>
-                <InputGroup size="sm" className="mb-3">
-                    <BootstrapForm.Control
-                        placeholder="Task ID (e.g. 123...)"
-                        value={taskId}
-                        onChange={e => setTaskId(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleExtract()}
-                    />
-                    <Button variant="info" onClick={handleExtract} disabled={!taskId || isLoading}>
-                        {isLoading ? 'Fetching...' : 'Extract Script'}
-                    </Button>
-                </InputGroup>
-                {script && (
-                    <div className="mt-auto">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                            <span className="fw-semibold small">Generated Python Code</span>
-                            <Button
-                                variant="outline-secondary" size="sm"
-                                style={{ fontSize: '0.7rem', padding: '2px 6px' }}
-                                onClick={() => { navigator.clipboard.writeText(script); toast.success('Copied!'); }}
-                            >
-                                Copy Code
-                            </Button>
-                        </div>
-                        <BootstrapForm.Control
-                            as="textarea"
-                            className="font-monospace bg-light text-dark"
-                            style={{ fontSize: '0.75rem', height: '200px', resize: 'vertical' }}
-                            readOnly
-                            value={script}
-                        />
-                    </div>
-                )}
-            </Card.Body>
-        </Card>
-    );
-}
-
-function DeveloperToolsSection() {
-    const toast = useToast();
-    const [demoVaultId, setDemoVaultId] = useState('');
-    const [resetVaultId, setResetVaultId] = useState('');
-    const [snapshotFile, setSnapshotFile] = useState(null);
-    const [confirmReset, setConfirmReset] = useState(false);
-    const snapshotInputRef = useRef();
-
-    const { data: vaults } = useQuery({
-        queryKey: QK_ALL_VAULTS,
-        queryFn: () => apiClient.get('/api/admin/vaults').then(res => res.data),
-    });
-
-    const triggerDemoMutation = useMutation({
-        mutationFn: (vaultId) => apiClient.post('/api/admin/replay-test', { vault_id: parseInt(vaultId, 10) }),
-        onSuccess: (res) => toast.success(`Demo task queued — task ID ${res.data.task_id}`),
-        onError: (err) => toast.error(err.response?.data?.error || 'Failed to queue demo task.'),
-    });
-
-    const resetMutation = useMutation({
-        mutationFn: async ({ vaultId, file }) => {
-            const text = await file.text();
-            const snapshot = JSON.parse(text);
-            return apiClient.post(`/api/admin/vaults/${vaultId}/reset-to-snapshot`, { snapshot });
-        },
-        onSuccess: (res) => {
-            toast.success(`Vault reset! Restored ${res.data.node_count} nodes.`);
-            setSnapshotFile(null);
-            setResetVaultId('');
-            setConfirmReset(false);
-            if (snapshotInputRef.current) snapshotInputRef.current.value = '';
-        },
-        onError: (err) => { toast.error(err.response?.data?.error || 'Failed to reset vault.'); setConfirmReset(false); },
-    });
-
-    const selectedVaultName = vaults?.find(v => String(v.id) === String(resetVaultId))?.name;
-
-    return (
-        <>
-            <Row className="g-4 mb-4">
-                <Col lg={6}>
-                    <Card className="h-100 border-primary">
-                        <Card.Header as="h6" className="d-flex align-items-center gap-2">
-                            ⏪ Snapshot Reset
-                            <Badge bg="primary" className="ms-auto">Dev Tool</Badge>
-                        </Card.Header>
-                        <Card.Body className="d-flex flex-column">
-                            <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
-                                Upload a <code>.nexidion</code> export file to wipe and restore a vault to that snapshot.
-                            </p>
-                            <BootstrapForm.Group className="mb-2">
-                                <BootstrapForm.Label className="fw-semibold small">1. Target Vault</BootstrapForm.Label>
-                                <BootstrapForm.Select size="sm" value={resetVaultId} onChange={e => setResetVaultId(e.target.value)}>
-                                    <option value="">— select a vault to overwrite —</option>
-                                    {vaults?.map(v => (
-                                        <option key={v.id} value={v.id}>[{v.id}] {v.name} ({v.owner_username})</option>
-                                    ))}
-                                </BootstrapForm.Select>
-                            </BootstrapForm.Group>
-                            <BootstrapForm.Group className="mb-3">
-                                <BootstrapForm.Label className="fw-semibold small">2. Snapshot File (.nexidion)</BootstrapForm.Label>
-                                <BootstrapForm.Control
-                                    size="sm" type="file" ref={snapshotInputRef}
-                                    accept=".nexidion,application/json"
-                                    onChange={e => setSnapshotFile(e.target.files[0])}
-                                />
-                            </BootstrapForm.Group>
-                            <Button
-                                variant="primary" size="sm" className="w-100 mt-auto"
-                                onClick={() => setConfirmReset(true)}
-                                disabled={!resetVaultId || !snapshotFile || resetMutation.isPending}
-                            >
-                                {resetMutation.isPending ? 'Restoring...' : 'Wipe & Restore Snapshot'}
-                            </Button>
-                        </Card.Body>
-                    </Card>
-                </Col>
-
-                <Col lg={6}>
-                    <Card className="h-100 border-warning">
-                        <Card.Header as="h6" className="d-flex align-items-center gap-2">
-                            🔁 Demo Agent Simulator
-                            <Badge bg="warning" text="dark" className="ms-auto">Dev Tool</Badge>
-                        </Card.Header>
-                        <Card.Body className="d-flex flex-column">
-                            <p className="text-muted mb-3" style={{ fontSize: '0.85rem' }}>
-                                Creates a <code>pending_demo</code> task on a vault. The background runner will pick it up and execute the pre-recorded demo animation.
-                            </p>
-                            <BootstrapForm.Group className="mb-3">
-                                <BootstrapForm.Label className="fw-semibold small">Target Vault</BootstrapForm.Label>
-                                <BootstrapForm.Select size="sm" value={demoVaultId} onChange={e => setDemoVaultId(e.target.value)}>
-                                    <option value="">— select a vault —</option>
-                                    {vaults?.map(v => (
-                                        <option key={v.id} value={v.id}>[{v.id}] {v.name} ({v.owner_username})</option>
-                                    ))}
-                                </BootstrapForm.Select>
-                            </BootstrapForm.Group>
-                            <Button
-                                variant="warning" size="sm" className="w-100 mt-auto"
-                                onClick={() => triggerDemoMutation.mutate(demoVaultId)}
-                                disabled={!demoVaultId || triggerDemoMutation.isPending}
-                            >
-                                {triggerDemoMutation.isPending ? 'Queuing...' : '▶ Queue Demo Task'}
-                            </Button>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
-
-            <Row className="g-4">
-                <Col lg={12}>
-                    <DemoScriptExtractor />
-                </Col>
-            </Row>
-
-            <Modal show={confirmReset} onHide={() => setConfirmReset(false)} centered>
-                <Modal.Header closeButton><Modal.Title>Confirm Snapshot Reset</Modal.Title></Modal.Header>
-                <Modal.Body>
-                    This will <strong>permanently wipe</strong> all nodes in vault{' '}
-                    <strong>"{selectedVaultName}"</strong> and replace them with the snapshot contents.
-                    This cannot be undone.
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setConfirmReset(false)}>Cancel</Button>
-                    <Button
-                        variant="danger" disabled={resetMutation.isPending}
-                        onClick={() => resetMutation.mutate({ vaultId: resetVaultId, file: snapshotFile })}
-                    >
-                        {resetMutation.isPending ? 'Restoring...' : 'Wipe & Restore'}
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-        </>
-    );
-}
-
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 const TABS = [
     { key: 'users',  label: 'Users' },
     { key: 'vaults', label: 'Vaults' },
-    { key: 'demo',   label: '📊 Demo & Analytics' },
-    { key: 'dev',    label: '🛠️ Developer Tools' },
 ];
 
 export default function AdminDashboard() {
@@ -934,19 +562,6 @@ export default function AdminDashboard() {
 
             {activeTab === 'vaults' && <VaultsSection />}
 
-            {activeTab === 'demo' && (
-                <>
-                    <DemoAnalyticsSection />
-                    <GuestManagementSection />
-                </>
-            )}
-
-            {activeTab === 'dev' && (
-                <>
-                    <p className="text-muted mb-4">Internal testing utilities — not visible to normal users.</p>
-                    <DeveloperToolsSection />
-                </>
-            )}
         </Container>
     );
 }

@@ -1,54 +1,54 @@
 // src/services/clipboardService.js
 
 /**
- * Holt den kombinierten Inhalt der ausgewählten Nodes und kopiert ihn ins Clipboard.
- * @param {Function} getContextContent - Die Funktion aus dem AppContext.
- * @returns {Promise<boolean>} - True bei Erfolg, false bei Fehler.
+ * Gets the combined content of the selected nodes and copies it to the clipboard.
+ * @param {Function} getContextContent - The function from the AppContext.
+ * @returns {Promise<boolean>} - True on success, false on error.
  */
 export const copyContextContent = async (getContextContent) => {
   if (!navigator.clipboard) {
-    // Wirf einen Fehler mit einer klaren Nachricht
-    throw new Error("Kopieren in die Zwischenablage ist nur in einem sicheren Kontext (HTTPS) möglich.");
+    // Throw an error with a clear message
+    throw new Error("Copying to the clipboard is only possible in a secure context (HTTPS).");
   }
   try {
     const { content } = await getContextContent();
     if (content) {
       await navigator.clipboard.writeText(content);
-      // Kein "return true" mehr nötig, Erfolg wird durch das Ausbleiben eines Fehlers signalisiert.
+      // No "return true" necessary anymore, success is signaled by the absence of an error.
     }
   } catch (error) {
     console.error("Failed to copy content:", error);
-    // Wirf den ursprünglichen Fehler weiter oder einen neuen, benutzerfreundlicheren.
-    throw new Error("Inhalt konnte nicht in die Zwischenablage kopiert werden.");
+    // Rethrow the original error or a new, more user-friendly one.
+    throw new Error("Content could not be copied to the clipboard.");
   }
 };
 
 /**
- * Formatiert die Baumstruktur und kopiert sie ins Clipboard.
- * @param {Array} treeData - Die Baumdatenstruktur.
- * @throws {Error} - Wirft einen Fehler, wenn die API nicht verfügbar ist oder das Kopieren fehlschlägt.
+ * Formats the tree structure and copies it to the clipboard.
+ * @param {Array} treeData - The tree data structure.
+ * @throws {Error} - Throws an error if the API is not available or copying fails.
  */
 export const copyTreeStructure = async (treeData) => {
-  // PRÜFUNG 1: API-Verfügbarkeit
+  // CHECK 1: API availability
   if (!navigator.clipboard) {
-    throw new Error("Kopieren ist nur in einem sicheren Kontext (HTTPS oder localhost) möglich.");
+    throw new Error("Copying is only possible in a secure context (HTTPS or localhost).");
   }
 
-  // PRÜFUNG 2: Gültige Daten
+  // CHECK 2: Valid data
   if (!treeData || treeData.length === 0 || !treeData[0]) {
-    // Dies ist eher ein interner Fehler, aber wir fangen ihn ab.
-    throw new Error("Keine Daten zum Kopieren vorhanden.");
+    // This is rather an internal error, but we catch it.
+    throw new Error("No data available to copy.");
   }
 
-  // Rekursive Hilfsfunktion zur Erstellung der Baumstruktur
+  // Recursive helper function to create the tree structure
   const formatNodeRecursive = (node, prefix, isLast) => {
-    // Bestimmt den Connector basierend darauf, ob es das letzte Element ist
+    // Determines the connector based on whether it is the last element
     const connector = isLast ? '└── ' : '├── ';
 
-    // +++ GEÄNDERT: Füge die Node-ID (UUID) hinzu +++
+    // +++ CHANGED: Add the node ID (UUID) +++
     let output = prefix + connector + `${node.title} (${node.id})` + '\n';
 
-    // Berechnet das Präfix für die Kind-Elemente
+    // Calculates the prefix for the child elements
     const childPrefix = prefix + (isLast ? '    ' : '│   ');
 
     if (node.children && node.children.length > 0) {
@@ -78,7 +78,7 @@ export const copyTreeStructure = async (treeData) => {
     await navigator.clipboard.writeText(formattedTree.trim());
   } catch (error) {
     console.error("Failed to copy tree:", error);
-    // Wirf einen neuen, für den Benutzer verständlichen Fehler.
-    throw new Error("Die Baumstruktur konnte nicht in die Zwischenablage kopiert werden.");
+    // Throw a new, user-friendly error.
+    throw new Error("The tree structure could not be copied to the clipboard.");
   }
 };

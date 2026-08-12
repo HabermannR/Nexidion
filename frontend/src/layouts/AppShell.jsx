@@ -75,11 +75,9 @@ return (
                                     )}
                                 </div>
                                 <NavDropdown.Divider />
-                                {!user?.is_guest && (
-                                    <NavDropdown.Item as={Link} to="/settings/vaults" disabled={isOnAnySettingsPage}>
-                                        Manage Vaults...
-                                    </NavDropdown.Item>
-                                )}
+                                <NavDropdown.Item as={Link} to="/settings/vaults" disabled={isOnAnySettingsPage}>
+                                    Manage Vaults...
+                                </NavDropdown.Item>
                             </NavDropdown>
 
                             {/* Admin link */}

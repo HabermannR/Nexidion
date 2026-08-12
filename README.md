@@ -90,7 +90,7 @@ docker compose --profile with-postgres up -d --build
 ```
 The application will be built and accessible at `http://localhost:5001`. 
 
-**Default Admin Login** *(unless changed in `docker-compose.yml`)*:
+**Default Admin Login in dev** *(unless changed in `docker-compose.yml`)*:
 *   **User:** `admin`
 *   **Pass:** `defaultPassword123` *(Change this immediately in the UI!)*
 
@@ -112,6 +112,7 @@ The application is configured entirely via environment variables. Key options in
 
 *   `JWT_SECRET_KEY`: A strong, random secret for signing sessions.
 *   `DB_USER` / `DB_PASSWORD` / `DB_NAME`: PostgreSQL credentials.
+*   `ADMIN_PASSWORD`: Admin password for production environment.
 *   `OPENAI_API_KEY`: API key for the optional Agent Runner (Requires enabling the worker profile).
 *   `NEXIDION_POLL_INTERVAL`: How often the background worker checks for new tasks (default: 5s).
 

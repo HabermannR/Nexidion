@@ -1,14 +1,11 @@
 # api/auth.py
-import uuid
-from datetime import datetime, timedelta, timezone
-
-from flask import Blueprint, request, jsonify, current_app
+from datetime import timedelta
+from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 from backend.extensions import limiter
-from backend.models import db, User, UserType, VaultAccess, VaultRole, DemoState, DemoEvent
+from backend.models import User
 from backend.services import auth_service
-from backend.services.import_service import import_vault
 
 auth_bp = Blueprint('auth_v2', __name__, url_prefix='/api/auth')
 
@@ -65,46 +62,3 @@ def change_user_password():
             return jsonify({"error": "Invalid old password"}), 401
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-
-
-@auth_bp.route('/guest', methods=['POST'], strict_slashes=False)
-@limiter.limit("30 per hour")
-def guest_login():
-    if not current_app.config["DEMO_MODE_ENABLED"]:
-        return jsonify({"error": "Demo mode is not enabled."}), 403
-
-    agent = User.query.filter_by(user_type=UserType.LLM_ASSISTANT).first()
-    if not agent:
-        return jsonify({"error": "Agent not configured."}), 503
-
-    guest = User(
-        username     = f"guest-{uuid.uuid4().hex[:8]}",
-        display_name = "Guest",
-        user_type    = UserType.HUMAN,
-        is_guest     = True,
-        demo_state   = DemoState.READ_ONLY,
-        expires_at   = datetime.now(timezone.utc) + timedelta(hours=2),
-    )
-    db.session.add(guest)
-    db.session.flush()
-
-    vault_id, remap = import_vault(
-        path=current_app.config["DEMO_VAULT_PATH"],
-        owner_id=guest.id,
-        vault_name_override="Demo Vault",
-    )
-    guest.demo_remap = remap
-
-    db.session.add(VaultAccess(
-        vault_id=vault_id,
-        user_id=agent.id,
-        role=VaultRole.EDITOR,
-    ))
-    db.session.add(DemoEvent(event_type='guest_login'))
-    db.session.commit()
-
-    token = create_access_token(
-        identity=str(guest.id),
-        expires_delta=timedelta(hours=2),
-    )
-    return jsonify(access_token=token, user=guest.to_dict()), 201

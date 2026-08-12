@@ -30,11 +30,6 @@ class VaultRole(enum.IntEnum):
     EDITOR = 2
 
 
-class DemoState(enum.IntEnum):
-    READ_ONLY = 1
-    UNLOCKED = 2
-
-
 class User(db.Model):
     """
     Represents a user of the system.
@@ -49,11 +44,6 @@ class User(db.Model):
     user_type = db.Column(db.SmallInteger, nullable=False, default=UserType.HUMAN)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-    is_guest = db.Column(db.Boolean, nullable=False, default=False, server_default=sa.text('false'))
-    demo_state = db.Column(db.SmallInteger, nullable=True)
-    demo_remap = db.Column(db.JSON, nullable=True)
-    expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
-    guest_token = db.Column(db.String(64), nullable=True, unique=True)
 
     # Cached vault list for fast GET /api/vaults/ responses
     cached_vault_list = db.Column(db.JSON, nullable=True)
@@ -90,8 +80,6 @@ class User(db.Model):
             'display_name': self.display_name,
             'user_type': type_str,
             'is_admin': self.is_admin,
-            'is_guest': self.is_guest,
-            'demo_state': self.demo_state
         }
 
 
@@ -153,6 +141,11 @@ class Node(db.Model):
     icon = db.Column(db.String(50), nullable=True)
     ai_summary = db.Column(db.Text, nullable=True)
     summary_is_current = db.Column(db.Boolean, nullable=False, default=False)
+    content_kind = db.Column(db.String(32), nullable=False, default='note')
+    authority = db.Column(db.String(32), nullable=False, default='user_note')
+    language = db.Column(db.String(16), nullable=True)
+    tags = db.Column(db.JSON, nullable=False, default=list)
+    metadata_json = db.Column(db.JSON, nullable=False, default=dict)
 
     fts_summary_en = db.Column(postgresql.TSVECTOR(), sa.Computed(
         "setweight(to_tsvector('english', coalesce(ai_summary,'')), 'C')",
@@ -200,6 +193,11 @@ class Node(db.Model):
             'icon': self.icon,
             'ai_summary': self.ai_summary,
             'summary_is_current': self.summary_is_current,
+            'content_kind': self.content_kind,
+            'authority': self.authority,
+            'language': self.language,
+            'tags': self.tags or [],
+            'metadata': self.metadata_json or {},
         }
 
         if include_content:
@@ -297,6 +295,8 @@ class Task(db.Model):
     status = db.Column(db.String(20), nullable=False,
                        default='pending', index=True)
     context_node_ids = db.Column(db.JSON, nullable=False, default=list)
+    requested_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    executed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
 
     # Updated to Timezone Aware
     created_at = db.Column(db.DateTime(timezone=True), nullable=False,
@@ -332,33 +332,156 @@ class Task(db.Model):
             'instruction': self.instruction,
             'status': self.status,
             'context_node_ids': self.context_node_ids,
+            'requested_by_id': self.requested_by_id,
+            'executed_by_id': self.executed_by_id,
             'created_at': self.created_at.isoformat(),
             'finish_summary': self.finish_summary,
             'operations': self.operations,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
 
+class ConnectorInstallation(db.Model):
+    """Configured ingestion connector. Secrets are referenced, never stored here."""
+    __tablename__ = 'connector_installations'
 
-class DemoEvent(db.Model):
-    """
-    Persistent counter rows for demo analytics.
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id', ondelete='CASCADE'), nullable=False, index=True)
+    plugin_name = db.Column(db.String(120), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    mode = db.Column(db.String(20), nullable=False, default='ingest')
+    config = db.Column(db.JSON, nullable=False, default=dict)
+    credential_ref = db.Column(db.String(255), nullable=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
-    Survives guest-user deletion — guest rows are wiped every 2 h,
-    but these tiny event records stay forever so cumulative stats
-    remain meaningful over time.
+    __table_args__ = (db.UniqueConstraint('vault_id', 'name', name='uq_connector_name_per_vault'),)
 
-    event_type values:
-        guest_login      – a new guest session was created
-        phase2_unlock    – the replay finished and the guest went interactive
-        node_created     – a guest manually created a node (phase 2 only,
-                           the auto-created phase-1 nodes are NOT counted)
-    """
-    __tablename__ = 'demo_events'
 
-    id         = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    event_type = db.Column(db.String(32), nullable=False, index=True)
-    created_at = db.Column(
-        db.DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
+class IngestionRun(db.Model):
+    __tablename__ = 'ingestion_runs'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    connector_id = db.Column(db.String(36), db.ForeignKey('connector_installations.id', ondelete='CASCADE'), nullable=False, index=True)
+    requested_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    executed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='pending', index=True)
+    stats = db.Column(db.JSON, nullable=False, default=dict)
+    error = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+class SourceItem(db.Model):
+    """Stable binding between an external item and its canonical Nexidion node."""
+    __tablename__ = 'source_items'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    connector_id = db.Column(db.String(36), db.ForeignKey('connector_installations.id', ondelete='CASCADE'), nullable=False, index=True)
+    external_id = db.Column(db.String(1024), nullable=False)
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id', ondelete='SET NULL'), nullable=True, index=True)
+    source_uri = db.Column(db.Text, nullable=True)
+    source_version = db.Column(db.String(255), nullable=True)
+    content_hash = db.Column(db.String(64), nullable=False)
+    policy = db.Column(db.String(20), nullable=False, default='managed')
+    metadata_json = db.Column(db.JSON, nullable=False, default=dict)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    last_seen_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    external_modified_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    mime_type = db.Column(db.String(255), nullable=True)
+    sync_status = db.Column(db.String(20), nullable=False, default='current')
+
+    __table_args__ = (db.UniqueConstraint('connector_id', 'external_id', name='uq_source_item_external_id'),)
+
+
+class SourceArtifact(db.Model):
+    """Internal immutable source material used for provenance and AI derivation."""
+    __tablename__ = 'source_artifacts'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    connector_id = db.Column(db.String(36), db.ForeignKey('connector_installations.id', ondelete='CASCADE'), nullable=False, index=True)
+    external_id = db.Column(db.String(1024), nullable=False)
+    content_hash = db.Column(db.String(64), nullable=False, index=True)
+    mime_type = db.Column(db.String(255), nullable=False)
+    source_uri = db.Column(db.Text, nullable=True)
+    payload = db.Column(db.LargeBinary, nullable=True)
+    extracted_json = db.Column(db.JSON, nullable=False, default=dict)
+    metadata_json = db.Column(db.JSON, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (db.UniqueConstraint('connector_id', 'external_id', 'content_hash', name='uq_source_artifact_revision'),)
+
+
+class CurationJob(db.Model):
+    __tablename__ = 'curation_jobs'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    artifact_id = db.Column(db.String(36), db.ForeignKey('source_artifacts.id', ondelete='CASCADE'), nullable=False, index=True)
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id', ondelete='CASCADE'), nullable=False, index=True)
+    parent_id = db.Column(db.String(36), db.ForeignKey('nodes.id', ondelete='SET NULL'), nullable=True)
+    mode = db.Column(db.String(32), nullable=False)
+    provider = db.Column(db.String(20), nullable=False)
+    model = db.Column(db.String(255), nullable=True)
+    visual_mode = db.Column(db.String(16), nullable=False, default='off')
+    prompt_version = db.Column(db.String(64), nullable=False, default='pdf-curation-v1')
+    status = db.Column(db.String(20), nullable=False, default='pending', index=True)
+    error = db.Column(db.Text, nullable=True)
+    result_json = db.Column(db.JSON, nullable=False, default=dict)
+    requested_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    executed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+
+class NodeSourceLink(db.Model):
+    """Page-level provenance from a generated node to an internal source artifact."""
+    __tablename__ = 'node_source_links'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id', ondelete='CASCADE'), nullable=False, index=True)
+    artifact_id = db.Column(db.String(36), db.ForeignKey('source_artifacts.id', ondelete='CASCADE'), nullable=False, index=True)
+    curation_job_id = db.Column(db.String(36), db.ForeignKey('curation_jobs.id', ondelete='CASCADE'), nullable=False, index=True)
+    page_from = db.Column(db.Integer, nullable=True)
+    page_to = db.Column(db.Integer, nullable=True)
+    source_content_hash = db.Column(db.String(64), nullable=False)
+    is_stale = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class ImageAsset(db.Model):
+    """Vault-scoped managed image with optional source provenance."""
+    __tablename__ = 'image_assets'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    vault_id = db.Column(db.Integer, db.ForeignKey('vaults.id', ondelete='CASCADE'), nullable=False, index=True)
+    source_artifact_id = db.Column(db.String(36), db.ForeignKey('source_artifacts.id', ondelete='SET NULL'), nullable=True, index=True)
+    content_hash = db.Column(db.String(64), nullable=False, index=True)
+    storage_key = db.Column(db.String(255), nullable=False, unique=True)
+    original_filename = db.Column(db.String(255), nullable=True)
+    media_type = db.Column(db.String(100), nullable=False)
+    width = db.Column(db.Integer, nullable=True)
+    height = db.Column(db.Integer, nullable=True)
+    page_number = db.Column(db.Integer, nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (db.UniqueConstraint('vault_id', 'content_hash', name='uq_image_asset_hash_per_vault'),)
+
+
+class SummaryArtifact(db.Model):
+    """Auditable history for the fast current summary cached on Node."""
+    __tablename__ = 'summary_artifacts'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    node_id = db.Column(db.String(36), db.ForeignKey('nodes.id', ondelete='CASCADE'), nullable=False, index=True)
+    source_content_hash = db.Column(db.String(64), nullable=False, index=True)
+    summary = db.Column(db.Text, nullable=True)
+    provider = db.Column(db.String(20), nullable=False)
+    model = db.Column(db.String(255), nullable=True)
+    prompt_version = db.Column(db.String(64), nullable=False, default='summary-v1')
+    visual_mode = db.Column(db.String(16), nullable=False, default='off')
+    used_vision = db.Column(db.Boolean, nullable=False, default=False)
+    status = db.Column(db.String(20), nullable=False, default='pending', index=True)
+    error = db.Column(db.Text, nullable=True)
+    requested_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    executed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)

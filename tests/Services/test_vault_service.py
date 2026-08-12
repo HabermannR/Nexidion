@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import patch
 from backend.services import vault_service
-from backend.models import Vault, Node, Version, User, VaultRole, DemoState
-from backend.exceptions import InsufficientVaultRoleError, DemoLockError
+from backend.models import Vault, Node, Version, User, VaultRole
+from backend.exceptions import InsufficientVaultRoleError
 from backend.services.vault_service import assert_write_allowed, get_vault_access
 
 
@@ -335,25 +335,15 @@ def test_rename_vault_same_name_different_users(db_session, test_user_1_obj, tes
 
 
 def test_assert_write_allowed_permissions():
-    """Testet die Durchsetzung der Schreibrechte und des Demo-Locks."""
+    """Testet die Durchsetzung der Schreibrechte."""
 
     # 1. Editor passes
-    user_normal = User(is_guest=False)
+    user_normal = User()
     assert_write_allowed(VaultRole.EDITOR, user_normal)  # Should not raise any error
 
     # 2. Viewer raises InsufficientVaultRoleError
     with pytest.raises(InsufficientVaultRoleError, match="read-only access"):
         assert_write_allowed(VaultRole.VIEWER, user_normal)
-
-    # 3. Guest in READ_ONLY raises DemoLockError (even if they have EDITOR role)
-    user_guest_locked = User(is_guest=True, demo_state=DemoState.READ_ONLY)
-    with pytest.raises(DemoLockError, match="Complete the demo task"):
-        assert_write_allowed(VaultRole.EDITOR, user_guest_locked)
-
-    # 4. Guest in UNLOCKED passes
-    user_guest_unlocked = User(is_guest=True, demo_state=DemoState.UNLOCKED)
-    assert_write_allowed(VaultRole.EDITOR, user_guest_unlocked)
-
 
 def test_get_vault_access_owner_always_editor(test_user_1_obj, test_vault_1_obj):  # <--- test_vault_1_obj
     """Testet, dass der Vault-Besitzer immer EDITOR-Rechte erhält."""

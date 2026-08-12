@@ -133,15 +133,15 @@ If you want to perform bulk actions (like exporting or using tools on multiple n
 
 ## 7. Using Images in Your Notes
 
-Nexidion supports embedding images stored in a designated secure folder on the server. Unlike internal node links, images use standard Markdown syntax:
+Nexidion stores images as managed, vault-scoped assets. Image URLs contain the vault
+and asset UUID and are authorized using the same vault membership as nodes:
 
 ```markdown
-![Alt text](/api/image/filename.png)
+![Alt text](/api/vaults/12/assets/asset-uuid)
 ```
 
-**Setup:** A server administrator must define the `SECURE_IMAGE_FOLDER` path in the `.env` configuration file. Place image files directly into that folder — there is no upload UI at this time. Images are served through a JWT-authenticated endpoint, so they are only accessible to logged-in users.
-
-> **Note:** This is different from the `[[...]]` internal link syntax used for nodes. Images always use the standard Markdown `![](...)` format with the `/api/image/` path prefix.
+PDF extraction creates these assets automatically. Arbitrary remote image URLs are
+blocked so authentication credentials cannot be sent to another host.
 
 ---
 

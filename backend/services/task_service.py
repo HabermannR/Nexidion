@@ -8,9 +8,7 @@ Sie wird von der API-Schicht (Blueprints) aufgerufen und interagiert
 direkt mit den Datenbank-Models.
 """
 
-from flask import current_app
-from sqlalchemy import or_
-from backend.models import db, Task, User, DemoState, UserType
+from backend.models import db, Task, User, UserType
 from backend.services.vault_service import _verify_vault_access
 
 # Valid status values, used for validation across create and filter operations.
@@ -44,27 +42,13 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
         # If the LLM has no access, block the queue and throw an error to the frontend!
         raise PermissionError("Warning: The AI Agent does not have access to this vault. Please add the Agent as a member first.")
 
-    # 3. Create the task
-    user = db.session.get(User, user_id)
-    if user and user.is_guest:
-        if user.demo_state == DemoState.READ_ONLY:
-            task = Task(
-                vault_id=vault_id,
-                instruction=instruction_stripped,
-                context_node_ids=context_node_ids,
-                status='pending_demo',
-            )
-            db.session.add(task)
-            db.session.commit()
-            return task
-        else:
-            raise PermissionError("Demo accounts cannot submit agent tasks.")
-
     try:
         task = Task(
             vault_id=vault_id,
             instruction=instruction_stripped,
             context_node_ids=context_node_ids,
+            requested_by_id=user_id,
+            executed_by_id=agent.id,
         )
         db.session.add(task)
         db.session.commit()

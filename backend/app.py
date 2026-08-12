@@ -1,21 +1,19 @@
 import os
 import logging
-from datetime import datetime, timezone
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 import mimetypes
 from backend.extensions import limiter
-from apscheduler.schedulers.background import BackgroundScheduler
 
 # Load environment variables
 load_dotenv()
 
 from backend.config import Config
-from backend.models import db, User
+from backend.models import db
 
 # Import API Blueprints
 from backend.api.auth import auth_bp
@@ -26,6 +24,7 @@ from backend.api.admin import admin_bp
 from backend.api.tasks import tasks_bp
 from backend.api.system import system_bp
 from backend.api.ingest import ingest_bp
+from backend.api.connectors import connectors_bp
 from backend.cli import register_commands
 
 migrate = Migrate()
@@ -77,6 +76,7 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(ingest_bp)
+    app.register_blueprint(connectors_bp)
     app.register_blueprint(system_bp)
 
     # CLI Commands
@@ -84,29 +84,6 @@ def create_app(config_class=Config):
 
     # Frontend Serving (for production)
     register_frontend_serving(app)
-
-    # Guest cleanup scheduler — only needed when demo mode is active
-    if app.config.get("DEMO_MODE_ENABLED", False):
-        from backend.services.user_service import delete_guest_user
-
-        def _cleanup_expired_guests():
-            with app.app_context():
-                expired = User.query.filter(
-                    User.is_guest == True,
-                    User.expires_at < datetime.now(timezone.utc)
-                ).all()
-                for user in expired:
-                    try:
-                        delete_guest_user(user.id)
-                    except Exception as exc:
-                        logging.warning(
-                            f"[guest-cleanup] Failed to delete guest {user.id} "
-                            f"('{user.username}'): {exc}"
-                        )
-
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(_cleanup_expired_guests, 'interval', minutes=15)
-        scheduler.start()
 
     return app
 
@@ -122,6 +99,8 @@ def register_frontend_serving(app):
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve_frontend(path):
+        if path == 'api' or path.startswith('api/'):
+            return jsonify({'error': 'API endpoint not found.'}), 404
         if os.getenv('FLASK_ENV') != 'production':
             return "Frontend serving is disabled in development. Use the React dev server.", 404
 

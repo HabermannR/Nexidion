@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import apiClient from '../api/apiClient'; // Stelle sicher, dass der Pfad korrekt ist
 
 export default function SecureImage({ src, alt, ...props }) {
+    const isManagedAsset = /^\/api\/vaults\/\d+\/assets\/[0-9a-f-]{36}$/i.test(src || '');
     // ==========================================================
     // SÄULE 2: DATENLADUNG MIT useQuery
     // ==========================================================
@@ -15,7 +16,7 @@ export default function SecureImage({ src, alt, ...props }) {
 
         queryFn: async () => {
             // Führe die Anfrage nur aus, wenn ein `src`-Pfad vorhanden ist.
-            if (!src) return null;
+            if (!isManagedAsset) throw new Error('Blocked non-managed image URL.');
 
             // Lade das Bild als Blob (binäre Daten).
             const response = await apiClient.get(src, { responseType: 'blob' });
@@ -25,7 +26,7 @@ export default function SecureImage({ src, alt, ...props }) {
         },
 
         // Wichtige Optionen für Bild-Caching:
-        enabled: !!src, // Der Query wird nur ausgeführt, wenn `src` ein gültiger String ist.
+        enabled: !!src && isManagedAsset,
         staleTime: 1000 * 60 * 60, // 1 Stunde: Bilder ändern sich selten, aggressives Caching ist gut.
         gcTime: 1000 * 60 * 60,    // Garbage Collection Time ebenfalls hoch ansetzen.
         refetchOnWindowFocus: false, // Es ist unnötig, Bilder bei jedem Fenster-Fokus neu zu laden.
@@ -49,6 +50,10 @@ export default function SecureImage({ src, alt, ...props }) {
     // ==========================================================
     // RENDER-LOGIK
     // ==========================================================
+
+    if (!isManagedAsset) {
+        return <span className="image-error" {...props}>{alt || 'External image blocked'}</span>;
+    }
 
     // Fall 1: Fehler beim Laden
     if (isError) {

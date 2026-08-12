@@ -9,7 +9,27 @@ import re
 
 # Importiere die Services und Modelle (inkl. _verify_vault_access für Lesevorgänge!)
 from backend.services.vault_service import get_vault_access, assert_write_allowed, _verify_vault_access
-from backend.models import db, Node, Version, Vault, User, DemoState
+from backend.models import db, Node, Version, Vault, User, UserType, SourceItem
+
+PRIVATE_ICON = "bxs-no-entry"
+
+
+def _is_machine_actor(user_id: int) -> bool:
+    user = db.session.get(User, user_id)
+    return bool(user and user.user_type == UserType.LLM_ASSISTANT)
+
+
+def _assert_node_readable(node: Node, user_id: int) -> None:
+    if node.icon == PRIVATE_ICON and _is_machine_actor(user_id):
+        raise PermissionError("This node is private and unavailable to machine actors.")
+
+
+def _assert_source_mutable(node_id: str, allow_managed_source: bool = False) -> None:
+    if allow_managed_source:
+        return
+    binding = SourceItem.query.filter_by(node_id=node_id).first()
+    if binding and binding.policy in ("snapshot", "managed"):
+        raise PermissionError("This node is a frozen canonical source; update it through its connector.")
 
 DEFAULT_NODE_ICON = "bxs-file-doc"
 icon_groups: List[Dict[str, Any]] = [
@@ -183,6 +203,7 @@ def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user
     for node in nodes:
         if node.vault_id != vault_id:
             raise PermissionError(f"Permission denied to access node with ID: {node.id}")
+        _assert_node_readable(node, user_id)
 
     # Schritt 4: Wenn alle Prüfungen bestanden wurden, die Liste der Nodes zurückgeben
     return nodes
@@ -222,6 +243,7 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
             'id': n.id,
             'title': title,
             'parent_id': n.parent_id,
+            'icon': n.icon,
             'ai_summary': n.ai_summary,
             'summary_is_current': n.summary_is_current,
             'children': []
@@ -293,6 +315,8 @@ def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False) -> lis
         .order_by(Version.title)
         .all()
     )
+    if _is_machine_actor(user_id):
+        nodes = [node for node in nodes if node.icon != PRIVATE_ICON]
     return [node.to_dict(include_content=True) for node in nodes]
 
 
@@ -315,6 +339,8 @@ def find_node_by_title(title: str, vault_id: int, user_id: int) -> dict | None:
         .scalar_subquery()
     )
     node = Node.query.options(joinedload(Node.current_version_object)).filter(Node.id == subquery).first()
+    if node:
+        _assert_node_readable(node, user_id)
     return node.to_dict(include_content=True) if node else None
 
 
@@ -343,7 +369,10 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
         .join(Node.current_version_object)
         .filter(
             Node.vault_id == vault_id,
+            *([or_(Node.icon.is_(None), Node.icon != PRIVATE_ICON)]
+              if _is_machine_actor(user_id) else []),
             or_(
+                Version.title.ilike(f"%{q}%"),
                 Version.fts_en.op("@@")(tsquery_en),
                 Version.fts_de.op("@@")(tsquery_de),
                 Node.fts_summary_en.op("@@")(tsquery_en),
@@ -372,6 +401,7 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
     )
     if not node:
         return None
+    _assert_node_readable(node, user_id)
 
     node_dict = node.to_dict(include_content=True)
 
@@ -420,6 +450,7 @@ def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] |
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         return None
+    _assert_node_readable(node, user_id)
 
     stmt = (
         select(
@@ -458,6 +489,7 @@ def get_version_by_id(version_id: int, node_id: str, vault_id: int, user_id: int
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         return None
+    _assert_node_readable(node, user_id)
 
     stmt = (
         select(Version)
@@ -599,10 +631,6 @@ def create_node(
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     vault, role = get_vault_access(vault_id, author_id)
     user = db.session.get(User, author_id)
-    if user and user.is_guest:
-        count = Node.query.filter_by(vault_id=vault_id).count()
-        if count >= 100:
-            raise ValueError("Demo accounts are limited to 100 nodes.")
     assert_write_allowed(role, user)
 
     if not title or not title.strip():
@@ -634,19 +662,14 @@ def create_node(
     )
     db.session.add(initial_version)
 
-    # Track nodes created manually by guests in phase 2 (UNLOCKED).
-    # Phase-1 nodes are bulk-created during vault import and are NOT counted.
-    if user and user.is_guest and user.demo_state == DemoState.UNLOCKED:
-        from backend.models import DemoEvent
-        db.session.add(DemoEvent(event_type='node_created'))
-
     db.session.commit()
     rebuild_vault_tree_cache(vault_id)
     return new_node
 
 
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,
-                content: Optional[str] = None) -> Node:
+                content: Optional[str] = None, allow_managed_source: bool = False) -> Node:
+    _assert_source_mutable(node_id, allow_managed_source)
     """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt IMMER eine neue Version."""
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
@@ -682,6 +705,7 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     )
     db.session.add(new_version)
     node.current_version = next_version_number
+    node.summary_is_current = False
     db.session.commit()
 
     updated_node = Node.query.options(joinedload(Node.current_version_object)).filter_by(
@@ -699,8 +723,10 @@ def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         raise ValueError("Node not found in the specified vault.")
-    node.ai_summary = ai_summary
-    node.summary_is_current = True
+    from backend.services.summary_service import start_summary, complete_summary
+    artifact = start_summary(node, provider="manual", model=None,
+                             requested_by_id=user_id, executed_by_id=user_id)
+    complete_summary(artifact, ai_summary)
     db.session.commit()
     db.session.refresh(node)
     rebuild_vault_tree_cache(vault_id)
@@ -754,6 +780,7 @@ def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[s
 
 
 def delete_node(node_id: str, vault_id: int, user_id: int):
+    _assert_source_mutable(node_id)
     """
     Löscht einen Node. Kind-Nodes werden dabei an den Parent des gelöschten
     Nodes weitergereicht ("adoptiert").

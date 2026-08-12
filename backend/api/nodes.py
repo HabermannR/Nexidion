@@ -8,7 +8,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from backend.extensions import limiter
 # Import the services and the new exceptions +++
 from backend.services import node_service
-from backend.exceptions import DemoLockError, InsufficientVaultRoleError
+from backend.exceptions import InsufficientVaultRoleError
 
 # The blueprint contains the vault_id as a dynamic part of the prefix.
 # All routes are relative to this prefix.
@@ -300,8 +300,6 @@ def create_node(vault_id: int):
         )
         return jsonify(new_node.to_dict()), 201
 
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
@@ -334,8 +332,6 @@ def update_node(vault_id: int, node_id: str):
         )
         return jsonify(updated_node.to_dict())
 
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
@@ -355,8 +351,6 @@ def move_node_route(vault_id: int, node_id: str):
         updated_node = node_service.move_node(node_id, data['parent_id'], vault_id, user_id)
         return jsonify(updated_node.to_dict())
 
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
@@ -375,8 +369,6 @@ def set_node_icon_route(vault_id: int, node_id: str):
         updated_node = node_service.update_node_icon(node_id, vault_id, user_id, data['icon'])
         return jsonify(updated_node.to_dict())
 
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
@@ -392,8 +384,6 @@ def delete_node(vault_id: int, node_id: str):
         node_service.delete_node(node_id, vault_id, user_id)
         return jsonify({"message": "Node deleted successfully"}), 200
 
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
@@ -413,12 +403,59 @@ def update_ai_summary(vault_id: int, node_id: str):
         updated_node = node_service.update_node_ai_summary(node_id, vault_id, user_id, data['ai_summary'])
         return jsonify(updated_node.to_dict())
 
-    except DemoLockError as e:
-        return jsonify({"error": str(e)}), 423
     except (PermissionError, InsufficientVaultRoleError) as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
+
+
+@nodes_bp.route('/<string:node_id>/summary/generate', methods=['POST'], strict_slashes=False)
+@jwt_required()
+def generate_ai_summary(vault_id: int, node_id: str):
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    try:
+        from backend.models import User
+        from backend.services.vault_service import get_vault_access, assert_write_allowed
+        _, role = get_vault_access(vault_id, user_id)
+        assert_write_allowed(role, db.session.get(User, user_id))
+        node_data = node_service.get_node_by_id(node_id, vault_id, user_id)
+        if not node_data:
+            return jsonify({"error": "Node not found"}), 404
+        from backend.models import Node
+        from backend.services.summary_service import request_summary
+        artifact = request_summary(
+            db.session.get(Node, node_id), data.get('provider', 'local'),
+            data.get('model'), user_id, visual_mode=data.get('visual_mode', 'off')
+        )
+        return jsonify({"id": artifact.id, "status": artifact.status,
+                        "provider": artifact.provider, "model": artifact.model}), 202
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@nodes_bp.route('/<string:node_id>/summary/history', methods=['GET'], strict_slashes=False)
+@jwt_required()
+def get_ai_summary_history(vault_id: int, node_id: str):
+    user_id = int(get_jwt_identity())
+    try:
+        if not node_service.get_node_by_id(node_id, vault_id, user_id):
+            return jsonify({"error": "Node not found"}), 404
+        from backend.models import SummaryArtifact
+        rows = SummaryArtifact.query.filter_by(node_id=node_id).order_by(SummaryArtifact.created_at.desc()).all()
+        return jsonify([{
+            "id": row.id, "source_content_hash": row.source_content_hash,
+            "summary": row.summary, "provider": row.provider, "model": row.model,
+            "prompt_version": row.prompt_version, "visual_mode": row.visual_mode,
+            "used_vision": row.used_vision, "status": row.status, "error": row.error,
+            "requested_by_id": row.requested_by_id, "executed_by_id": row.executed_by_id,
+            "created_at": row.created_at.isoformat(),
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        } for row in rows])
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
 
 
 # ========================================================================

@@ -81,7 +81,15 @@ kerntest.py
 # Generated outputs
 /exports/
 /secure_images/
+/asset_storage/
 backup/
 *:Zone.Identifier
 nexidion-runner.service
 remark-internal-links/
+
+# Local Claude Code project/infra notes (contains private infra details)
+CLAUDE.md
+
+# Security planning docs — describe unpatched gaps in a live service. Keep out of the
+# public repo until the fix has shipped.
+PRIVACY-PLAN.md

@@ -1,5 +1,4 @@
 # tests/services/test_import_service.py
-
 import json
 import pytest
 from pathlib import Path
@@ -7,8 +6,7 @@ from datetime import datetime, timezone
 
 from backend.services.import_service import import_vault
 from backend.services import vault_service
-from backend.models import db, Vault, Node, Version, DemoState
-from backend.exceptions import DemoLockError
+from backend.models import db, Vault, Node, Version
 
 
 @pytest.fixture
@@ -151,19 +149,4 @@ def test_import_vault_name_collision(db_session, test_user_1_obj, valid_export_d
 
     # Act & Assert
     with pytest.raises(ValueError, match="You already own a vault named 'Exported Vault'"):
-        import_vault(valid_export_data, test_user_1_obj.id)
-
-
-def test_import_vault_demo_lock(db_session, test_user_1_obj, valid_export_data):
-    """Tests that guest users in READ_ONLY demo state cannot import multiple vaults."""
-    # Arrange: Set user to locked guest
-    test_user_1_obj.is_guest = True
-    test_user_1_obj.demo_state = DemoState.READ_ONLY
-    db.session.commit()
-
-    # The first import should succeed (automatic demo setup)
-    import_vault(valid_export_data, test_user_1_obj.id)
-
-    # Act & Assert: Everything after the first vault should be forbidden
-    with pytest.raises(DemoLockError, match=r"Demo accounts are limited to 1 vault\(s\)\."):
         import_vault(valid_export_data, test_user_1_obj.id)

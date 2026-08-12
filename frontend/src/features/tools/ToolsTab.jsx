@@ -1,6 +1,6 @@
 // src/features/workspace/ToolsTab.jsx
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import { useParams } from 'react-router-dom';
 
@@ -22,14 +22,27 @@ export default function ToolsTab() {
     const { vaultId } = useParams();
     const toast = useToast();
     const { data: systemConfig } = useSystemConfigQuery();
-    const isDemo = systemConfig?.demo_mode_enabled === true;
 
     const [copyContentStatus, setCopyContentStatus] = useState('idle'); // idle | copying | success
     const [copyTreeStatus, setCopyTreeStatus] = useState('idle');
+    const [copySummariesStatus, setCopySummariesStatus] = useState('idle');
     const [printStatus, setPrintStatus] = useState('idle'); // idle | preparing | preparing_all
     const [exportStatus, setExportStatus] = useState('idle'); // idle | exporting | success
     const [importStatus, setImportStatus] = useState('idle'); // idle | importing | success
     const [ingestStatus, setIngestStatus] = useState('idle'); // idle | ingesting
+    const [lastIngestion, setLastIngestion] = useState(null);
+    const [pdfMode, setPdfMode] = useState('extract');
+    const [pdfGranularity, setPdfGranularity] = useState('auto');
+    const [pdfProvider, setPdfProvider] = useState('local');
+    const [pdfModel, setPdfModel] = useState('');
+    const [pdfVisualMode, setPdfVisualMode] = useState('off');
+
+    useEffect(() => {
+        if (systemConfig?.summary_providers?.local?.configured === false &&
+            systemConfig?.summary_providers?.openai?.configured) {
+            setPdfProvider('openai');
+        }
+    }, [systemConfig]);
 
     // Toggles for Copy Tree
     const [includeUuid, setIncludeUuid] = useState(true);
@@ -133,6 +146,42 @@ export default function ToolsTab() {
         }
     }, [treeData, vaultId, includeUuid, includeSummary, toast]);
 
+    const handleCopySummariesOnly = useCallback(async () => {
+        setCopySummariesStatus('copying');
+        try {
+            const res = await apiClient.get(`/api/vaults/${vaultId}/nodes`, {
+                params: { format: 'agent_tree' }
+            });
+            const summaryTree = res.data.tree || res.data;
+
+            const buildSummaryText = (nodes, depth = 0) => {
+                let text = '';
+                const indent = '  '.repeat(depth);
+                for (const node of nodes) {
+                    text += `${indent}- ${node.title}`;
+                    if (includeUuid) text += ` (${node.id})`;
+                    text += '\n';
+
+                    const summaryIndent = '  '.repeat(depth + 1);
+                    const summary = node.ai_summary?.trim() || '[No AI summary]';
+                    text += `${summaryIndent}${summary.replace(/\n/g, `\n${summaryIndent}`)}\n`;
+
+                    if (node.children?.length) {
+                        text += buildSummaryText(node.children, depth + 1);
+                    }
+                }
+                return text;
+            };
+
+            await navigator.clipboard.writeText(buildSummaryText(summaryTree).trim());
+            setCopySummariesStatus('success');
+            setTimeout(() => setCopySummariesStatus('idle'), 2000);
+        } catch (error) {
+            toast.error(`Copy failed: ${error.message || 'Failed to copy AI summaries.'}`);
+            setCopySummariesStatus('idle');
+        }
+    }, [vaultId, includeUuid, toast]);
+
     const handlePrintSelected = useCallback(async () => {
         if (!hasSelection) return;
         setPrintStatus('preparing');
@@ -202,7 +251,7 @@ export default function ToolsTab() {
                     const text = await error.response.data.text();
                     const json = JSON.parse(text);
                     if (json.error) errorMsg = json.error;
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
             } else if (error.response?.data?.error) {
                 errorMsg = error.response.data.error;
             } else if (error.message) {
@@ -258,15 +307,47 @@ export default function ToolsTab() {
         setIngestStatus('ingesting');
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('vault_id', vaultId);
+        formData.append('mode', pdfMode);
+        formData.append('granularity', pdfGranularity);
+        if (pdfMode !== 'extract') {
+            formData.append('provider', pdfProvider);
+            formData.append('visual_mode', pdfVisualMode);
+            if (pdfModel.trim()) formData.append('model', pdfModel.trim());
+        }
         if (ingestTargetId) {
             formData.append('parent_id', ingestTargetId);
         }
 
         try {
-            await apiClient.post(`/api/vaults/${vaultId}/ingest/pdf`, formData, {
+            const response = await apiClient.post('/api/connectors/pdf/ingest', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            toast.success('PDF ingestion started! The document will appear in your tree automatically once finished.');
+            const result = response.data;
+            setLastIngestion(result);
+            const stats = result.stats || {};
+            if (result.curation_job) {
+                toast.success('PDF extracted and AI curation queued.');
+                const jobId = result.curation_job.id;
+                for (let attempt = 0; attempt < 120; attempt += 1) {
+                    await new Promise(resolve => window.setTimeout(resolve, 2500));
+                    const jobResponse = await apiClient.get(`/api/connectors/curation-jobs/${jobId}`);
+                    const job = jobResponse.data;
+                    setLastIngestion(current => ({ ...current, curation_job: job }));
+                    if (job.status === 'completed') {
+                        toast.success(`AI curation complete: ${job.result?.count || 0} synthesis nodes created.`);
+                        window.setTimeout(() => window.location.reload(), 1000);
+                        break;
+                    }
+                    if (job.status === 'failed') {
+                        toast.error(`AI curation failed: ${job.error || 'Unknown error'}`);
+                        break;
+                    }
+                }
+            } else {
+                toast.success(`PDF extraction complete: ${stats.created || 0} created, ${stats.updated || 0} updated, ${stats.unchanged || 0} unchanged.`);
+                window.setTimeout(() => window.location.reload(), 1200);
+            }
         } catch (error) {
             const errorMsg = error.response?.data?.error || error.message || 'Failed to ingest PDF.';
             toast.error(`Ingestion failed: ${errorMsg}`);
@@ -326,11 +407,37 @@ export default function ToolsTab() {
                         {printStatus === 'preparing_all' ? 'Preparing Entire Vault...' : 'Print Entire Vault'}
                     </Button>
 
-                    {/* AI INGESTION SECTION — hidden in demo mode */}
-                    {!isDemo && (
-                        <>
+                    <>
                             <hr className="my-2 text-muted" />
-                            <h6 className="text-muted mb-2">AI Document Ingestion</h6>
+                            <h6 className="text-muted mb-2">PDF Ingestion</h6>
+                            <Form.Select size="sm" value={pdfMode} onChange={e => setPdfMode(e.target.value)}>
+                                <option value="extract">Extract PDF</option>
+                                <option value="extract_and_curate">Extract + AI Curate</option>
+                                <option value="curate_only">AI Curate Only</option>
+                            </Form.Select>
+                            {pdfMode !== 'curate_only' && (
+                                <Form.Select size="sm" value={pdfGranularity} onChange={e => setPdfGranularity(e.target.value)}>
+                                    <option value="auto">Structure: Auto (outline, otherwise pages)</option>
+                                    <option value="document">Structure: One document</option>
+                                    <option value="chapter">Structure: Chapters</option>
+                                    <option value="page">Structure: Pages</option>
+                                </Form.Select>
+                            )}
+                            {pdfMode !== 'extract' && (
+                                <>
+                                    <Form.Select size="sm" value={pdfProvider} onChange={e => setPdfProvider(e.target.value)}>
+                                        <option value="local" disabled={!systemConfig?.summary_providers?.local?.configured}>Local LLM</option>
+                                        <option value="openai" disabled={!systemConfig?.summary_providers?.openai?.configured}>OpenAI</option>
+                                    </Form.Select>
+                                    <Form.Control size="sm" value={pdfModel} onChange={e => setPdfModel(e.target.value)}
+                                        placeholder="Model (leave blank for default)" />
+                                    <Form.Select size="sm" value={pdfVisualMode} onChange={e => setPdfVisualMode(e.target.value)}>
+                                        <option value="off">Visuals: Off</option>
+                                        <option value="auto">Visuals: Auto</option>
+                                        <option value="all">Visuals: All pages</option>
+                                    </Form.Select>
+                                </>
+                            )}
 
                             <input
                                 type="file"
@@ -357,8 +464,14 @@ export default function ToolsTab() {
                                     Please select exactly 1 node (or 0 nodes) to use as a target folder.
                                 </small>
                             )}
-                        </>
-                    )}
+                            {lastIngestion && (
+                                <small className="text-success">
+                                    {lastIngestion.curation_job
+                                        ? `Curation job ${lastIngestion.curation_job.id}: ${lastIngestion.curation_job.status}`
+                                        : `Run ${lastIngestion.id}: ${lastIngestion.stats?.created || 0} created, ${lastIngestion.stats?.updated || 0} updated, ${lastIngestion.stats?.unchanged || 0} unchanged.`}
+                                </small>
+                            )}
+                    </>
 
                     <hr className="my-2 text-muted" />
 
@@ -439,6 +552,19 @@ export default function ToolsTab() {
                         {copyTreeStatus === 'copying' && 'Copying…'}
                         {copyTreeStatus === 'success' && '✓ Copied!'}
                         {(copyTreeStatus === 'idle' || copyTreeStatus === 'error') && 'Copy Full Tree Structure'}
+                    </Button>
+
+                    <Button
+                        variant="outline-info"
+                        size="sm"
+                        onClick={handleCopySummariesOnly}
+                        disabled={!hasNodes || copySummariesStatus === 'copying'}
+                        title="Copy titles, hierarchy, and AI summaries without node content"
+                    >
+                        <i className="bx bx-brain me-1"></i>
+                        {copySummariesStatus === 'copying' && 'Copying…'}
+                        {copySummariesStatus === 'success' && '✓ Copied!'}
+                        {(copySummariesStatus === 'idle' || copySummariesStatus === 'error') && 'Copy AI Summaries Only'}
                     </Button>
                 </div>
             </div>

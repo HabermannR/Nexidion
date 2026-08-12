@@ -11,6 +11,12 @@ services:
     environment:
       - FLASK_ENV=production
       - APP_ENV=production
+      - ASSET_STORAGE_FOLDER=/app/asset_storage
+      - LOCAL_LLM_URL=${DOCKER_LOCAL_LLM_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - nexidion-asset-data:/app/asset_storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,6 +39,9 @@ services:
     environment:
       - FLASK_ENV=production
       - APP_ENV=production
+      - LOCAL_LLM_URL=${DOCKER_LOCAL_LLM_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["python", "task_runner.py"]
     working_dir: /app
     depends_on:
@@ -63,3 +72,4 @@ services:
 
 volumes:
   nexidion-db-data:
+  nexidion-asset-data:

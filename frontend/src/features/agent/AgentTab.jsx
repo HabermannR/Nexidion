@@ -5,10 +5,8 @@ import { Button, Form } from 'react-bootstrap';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../workspace/workspaceStore';
 import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery';
-import { useUserQuery } from '../auth/useUserQuery';
 import apiClient from '../../api/apiClient';
 import { useToast } from '../../components/ToastProvider';
-import { useSystemConfigQuery } from '../auth/useSystemConfigQuery';
 
 import './AgentTab.css';
 
@@ -303,18 +301,6 @@ export default function AgentTab() {
             .sort((a, b) => a.title.localeCompare(b.title));
     }, [selectedNodeIds, allNodesFlat]);
 
-    const { data: user } = useUserQuery();
-    const { data: systemConfig } = useSystemConfigQuery();
-
-    // For READ_ONLY demo guests, prefill the instruction with the scripted demo task.
-    const isReadOnlyGuest = user?.is_guest && user?.demo_state === 1;
-    const demoInstruction = systemConfig?.demo_instruction || '';
-
-    useEffect(() => {
-        if (isReadOnlyGuest && demoInstruction && !instruction) {
-            setInstruction(demoInstruction);
-        }
-    }, [isReadOnlyGuest, demoInstruction]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const { data: tasks = [], isLoading: loadingTasks } = useQuery({
         queryKey: ['agentTasks', vaultId, statusFilter],
@@ -332,8 +318,6 @@ export default function AgentTab() {
             return active ? 3000 : 5000;
         },
     });
-
-    const hasActiveTask = tasks.some(t => t.status === 'processing' || t.status === 'pending');
 
     // Track previous task statuses so we can detect completions.
     const prevTaskStatusesRef = useRef({});
@@ -357,8 +341,6 @@ export default function AgentTab() {
         if (anyJustCompleted) {
             // Refresh the vault tree so new/moved/deleted nodes appear immediately.
             queryClient.invalidateQueries({ queryKey: ['vaultTree', vaultId] });
-            // Refresh the user so demo_state changes (READ_ONLY → UNLOCKED) are reflected.
-            queryClient.invalidateQueries({ queryKey: ['user'] });
             // Reload the open node's content — but not if the user is mid-edit,
             // which would silently discard their unsaved changes.
             if (nodeId && !isEditingNode) {
@@ -432,13 +414,6 @@ export default function AgentTab() {
                     disabled={isSending}
                     style={{ resize: 'vertical', fontSize: '0.82rem' }}
                 />
-
-                {isReadOnlyGuest && (
-                    <div className="mt-2 px-1 d-flex align-items-start gap-2" style={{ fontSize: '0.78rem', color: 'var(--bs-info)' }}>
-                        <span>💡</span>
-                        <span>This is the scripted demo task. Hit <strong>Queue Task</strong> to watch the AI agent work live.</span>
-                    </div>
-                )}
 
                 <div className="d-grid mt-3">
                     <Button

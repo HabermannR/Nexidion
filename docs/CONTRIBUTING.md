@@ -178,7 +178,7 @@ Copy `.env.example` to `.env` and adjust the values. All variables are loaded by
 | `OPENAI_MODEL` | No | `gpt-5.4`      | Model name passed to the OpenAI-compatible API. |
 | `OPENAI_BASE_URL` | No | OpenAI default | Override to point at a local LLM (e.g. Ollama). |
 | `NEXIDION_POLL_INTERVAL` | No | `5`            | How often (seconds) the Task Runner polls for new tasks. |
-| `SECURE_IMAGE_FOLDER` | No | —              | Absolute path to the folder from which `/api/image/<filename>` serves images. |
+| `ASSET_STORAGE_FOLDER` | No | `./asset_storage` | Persistent managed-image storage; mount it as a Docker volume. |
 
 ---
 
@@ -195,13 +195,15 @@ The backend is a standard **Flask** application using **SQLAlchemy** (with Flask
 
 ### Secure image serving
 
-Images are served from a designated folder on the server filesystem, defined by `SECURE_IMAGE_FOLDER` in `.env`. The endpoint at `GET /api/image/<filename>` (`backend/api/images.py`) requires a valid JWT — unauthenticated requests are rejected. There is currently no upload UI; files are placed in the folder manually by an admin. Images are embedded in notes using standard Markdown syntax:
+Images are database-backed, vault-scoped assets. Both upload and download require
+vault access, and the binary storage is configured with `ASSET_STORAGE_FOLDER`:
 
 ```markdown
-![Alt text](/api/image/filename.png)
+![Alt text](/api/vaults/12/assets/asset-uuid)
 ```
 
-This is intentionally different from the `[[...]]` internal node link syntax.
+Legacy folder references can be audited and converted with `flask
+convert-legacy-images FOLDER`; it is a dry run unless `--apply` is supplied.
 
 ### Adding a new API endpoint
 
@@ -365,7 +367,5 @@ cd frontend && npm run lint
 These are tracked issues that contributors should be aware of before touching the related areas:
 
 - **AI buttons always visible:** The frontend currently shows AI Agent UI controls even when no Task Runner is running. Tasks queue silently to `pending` with no user feedback. A worker-status endpoint to drive dynamic UI hiding is a known open item.
-- **No image upload UI:** Images must be placed in `SECURE_IMAGE_FOLDER` manually by an admin. A file upload endpoint and UI are planned.
-- **Image syntax differs from node links:** Images use `![alt](/api/image/file.png)` while internal node links use `[[text|uuid]]`. This inconsistency is a known UX issue but will not be changed in the near term to avoid breaking existing notes.
 - **Lock icon protects content, not title:** Both the write-lock (`bxs-lock-alt`) and full-privacy lock (`bxs-no-entry`) still allow the agent to see a node's title and tree position. Only the content body is protected. If the title itself is sensitive, use a generic name.
 - **FTS languages:** Full-text search currently supports English and German. Adding more languages requires a schema migration to add additional `tsvector` columns or a language-aware trigger.

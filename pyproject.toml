@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 # ==========================================================
 [project]
 name = "nexidion-backend"
-version = "4.1.1"
+version = "4.3.0"
 requires-python = ">=3.10"
 description = "The backend service for the Nexidion project."
 dependencies = [
@@ -23,14 +23,15 @@ dependencies = [
     "Flask-Migrate",         # This automatically includes 'alembic'
     "Flask-SQLAlchemy",
     "gunicorn",
+    "waitress",
     # Database driver (Required for the agent)
     "psycopg2-binary",
     # AI Interfaces
     "openai",
+    "httpx>=0.27,<1",
     # Utilities
     "python-dotenv",
     "Pillow",
-    "apscheduler>=3.11.2",
     "flask-limiter>=3.8.0",
     "pymupdf>=1.24.11",
     "pymupdf4llm==1.27.2.3",
@@ -59,7 +60,7 @@ dev = [
 # This tells setuptools what code to include in the package.
 # ==========================================================
 [tool.setuptools]
-packages = ["backend", "agent"]
+packages = ["backend", "backend.ingestion", "agent"]
 
 
 # ==========================================================

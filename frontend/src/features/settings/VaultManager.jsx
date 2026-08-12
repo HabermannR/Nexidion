@@ -11,7 +11,6 @@ import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { useToast } from '../../components/ToastProvider.jsx';
 import { useVaultsQuery } from '../vaults/hooks/useVaultsQuery.js';
-import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
 
 // ─── VaultRow ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +108,7 @@ function VaultRow({ vault, activeVault, vaultsCount, renameMutation, deleteMutat
         {showAccess && (
             <tr>
                 <td colSpan={3} style={{ background: '#f8f9fa', padding: '12px 20px' }}>
-                    <VaultAccessPanel vaultId={vault.id} vaultName={vault.name} />
+                    <VaultAccessPanel vaultId={vault.id} />
                 </td>
             </tr>
         )}
@@ -147,7 +146,7 @@ function ActivateVaultLink({ vaultId }) {
 // ─── VaultAccessPanel ─────────────────────────────────────────────────────────
 // Lets the vault owner manage which users/LLM agents have access to a specific vault.
 
-function VaultAccessPanel({ vaultId, vaultName }) {
+function VaultAccessPanel({ vaultId }) {
     const queryClient = useQueryClient();
     const toast = useToast();
     const [selectedUserId, setSelectedUserId] = useState('');

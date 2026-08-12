@@ -4,10 +4,6 @@ import { marked } from 'marked';
 import { getIdsInOrder, generateTocForSelectedNodes } from '../features/nodes/node.utils.js'; // Importieren die Helfer
 import api from '../api/apiClient.js';
 
-// Die komplette, riesige generateEpub Funktion hier einfügen
-// Korrigierte generateEpub Funktion mit XML-Entitäten und vollständiger Bildunterstützung
-// WICHTIG: Du musst 'api' aus '../api/axios' importieren!
-
 const generateEpub = async (nodes, toc) => {
     const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
@@ -23,7 +19,7 @@ const generateEpub = async (nodes, toc) => {
         name: 'internalLink',
         level: 'inline',
         start(src) { return src.indexOf('[['); },
-        tokenizer(src, tokens) {
+        tokenizer(src) {
             const rule = /^\[\[\s*([^|\]\s][^|\]]*?)\s*(?:\|\s*(.+?)\s*)?\]\]/;
             const match = rule.exec(src);
             if (match) {
@@ -127,8 +123,7 @@ const generateEpub = async (nodes, toc) => {
     const navContent = generateNavContent();
     oebpsFolder.file("nav.xhtml", navContent);
 
-    // Sammle alle Bilder aus dem Content und lade sie über die API
-    // Sammle alle Bilder aus dem Content und lade sie über die API
+// Sammle alle Bilder aus dem Content und lade sie über die API
 const imageFiles = new Map(); // Map: filename -> blob data
  const loadImageWithFallback = async (basePath) => {
         const lastDotIndex = basePath.lastIndexOf('.');
@@ -140,7 +135,7 @@ const imageFiles = new Map(); // Map: filename -> blob data
         try {
             const response = await api.get(swImagePath, { responseType: 'blob' });
             return { blob: response.data, contentType: response.headers['content-type'] || response.data.type };
-        } catch (swError) {
+        } catch {
             // Wenn _sw-Version fehlschlägt, ist das okay, wir versuchen das Original.
             console.log(`SW-version for ${basePath} not found, trying original.`);
         }
@@ -172,7 +167,6 @@ const imageFiles = new Map(); // Map: filename -> blob data
                 
                 // SVG-Sonderbehandlung (bleibt gleich, aber jetzt mit korrekten Daten)
                 if (contentType && contentType.includes('svg')) {
-                    // ... (deine bestehende SVG-Logik hier einfügen)
                     const svgResponse = await api.get(imagePath, { responseType: 'text' });
                     let svgContent = svgResponse.data;
                     const svgMatch = svgContent.match(/<svg[^>]*>[\s\S]*?<\/svg>/i);
@@ -246,8 +240,7 @@ const imageFiles = new Map(); // Map: filename -> blob data
     </spine>
 </package>`);
 
-    // CSS für E-Reader - Style für nicht-klickbare interne Links + Bilder
-    // CSS für E-Reader - Style für nicht-klickbare interne Links + Bilder
+// CSS für E-Reader - Style für nicht-klickbare interne Links + Bilder
 oebpsFolder.file("styles.css", `
 body {
     font-family: serif;

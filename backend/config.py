@@ -11,12 +11,9 @@ project_root = os.path.dirname(basedir)
 
 
 class Config:
-    DEMO_MODE_ENABLED = os.getenv("DEMO_MODE_ENABLED", "false").lower() == "true"
-    DEMO_VAULT_PATH = os.getenv("DEMO_VAULT_PATH", "demo/demo_vault.nexidion")
-    DEMO_RECORDING_PATH = os.getenv("DEMO_RECORDING_PATH", "demo/demo_recording.nexidion")
     ## --- IMAGE FOLDER CONFIGURATION ---
     # Construct the path using the project root and the folder name.
-    SECURE_IMAGE_FOLDER = os.path.join(project_root, 'secure_images')
+    ASSET_STORAGE_FOLDER = os.getenv('ASSET_STORAGE_FOLDER', os.path.join(project_root, 'asset_storage'))
 
     ## --- DATABASE CONFIGURATION ---
     # Fetch DB details from environment variables

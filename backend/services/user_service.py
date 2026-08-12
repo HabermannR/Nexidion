@@ -1,11 +1,5 @@
 # backend/services/user_service.py
-"""
-Service-Schicht für die Benutzerverwaltung.
-
-Diese Schicht implementiert die Geschäftslogik für Operationen, die typischerweise
-von einem Administrator ausgeführt werden, wie das Erstellen, Auflisten, Löschen
-und Verwalten von Benutzern. Sie interagiert direkt mit dem User-Model.
-"""
+"""Business logic for creating, listing, updating, and deleting users."""
 
 import logging
 
@@ -101,11 +95,11 @@ def delete_user(user_id_to_delete: int, acting_user_id: int):
         heir_admin_id = fallback_admin.id
 
     # 2. Reassign their owned Vaults — rename on collision with heir's existing vaults
-    guest_vaults = Vault.query.filter_by(owner_id=user_id_to_delete).all()
+    owned_vaults = Vault.query.filter_by(owner_id=user_id_to_delete).all()
     heir_existing_names = {
         v.name for v in Vault.query.filter_by(owner_id=heir_admin_id).all()
     }
-    for vault in guest_vaults:
+    for vault in owned_vaults:
         target_name = vault.name
         if target_name in heir_existing_names:
             # Append the original owner username to avoid the unique constraint violation
@@ -214,91 +208,3 @@ def update_user_details(user_id: int, updates: dict) -> User:
 
     db.session.commit()
     return user
-
-
-def delete_guest_user(guest_user_id: int) -> dict:
-    """
-    Hard-deletes an expired guest user and ALL their data.
-
-    Unlike delete_user(), which is designed for permanent human accounts and
-    reassigns vaults and versions to a heir admin, this function is a clean
-    wipe — guest data has no value after expiry and must not pollute the
-    admin's workspace.
-
-    Deletion order and rationale:
-      1. Version.author_id reassignment — author_id is nullable=False with no
-         ON DELETE clause. The vault→node→version DB cascade will wipe the rows
-         anyway, but we reassign first as a safety net against any version that
-         has somehow become detached from its node (e.g. data inconsistency).
-      2. Vault deletion — cascades at the DB level to:
-             nodes (vault_id FK ondelete=CASCADE)
-             → versions (node_id FK ondelete=CASCADE)
-             tasks (vault_id FK ondelete=CASCADE)
-             access_rules / VaultAccess (vault_id FK ondelete=CASCADE)
-      3. Orphan VaultAccess cleanup — belt-and-suspenders for any access row
-         keyed on user_id rather than vault_id (e.g. agent's cross-vault entry).
-      4. User deletion.
-
-    Args:
-        guest_user_id: ID of the guest user to delete.
-
-    Returns:
-        A summary dict for logging:
-        {"deleted_user": username, "vault_count": n, "version_count": n}
-
-    Raises:
-        ValueError: If the user is not found or is not flagged as a guest.
-    """
-    user = db.session.get(User, guest_user_id)
-    if not user:
-        raise ValueError(f"Guest user {guest_user_id} not found.")
-    if not user.is_guest:
-        raise ValueError(
-            f"User {guest_user_id} ('{user.username}') is not a guest account. "
-            "Use delete_user() for permanent accounts."
-        )
-
-    username = user.username
-    vault_ids = [v.id for v in Vault.query.filter_by(owner_id=guest_user_id).all()]
-
-    # Step 1: Reassign any authored versions so the nullable=False FK doesn't
-    # block the user delete if the cascade chain above ever fails to reach them.
-    fallback_admin = User.query.filter_by(is_admin=True).first()
-    if fallback_admin:
-        version_count = Version.query.filter_by(author_id=guest_user_id).update(
-            {"author_id": fallback_admin.id}, synchronize_session="fetch"
-        )
-    else:
-        # No admin exists (should never happen in production, but be safe).
-        version_count = Version.query.filter_by(author_id=guest_user_id).count()
-        logging.warning(
-            f"[guest-cleanup] No admin found to reassign versions for guest "
-            f"'{username}' ({guest_user_id}). Versions will be wiped by cascade."
-        )
-
-    # Step 2: Delete vaults — triggers DB-level cascade to nodes, versions,
-    # tasks, and access_rules (see models.py for ondelete='CASCADE' declarations).
-    for vault_id in vault_ids:
-        vault = db.session.get(Vault, vault_id)
-        if vault:
-            db.session.delete(vault)
-
-    # Step 3: Belt-and-suspenders — remove any VaultAccess rows still keyed on
-    # this user_id that the vault cascade didn't reach (e.g. access on another
-    # user's vault granted to this guest, which is not standard but possible).
-    VaultAccess.query.filter_by(user_id=guest_user_id).delete(synchronize_session="fetch")
-
-    # Step 4: Delete the user record itself.
-    db.session.delete(user)
-    db.session.commit()
-
-    logging.info(
-        f"[guest-cleanup] Deleted guest '{username}' (id={guest_user_id}), "
-        f"{len(vault_ids)} vault(s), ~{version_count} version(s) reassigned."
-    )
-
-    return {
-        "deleted_user": username,
-        "vault_count": len(vault_ids),
-        "version_count": version_count,
-    }

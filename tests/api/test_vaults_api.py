@@ -229,21 +229,6 @@ def test_get_vault_access_permission_denied(client, auth_headers_2, test_vault_1
     assert "Only the vault owner or an admin" in response.get_json()['error']
 
 
-def test_get_vault_access_guest_denied(client, auth_headers_1, test_vault_1_obj, test_user_1_obj, db_session):
-    """[GET /api/vaults/<id>/access] Guest User (Demo) wird geblockt, selbst wenn er Owner ist."""
-    test_user_1_obj.is_guest = True
-    db_session.session.commit()
-
-    response = client.get(f'/api/vaults/{test_vault_1_obj.id}/access', headers=auth_headers_1)
-
-    # Revert for other tests
-    test_user_1_obj.is_guest = False
-    db_session.session.commit()
-
-    assert response.status_code == 403
-    assert "Guest users cannot manage vault access." in response.get_json()['error']
-
-
 def test_grant_vault_access_owner_success(client, auth_headers_1, test_vault_1_obj, test_user_2_obj):
     """[POST /api/vaults/<id>/access] Owner kann Rechte auf seine Vault gewähren."""
     payload = {"user_id": test_user_2_obj.id, "role": "editor"}
