@@ -13,6 +13,7 @@ Before diving in, check out our dedicated user guides to get the most out of you
 *   **[User Manual & Getting Started](docs/manual.md)** - Installation, basic usage, and how to build your vault.
 *   **[The Internal Link System](docs/links.md)** - How Nexidion's robust UUID-based linking keeps your knowledge connected, even when you rename things.
 *   **[Navigation, Tools & Export](docs/tools.md)** - How to search, bulk-select, and export your vault.
+*   **[Document Connectors](docs/connectors.md)** - How to import PDFs and organize ingested content.
 *   **[AI Agent Setup & Usage Guide](docs/agent.md)** - How to configure and use the autonomous background Task Runner.
 
 ---
@@ -36,6 +37,8 @@ It was designed for managing highly sensitive information where trust in third-p
 *   **Hierarchical Notes:** Structure your information in a familiar tree hierarchy.
 *   **Rich Text Editing:** Write and format content using a clean Markdown editor.
 *   **Full Version History:** Every change to a node is saved as a new version.
+*   **Document Ingestion:** Import PDFs through a connector-based ingestion pipeline, with optional AI-assisted organization.
+*   **Managed Image Assets:** Store imported images securely with provenance and access controls.
 *   **Optional AI Agent Runner:** An autonomous background worker that can reorganize notes, summarize subtrees, or execute bulk changes based on your instructions.
 *   **Robust Internal Linking:** A highly resilient UUID-based internal linking system that never breaks when renaming nodes.
 *   **Secure Architecture:** Robust multi-user architecture using JWT for authentication, complete with an admin dashboard.
@@ -57,9 +60,9 @@ There are hundreds of note-taking apps. Here is why Nexidion exists and where it
 *   **Frontend:** React.js, Vite (Served statically in production)
 *   **Infrastructure:** Docker & Docker Compose
 
-## Project Status (v4.1 Architecture Update)
+## Project Status (v4.3 Connector & Asset Update)
 
-Nexidion recently underwent a massive **v4 core architecture rewrite** to support multi-user Vaults, highly optimized V2 state loading (fetching only what is needed), and an integrated Task Runner for background AI operations. 
+Nexidion 4.3 builds on the v4 multi-user architecture with connector-based document ingestion, AI-assisted curation, managed image assets, and richer provenance tracking. The optimized V2 state-loading API and integrated Task Runner continue to support responsive vault access and optional background AI operations.
 
 ---
 
