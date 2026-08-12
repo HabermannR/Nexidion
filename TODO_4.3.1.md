@@ -84,10 +84,25 @@ trust-boundary problem, and deliver the first non-PDF document connector.
 
 ## LLM and summaries
 
+- [ ] Keep the **Agent** tab as the vault-level AI task center. The 4.3 cleanup
+  removed demo-only behavior, not the core tab; retain task instructions,
+  selected-node context, status/history, operation details, and retry.
+- [ ] Add the shared provider/model selector to the Agent tab as well as summary
+  generation and AI-assisted imports, so all LLM entry points use the same
+  configuration and terminology.
+- [ ] Extend agent tasks and their API contract with `provider` and `model`,
+  persist the resolved values on each task, and make retries reuse them unless
+  the user explicitly changes the selection.
 - [ ] Restore explicit model selection for OpenAI and local OpenAI-compatible
   providers instead of relying on hardcoded/default model names.
 - [ ] Add provider model discovery where supported and a manual model field where
   it is not.
+- [ ] Show provider availability and Task Runner health in the Agent tab; disable
+  submission with an actionable explanation when the selected provider or worker
+  is unavailable instead of leaving tasks pending indefinitely.
+- [ ] Keep API keys and endpoint configuration in deployment/admin settings; the
+  Agent tab selects from configured providers and models but does not expose or
+  store secrets.
 - [ ] Store selected provider/model/prompt version on every curation and summary
   artifact.
 - [ ] Fix default-provider selection: production currently reports `local` as the
