@@ -579,8 +579,8 @@ Finish after this one parent has been updated, or explain why it could not be up
     };
 
     return (
-        <div className="agent-actions-panel p-3 d-flex flex-column gap-3 h-100">
-            <div className="flex-shrink-0">
+        <div className="agent-actions-panel p-3 d-flex flex-column gap-3">
+            <div>
                 <div className="agent-actions-heading">
                     <div>
                         <h6 className="mb-1">AI actions</h6>
@@ -732,7 +732,7 @@ Finish after this one parent has been updated, or explain why it could not be up
 
             <hr className="my-1" />
 
-            <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: 0 }}>
+            <div className="agent-recent-jobs">
                 <div className="d-flex justify-content-between align-items-center mb-2">
                     <h6 className="text-muted mb-0">
                         Recent jobs
@@ -755,7 +755,7 @@ Finish after this one parent has been updated, or explain why it could not be up
                     </Form.Select>
                 </div>
 
-                <div className="flex-grow-1 overflow-auto pe-1 custom-scrollbar">
+                <div className="pe-1">
                     {loadingTasks ? (
                         <div className="text-center text-muted small py-3">Loading tasks...</div>
                     ) : tasks.length === 0 ? (
