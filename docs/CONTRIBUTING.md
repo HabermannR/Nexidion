@@ -133,31 +133,17 @@ docker compose -f docker-compose.dev.yml up --build frontend
 
 ## 4. Running without Docker
 
-If you prefer to run services directly on your host machine:
+Use the dedicated [bare-metal startup guide](bare-metal.md). It covers first-time
+installation, upgrades, Windows PowerShell, Linux, PostgreSQL, the production
+frontend build, and the two independent processes that must remain running:
 
-### Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-export $(cat ../.env | xargs)   # Load env vars (adjust for your shell)
-flask db upgrade
-flask create-admin admin defaultPassword123
-flask run --host=0.0.0.0 --port=5001 --debug
+```text
+python serve.py
+python task_runner.py
 ```
 
-You will need a running PostgreSQL 16-18 instance reachable at the `DB_HOST`/`DB_PORT` configured in your `.env`.
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-VITE_API_URL=http://localhost:5001 npm run dev
-```
+Running only the web/API process does not execute AI Actions or queued AI
+ingestion work.
 
 ---
 

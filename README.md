@@ -15,6 +15,7 @@ Before diving in, check out our dedicated user guides to get the most out of you
 *   **[Navigation, Tools & Export](docs/tools.md)** - How to search, bulk-select, and export your vault.
 *   **[Document Connectors](docs/connectors.md)** - How to import PDFs and organize ingested content.
 *   **[AI Agent Setup & Usage Guide](docs/agent.md)** - How to configure and use the autonomous background Task Runner.
+*   **[Bare-metal startup guide](docs/bare-metal.md)** - Install, update, and start the web server and Task Runner on Windows or Linux without Docker.
 
 ---
 

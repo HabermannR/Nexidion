@@ -9,6 +9,10 @@ Nexidion includes an optional autonomous background worker (the AI Task Runner) 
 > ```
 > See the [README](../README.md) for all deployment scenarios.
 
+For a non-Docker installation, start `python serve.py` and
+`python task_runner.py` in separate activated terminals. The complete Windows and
+Linux procedure is in the [bare-metal startup guide](bare-metal.md).
+
 ## 1. Agent Access to a Vault
 
 The system creates a special **LLM Assistant** account. New and imported vaults
