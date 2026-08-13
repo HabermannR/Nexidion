@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
-from openai import OpenAI
-
 from backend.models import SummaryArtifact, Node
+from backend.services.llm_provider import client_and_model
 from backend.services.summary_service import complete_summary, fail_summary
 
 SYSTEM_PROMPT = """Create a concise, factual summary of the supplied Nexidion node.
@@ -12,20 +10,7 @@ facts. Return only the summary in Markdown, normally 3-7 bullets."""
 
 
 def generate_summary(artifact: SummaryArtifact, node: Node) -> str:
-    if artifact.provider == "local":
-        base_url = os.environ.get("LOCAL_LLM_URL")
-        if not base_url:
-            raise ValueError("LOCAL_LLM_URL is not configured.")
-        client = OpenAI(base_url=base_url, api_key=os.environ.get("LOCAL_LLM_API_KEY", "not-needed"))
-        model = artifact.model or os.environ.get("LOCAL_LLM_MODEL") or os.environ.get("OPENAI_MODEL", "local")
-    elif artifact.provider == "openai":
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is not configured.")
-        client = OpenAI(api_key=api_key)
-        model = artifact.model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    else:
-        raise ValueError(f"Provider {artifact.provider!r} cannot generate summaries.")
+    client, model = client_and_model(artifact.provider, artifact.model)
 
     version = node.current_version_object
     response = client.chat.completions.create(

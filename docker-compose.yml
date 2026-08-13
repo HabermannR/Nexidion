@@ -44,6 +44,8 @@ services:
       - "host.docker.internal:host-gateway"
     command: ["python", "task_runner.py"]
     working_dir: /app
+    volumes:
+      - ./audit_logs:/app/audit_logs
     depends_on:
       postgres:
         condition: service_healthy

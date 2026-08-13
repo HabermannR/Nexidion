@@ -6,10 +6,9 @@ import os
 from datetime import datetime, timezone
 
 import pymupdf
-from openai import OpenAI
-
 from backend.models import db, CurationJob, SourceArtifact, NodeSourceLink
 from backend.services import node_service
+from backend.services.llm_provider import client_and_model
 
 
 PROMPT_VERSION = "pdf-curation-v4"
@@ -43,18 +42,7 @@ def serialize_curation_job(job: CurationJob) -> dict:
 
 
 def _client(job):
-    if job.provider == 'local':
-        url = os.environ.get('LOCAL_LLM_URL')
-        if not url:
-            raise ValueError('LOCAL_LLM_URL is not configured.')
-        return OpenAI(base_url=url, api_key=os.environ.get('LOCAL_LLM_API_KEY', 'not-needed')), (
-            job.model or os.environ.get('LOCAL_LLM_MODEL') or 'local')
-    if job.provider == 'openai':
-        key = os.environ.get('OPENAI_API_KEY')
-        if not key:
-            raise ValueError('OPENAI_API_KEY is not configured.')
-        return OpenAI(api_key=key), (job.model or os.environ.get('OPENAI_MODEL', 'gpt-4o-mini'))
-    raise ValueError("provider must be local or openai")
+    return client_and_model(job.provider, job.model)
 
 
 def _user_content(job, artifact):

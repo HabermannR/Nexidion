@@ -10,7 +10,10 @@ loop.py so there is exactly one definition of each.
 """
 
 import json
+import os
+import signal
 import time
+from contextlib import contextmanager
 from functools import partial
 
 import httpx
@@ -22,6 +25,7 @@ from agent.helpers import (
     _fmt,
     _validate_summary,
     find_root_for_node,
+    get_children_from_tree,
     get_subtree_summary,
     is_blacklisted,
     is_read_locked,
@@ -36,6 +40,77 @@ from agent.svc import (
     svc_update_node,
     svc_update_summary,
 )
+
+
+class TurnDeadlineExceeded(TimeoutError):
+    pass
+
+
+@contextmanager
+def _wall_clock_deadline(seconds):
+    """Interrupt a turn even when an HTTP stream keeps its read timeout alive."""
+    if not seconds or not hasattr(signal, "setitimer"):
+        yield
+        return
+    previous = signal.getsignal(signal.SIGALRM)
+
+    def expired(_signum, _frame):
+        raise TurnDeadlineExceeded(f"LLM turn exceeded hard deadline of {seconds}s")
+
+    signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _stream_response(client, request, task_id, turn, debug_dir,
+                     capture_payloads, hard_timeout_s, log_fn):
+    """Consume Responses events observably and return the completed response."""
+    trace = None
+    if debug_dir:
+        os.makedirs(debug_dir, exist_ok=True)
+        trace = open(os.path.join(debug_dir, f"{task_id}.jsonl"), "a", encoding="utf-8")
+    started = time.monotonic()
+    event_count = 0
+    last_progress = started
+    completed = None
+    try:
+        with _wall_clock_deadline(hard_timeout_s):
+            stream = client.responses.create(**request, stream=True)
+            # Lightweight test doubles may return an already-complete Response.
+            if hasattr(stream, "output"):
+                return stream, 0
+            for event in stream:
+                event_count += 1
+                event_type = getattr(event, "type", "unknown")
+                now = time.monotonic()
+                if trace:
+                    record = {
+                        "elapsed_s": round(now - started, 3),
+                        "turn": turn,
+                        "event": event_type,
+                    }
+                    if capture_payloads:
+                        record["payload"] = event.model_dump(mode="json")
+                    trace.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    trace.flush()
+                if now - last_progress >= 15:
+                    log_fn(f"  … stream alive {now - started:.0f}s | {event_count} events | {event_type}")
+                    last_progress = now
+                if event_type == "response.completed":
+                    completed = event.response
+                elif event_type in ("response.failed", "response.incomplete"):
+                    detail = getattr(event, "response", None)
+                    raise RuntimeError(f"LLM stream ended with {event_type}: {detail}")
+    finally:
+        if trace:
+            trace.close()
+    if completed is None:
+        raise RuntimeError("LLM stream closed without a completed response")
+    return completed, event_count
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +363,9 @@ HOW TO WORK:
 - search_nodes is free — use it liberally to discover UUIDs of related nodes.
 - Never invent or guess a UUID. Only use UUIDs returned by tools or provided in context.
 - Apply changes as you go using the write tools — do not batch everything to the end.
-- For bubble-up synthesis: read children summaries → write_node on the parent.
+- For bottom-up roll-up synthesis: leaves are read-only sources. Process only non-leaf nodes,
+  deepest parent first and the selected root last. Use write_node on each parent to update both
+  its coherent Markdown synthesis and its 3-bullet AI summary. Never write to a leaf.
 - For sorting/reorganizing: get_subtree → move_node each child to its correct parent.
 - For content updates with new info: get_node_content → patch_node for small changes, write_node for full rewrites.
 - patch_node is preferred when only a specific section needs changing.
@@ -318,7 +395,14 @@ def run_agent(task_row: dict, audit,
               max_loop_turns: int, max_tool_fetches: int,
               blacklist_icon: str, read_lock_icon: str,
               log_fn,
-              record_full_text: bool = False) -> str:
+              record_full_text: bool = False,
+              default_headers: dict | None = None,
+              request_timeout_s: float = 1800,
+              hard_turn_timeout_s: float = 1800,
+              reasoning_effort: str | None = None,
+              max_output_tokens: int | None = None,
+              stream_debug_dir: str | None = None,
+              capture_stream_payloads: bool = False) -> str:
 
     instruction      = task_row["instruction"]
     vault_id         = task_row["vault_id"]
@@ -384,10 +468,12 @@ def run_agent(task_row: dict, audit,
     client_kwargs = {
         "api_key": gpt_token if gpt_token else local_llm_api_key,
         "http_client": httpx.Client(verify=tls_verify),
-        "timeout": 600.0,
+        "timeout": request_timeout_s,
     }
     if local_llm_url:
         client_kwargs["base_url"] = local_llm_url
+    if default_headers:
+        client_kwargs["default_headers"] = default_headers
 
     client = OpenAI(**client_kwargs)
 
@@ -418,6 +504,11 @@ def run_agent(task_row: dict, audit,
     fetch_call_count = 0
     no_tool_streak   = 0
     seen_uuids       = set()
+    full_content_uuids = set()
+    allowed_write_nodes = (set(task_row.get("allowed_write_node_ids") or [])
+                           if task_row.get("allowed_write_node_ids") is not None else None)
+    allowed_write_operations = (set(task_row.get("allowed_write_operations") or [])
+                                if task_row.get("allowed_write_operations") is not None else None)
     finish_summary   = None
 
     while True:
@@ -429,17 +520,25 @@ def run_agent(task_row: dict, audit,
         audit.begin_turn(loop_count)
         t0 = time.time()
 
-        try:
-            response = client.responses.create(
+        request = dict(
                 model=gpt_model,
                 tools=TOOLS,
                 input=input_list,
-                reasoning={"effort": "xhigh"},
+            )
+        if reasoning_effort:
+            request["reasoning"] = {"effort": reasoning_effort}
+        if max_output_tokens:
+            request["max_output_tokens"] = max_output_tokens
+        try:
+            response, stream_events = _stream_response(
+                client, request, task_row.get("id", "unknown"), loop_count,
+                stream_debug_dir, capture_stream_payloads,
+                hard_turn_timeout_s, log_fn,
             )
         except Exception as e:
             raise RuntimeError(f"OpenAI API error: {e}") from e
 
-        log_fn(f"  ✓ {time.time() - t0:.1f}s | {len(response.output)} output item(s)")
+        log_fn(f"  ✓ {time.time() - t0:.1f}s | {stream_events} stream events | {len(response.output)} output item(s)")
         input_list += response.output
         tool_executed = False
 
@@ -459,6 +558,29 @@ def run_agent(task_row: dict, audit,
                 continue
 
             log_fn(f"  🔧 {name}({str(args)[:160]})")
+
+            mutation_names = {"write_node", "patch_node", "rename_node", "move_node", "create_node"}
+            if allowed_write_nodes is not None and name in mutation_names:
+                target_id = args.get("node_id")
+                if name not in allowed_write_operations or target_id not in allowed_write_nodes:
+                    msg = (f"Write-scope policy rejected {name} for {target_id or '(no node_id)'}. "
+                           f"Allowed operations: {sorted(allowed_write_operations)}; "
+                           f"allowed node UUIDs: {sorted(allowed_write_nodes)}.")
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "blocked", msg)
+                    log_fn(f"  ⛔ {msg}")
+                    continue
+                if name == "write_node":
+                    child_ids = {child["id"] for child in get_children_from_tree(target_id, tree)}
+                    required_full_content = child_ids | {target_id}
+                    missing = sorted(required_full_content - full_content_uuids)
+                    if missing:
+                        msg = ("Evidence policy rejected write_node. Fetch full content with "
+                               f"get_node_content for the active parent and every immediate child first. Missing: {missing}")
+                        _append(input_list, item.call_id, msg)
+                        audit.record_tool(name, args, "blocked", msg)
+                        log_fn(f"  ⛔ {msg}")
+                        continue
 
             # ── get_subtree ──────────────────────────────────────────────
             if name == "get_subtree":
@@ -497,7 +619,7 @@ def run_agent(task_row: dict, audit,
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "blocked", msg)
                     continue
-                err = _check_budget(node_id, seen_uuids, fetch_call_count, max_tool_fetches)
+                err = _check_budget(node_id, full_content_uuids, fetch_call_count, max_tool_fetches)
                 if err:
                     _append(input_list, item.call_id, err)
                     audit.record_tool(name, args, "budget", err)
@@ -505,6 +627,8 @@ def run_agent(task_row: dict, audit,
                     seen_uuids.add(node_id)
                     fetch_call_count += 1
                     node = _svc_get_node(vault_id, node_id)
+                    if node:
+                        full_content_uuids.add(node_id)
                     _append(input_list, item.call_id,
                             _fmt(node) if node else f"Error: node {node_id} not found")
                     audit.record_tool(name, args, "ok" if node else "error",

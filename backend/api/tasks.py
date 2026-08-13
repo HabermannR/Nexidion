@@ -8,6 +8,40 @@ from backend.services import task_service
 tasks_bp = Blueprint('tasks', __name__, url_prefix='/api/tasks')
 
 
+@tasks_bp.route('/batch', methods=['POST'])
+@jwt_required()
+@limiter.limit("5 per minute; 20 per hour")
+def create_task_batch():
+    """Create an ordered set of bounded jobs with one rate-limit charge."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    jobs = data.get('jobs')
+    if not isinstance(jobs, list) or not jobs or len(jobs) > 50:
+        return jsonify({'error': 'jobs must contain between 1 and 50 tasks'}), 400
+    vault_id = data.get('vault_id')
+    if not vault_id:
+        return jsonify({'error': 'vault_id is required'}), 400
+
+    created = []
+    try:
+        for job in jobs:
+            created.append(task_service.create_task(
+                vault_id=vault_id,
+                instruction=job.get('instruction', ''),
+                context_node_ids=job.get('context_node_ids', []),
+                user_id=user_id,
+                llm_provider=data.get('llm_provider'),
+                llm_model=data.get('llm_model'),
+                allowed_write_node_ids=job.get('allowed_write_node_ids'),
+                allowed_write_operations=job.get('allowed_write_operations'),
+            ))
+        return jsonify({'tasks': [task.to_dict() for task in created]}), 201
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
+
+
 @tasks_bp.route('', methods=['GET'], strict_slashes=False)
 @jwt_required()
 def list_tasks():
@@ -107,6 +141,10 @@ def create_task():
     vault_id         = data.get('vault_id')
     instruction      = data.get('instruction', '')
     context_node_ids = data.get('context_node_ids', [])
+    llm_provider      = data.get('llm_provider')
+    llm_model         = data.get('llm_model')
+    allowed_write_node_ids = data.get('allowed_write_node_ids')
+    allowed_write_operations = data.get('allowed_write_operations')
 
     if not vault_id:
         return jsonify({'error': 'vault_id is required'}), 400
@@ -117,6 +155,10 @@ def create_task():
             instruction=instruction,
             context_node_ids=context_node_ids,
             user_id=user_id,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            allowed_write_node_ids=allowed_write_node_ids,
+            allowed_write_operations=allowed_write_operations,
         )
         return jsonify(task.to_dict()), 201
     except ValueError as e:

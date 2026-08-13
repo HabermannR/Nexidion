@@ -42,6 +42,67 @@ def test_create_task_success(client, auth_headers_1, test_vault_1_obj):
     assert 'id' in data
 
 
+def test_create_task_with_llm_selection(client, auth_headers_1, test_vault_1_obj, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    response = client.post('/api/tasks', headers=auth_headers_1, json={
+        "vault_id": test_vault_1_obj.id,
+        "instruction": "Summarize these nodes.",
+        "context_node_ids": [],
+        "llm_provider": "openrouter",
+        "llm_model": "google/gemini-2.5-flash",
+    })
+    assert response.status_code == 201
+    assert response.get_json()["llm_provider"] == "openrouter"
+    assert response.get_json()["llm_model"] == "google/gemini-2.5-flash"
+
+
+def test_create_task_with_bounded_write_scope(client, auth_headers_1, test_node_obj):
+    response = client.post('/api/tasks', headers=auth_headers_1, json={
+        "vault_id": test_node_obj.vault_id,
+        "instruction": "Bounded roll-up.",
+        "context_node_ids": [test_node_obj.id],
+        "allowed_write_node_ids": [test_node_obj.id],
+        "allowed_write_operations": ["write_node"],
+    })
+    assert response.status_code == 201
+    assert response.get_json()["allowed_write_node_ids"] == [test_node_obj.id]
+    assert response.get_json()["allowed_write_operations"] == ["write_node"]
+
+
+def test_create_ordered_task_batch_in_one_request(
+        client, auth_headers_1, test_node_obj, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    jobs = [{
+        "instruction": f"Bounded job {index}",
+        "context_node_ids": [test_node_obj.id],
+        "allowed_write_node_ids": [test_node_obj.id],
+        "allowed_write_operations": ["write_node"],
+    } for index in range(12)]
+    response = client.post('/api/tasks/batch', headers=auth_headers_1, json={
+        "vault_id": test_node_obj.vault_id,
+        "llm_provider": "openrouter",
+        "llm_model": "test/model",
+        "jobs": jobs,
+    })
+    assert response.status_code == 201
+    created = response.get_json()["tasks"]
+    assert len(created) == 12
+    assert [task["instruction"] for task in created] == [
+        f"Bounded job {index}" for index in range(12)
+    ]
+
+
+def test_create_task_rejects_unknown_llm_provider(client, auth_headers_1, test_vault_1_obj):
+    response = client.post('/api/tasks', headers=auth_headers_1, json={
+        "vault_id": test_vault_1_obj.id,
+        "instruction": "Summarize.",
+        "llm_provider": "mystery",
+        "llm_model": "model",
+    })
+    assert response.status_code == 400
+    assert "llm_provider must be one of" in response.get_json()["error"]
+
+
 def test_create_task_missing_vault_id(client, auth_headers_1):
     """Testet Fehler, wenn die Vault-ID im Payload fehlt."""
     payload = {

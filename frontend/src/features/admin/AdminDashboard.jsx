@@ -256,6 +256,7 @@ function AdminVaultAccessPanel({ vaultId }) {
     const queryClient = useQueryClient();
     const toast = useToast();
     const [selectedUserId, setSelectedUserId] = useState('');
+    const [accessSearch, setAccessSearch] = useState('');
 
     const qk = ['admin', 'vault-access', vaultId];
 
@@ -287,6 +288,8 @@ function AdminVaultAccessPanel({ vaultId }) {
     if (!data) return null;
 
     const { vault, access_list, available_users } = data;
+    const filteredUsers = available_users.filter(user =>
+        `${user.display_name} ${user.username}`.toLowerCase().includes(accessSearch.toLowerCase()));
 
     return (
         <div className="mt-2">
@@ -350,16 +353,21 @@ function AdminVaultAccessPanel({ vaultId }) {
                 <p className="text-muted" style={{ fontSize: '0.85rem' }}>All users already have access.</p>
             ) : (
                 <div className="d-flex gap-2 align-items-center">
+                    <BootstrapForm.Control
+                        size="sm" placeholder="Search users or AI agents…"
+                        value={accessSearch} onChange={e => setAccessSearch(e.target.value)}
+                        style={{ maxWidth: 240 }}
+                    />
                     <BootstrapForm.Select
                         size="sm"
                         style={{ maxWidth: 320 }}
                         value={selectedUserId}
                         onChange={e => setSelectedUserId(e.target.value)}
                     >
-                        <option value="">— Select a user or LLM agent —</option>
-                        {available_users.map(u => (
+                        <option value="">— Select a user or AI agent —</option>
+                        {filteredUsers.map(u => (
                             <option key={u.user_id} value={u.user_id}>
-                                {u.display_name} ({u.username}){u.user_type === 'llm_assistant' ? ' [LLM]' : ''}
+                                {u.display_name} ({u.username}){u.user_type === 'llm_assistant' ? ' [AI]' : ''}
                             </option>
                         ))}
                     </BootstrapForm.Select>

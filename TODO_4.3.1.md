@@ -84,13 +84,26 @@ trust-boundary problem, and deliver the first non-PDF document connector.
 
 ## LLM and summaries
 
-- [ ] Keep the built-in **Agent** tab out of the planned core product for now.
-  Leave it documented as a possible future capability, but do not expand it in
-  4.3.1; working through the Nexidion MCP server is the preferred interactive AI
-  experience.
-- [ ] Decide separately whether the remaining Agent tab and legacy task-runner UI
-  should be hidden, removed, or retained as an experimental feature after MCP
-  reaches feature parity. Do not let that decision block the 4.3.1 work.
+- [x] Replace the built-in **Agent** chat interface with a small set of bounded,
+  reviewable actions. Keep **Roll Up Branch Knowledge** as a first-class workflow and
+  use the worker for queued execution; MCP remains the preferred interface for
+  open-ended, conversational AI work.
+- [x] Preserve the underlying task-runner and audit machinery. Treat it as the
+  background worker for bounded actions, summaries, and ingestion rather than as
+  a competing chat product.
+- [x] Define and enforce roll-up semantics: selected nodes are destination roots;
+  leaves stay unchanged; non-leaf notes and summaries are rewritten deepest
+  first; each queued job has one exact allowed write target.
+- [x] Preview every affected parent, allow exclusions, identify read-only
+  connector-managed parents, and batch creation of large roll-up queues so the
+  normal per-request task limiter does not truncate a branch.
+- [x] Store an explicit provider/model on agent tasks and support local OpenAI-
+  compatible, OpenAI, and OpenRouter execution without exposing credentials.
+- [x] Add curated model selection: the three GPT-5.6 task models for OpenAI and
+  at most ten cached, priced OpenRouter choices plus an explicit custom model.
+- [x] Stream model responses into per-task diagnostic traces, separate inactivity
+  and hard-turn timeouts, and make reasoning effort opt-in instead of forcing
+  maximum reasoning.
 - [ ] Restore explicit model selection for OpenAI and local OpenAI-compatible
   providers for summaries and AI-assisted imports instead of relying on
   hardcoded/default model names.
@@ -134,6 +147,36 @@ trust-boundary problem, and deliver the first non-PDF document connector.
   in narrow layouts.
 - [ ] Add regression tests for vault switching with a selected node and for
   managed-image loading immediately after a switch, without requiring refresh.
+
+## Cross-vault transfer
+
+- [x] Support copying a node or complete subtree into another writable vault,
+  creating new UUIDs and independent version histories.
+- [x] Rewrite strong UUID links between nodes included in the same copy while
+  leaving links to nodes outside the copied set explicit and unchanged.
+- [x] Define managed-image, provenance, private-node, connector-managed source,
+  and rollback behavior and cover them with API/service tests.
+- [ ] Add the copy operation to the frontend. The backend endpoint and tests are
+  present, but users cannot initiate a cross-vault copy from the tree yet.
+- [ ] Add transactional **Move to another vault** only after copy behavior is
+  proven. A move must preserve or explicitly redirect inbound links and must not
+  be implemented as shared ownership.
+- [ ] Do not introduce nodes owned by multiple vaults. Use vault access for shared
+  libraries; consider read-only cross-vault mounts only as a separately designed
+  future feature.
+
+## Authentication roadmap
+
+- [x] Create a skeletal Microsoft Entra ID / OpenID Connect proof of concept in
+  the standalone
+  `nexidion-auth-poc` project before integrating it into Nexidion.
+- [ ] Test the now-private Entra proof of concept on the Windows work PC before
+  deciding whether to integrate it.
+- [ ] After the proof of concept, add external identities keyed by issuer and
+  subject, just-in-time user provisioning, configurable tenant/domain policy,
+  and a local emergency-admin login.
+- [ ] Keep unrestricted self-registration disabled by default. Design invitation
+  or approved-domain registration separately from enterprise SSO.
 
 ## Portability, operations, and release quality
 

@@ -99,6 +99,24 @@ def invalidate_vault_list_cache(user_id: int) -> None:
         user.cached_vault_list_etag = None
 
 
+def grant_default_agent_access(vault_id: int) -> bool:
+    """Enable the default AI agent once for a new/imported vault; caller commits."""
+    agent = User.query.filter_by(user_type=UserType.LLM_ASSISTANT).first()
+    if not agent:
+        return False
+    existing = db.session.execute(
+        db.select(VaultAccess).filter_by(vault_id=vault_id, user_id=agent.id)
+    ).scalar_one_or_none()
+    if existing:
+        existing.role = VaultRole.EDITOR.value
+    else:
+        db.session.add(VaultAccess(
+            vault_id=vault_id, user_id=agent.id, role=VaultRole.EDITOR.value,
+        ))
+    invalidate_vault_list_cache(agent.id)
+    return True
+
+
 def get_vaults_for_user_cached(user_id: int, client_etag=None):
     """
     Returns (data_or_None, etag, is_not_modified).
@@ -189,6 +207,8 @@ def create_vault(name: str, owner_id: int) -> Vault:
             author_id=owner_id
         )
         db.session.add(initial_version)
+
+        grant_default_agent_access(new_vault.id)
 
         invalidate_vault_list_cache(owner_id)
         db.session.commit()

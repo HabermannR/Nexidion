@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.models import db, Node, Vault, Version, User
-from backend.services.vault_service import invalidate_vault_list_cache
+from backend.services.vault_service import invalidate_vault_list_cache, grant_default_agent_access
 from backend.services.node_service import rebuild_vault_tree_cache
 
 
@@ -63,6 +63,7 @@ def import_vault(
     _rewrite_internal_links(vault.id, remap)
 
     # Invalidate and rebuild caches
+    grant_default_agent_access(vault.id)
     invalidate_vault_list_cache(owner_id)
     rebuild_vault_tree_cache(vault.id)
 

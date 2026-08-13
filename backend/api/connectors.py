@@ -116,8 +116,8 @@ def ingest_pdf_upload(vault_id: int, user_id: int):
         if workflow != 'extract':
             provider = request.form.get('provider', 'local')
             visual_mode = request.form.get('visual_mode', 'off')
-            if provider not in {'local', 'openai'}:
-                raise ValueError('provider must be local or openai')
+            if provider not in {'local', 'openai', 'openrouter'}:
+                raise ValueError('provider must be local, openai, or openrouter')
             if visual_mode not in {'off', 'auto', 'all'}:
                 raise ValueError('visual_mode must be off, auto, or all')
             executor = User.query.filter_by(user_type=UserType.LLM_ASSISTANT).first()

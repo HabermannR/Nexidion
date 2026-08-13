@@ -295,6 +295,14 @@ class Task(db.Model):
     status = db.Column(db.String(20), nullable=False,
                        default='pending', index=True)
     context_node_ids = db.Column(db.JSON, nullable=False, default=list)
+    # Nullable for tasks created before provider selection was introduced. The
+    # runner resolves NULL using the legacy local-first environment behaviour.
+    llm_provider = db.Column(db.String(20), nullable=True)
+    llm_model = db.Column(db.String(255), nullable=True)
+    # NULL preserves unrestricted legacy agent tasks. Bounded workflows use
+    # explicit UUID and operation allowlists enforced by the worker.
+    allowed_write_node_ids = db.Column(db.JSON, nullable=True)
+    allowed_write_operations = db.Column(db.JSON, nullable=True)
     requested_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     executed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
 
@@ -324,6 +332,8 @@ class Task(db.Model):
                 'created_at': self.created_at.isoformat(),
                 'preview_text': text_to_show,
                 'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+                'llm_provider': self.llm_provider,
+                'llm_model': self.llm_model,
             }
 
         return {
@@ -332,6 +342,10 @@ class Task(db.Model):
             'instruction': self.instruction,
             'status': self.status,
             'context_node_ids': self.context_node_ids,
+            'llm_provider': self.llm_provider,
+            'llm_model': self.llm_model,
+            'allowed_write_node_ids': self.allowed_write_node_ids,
+            'allowed_write_operations': self.allowed_write_operations,
             'requested_by_id': self.requested_by_id,
             'executed_by_id': self.executed_by_id,
             'created_at': self.created_at.isoformat(),

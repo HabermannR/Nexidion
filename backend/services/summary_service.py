@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from backend.models import db, Node, SummaryArtifact
 
-VALID_PROVIDERS = {"manual", "local", "openai"}
+VALID_PROVIDERS = {"manual", "local", "openai", "openrouter"}
 VALID_VISUAL_MODES = {"off", "auto", "all"}
 
 

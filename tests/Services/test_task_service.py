@@ -42,6 +42,58 @@ def test_create_task_success(db_session, test_user_1_obj):
     assert task.context_node_ids == context_nodes
     assert task.status == "pending"
 
+    from backend.models import VaultAccess, VaultRole
+    agent_access = VaultAccess.query.filter_by(
+        vault_id=vault.id, user_id=task.executed_by_id,
+    ).one()
+    assert agent_access.role == VaultRole.EDITOR.value
+
+
+def test_create_task_persists_explicit_llm_selection(db_session, test_user_1_obj, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    vault = vault_service.create_vault("Task-Provider-Vault", test_user_1_obj.id)
+
+    task = task_service.create_task(
+        vault.id, "Summarize", [], test_user_1_obj.id,
+        llm_provider="openrouter", llm_model="anthropic/claude-sonnet-4",
+    )
+
+    assert task.llm_provider == "openrouter"
+    assert task.llm_model == "anthropic/claude-sonnet-4"
+    assert task.to_dict()["llm_provider"] == "openrouter"
+
+
+def test_create_task_rejects_unconfigured_llm_provider(db_session, test_user_1_obj, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    vault = vault_service.create_vault("Task-Unconfigured-Provider", test_user_1_obj.id)
+    with pytest.raises(ValueError, match="not configured"):
+        task_service.create_task(
+            vault.id, "Summarize", [], test_user_1_obj.id,
+            llm_provider="openrouter", llm_model="some/model",
+        )
+
+
+def test_create_task_persists_vault_scoped_write_policy(
+        db_session, test_user_1_obj, test_node_obj):
+    task = task_service.create_task(
+        test_node_obj.vault_id, "Bounded write", [test_node_obj.id], test_user_1_obj.id,
+        allowed_write_node_ids=[test_node_obj.id],
+        allowed_write_operations=["write_node"],
+    )
+    assert task.allowed_write_node_ids == [test_node_obj.id]
+    assert task.allowed_write_operations == ["write_node"]
+
+
+def test_create_task_rejects_write_node_from_another_vault(
+        db_session, test_user_1_obj, test_node_obj):
+    vault = vault_service.create_vault("Other write scope", test_user_1_obj.id)
+    with pytest.raises(ValueError, match="must belong to the task vault"):
+        task_service.create_task(
+            vault.id, "Cross-vault write", [], test_user_1_obj.id,
+            allowed_write_node_ids=[test_node_obj.id],
+            allowed_write_operations=["write_node"],
+        )
+
 
 def test_create_task_empty_instruction(db_session, test_user_1_obj):
     """Testet, dass eine leere Instruction einen Fehler wirft."""

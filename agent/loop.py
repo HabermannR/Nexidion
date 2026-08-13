@@ -50,9 +50,19 @@ GPT_TOKEN         = os.environ.get("OPENAI_API_KEY")
 GPT_MODEL         = os.environ.get("OPENAI_MODEL", "gpt-4o")
 LOCAL_LLM_URL     = os.environ.get("LOCAL_LLM_URL")
 LOCAL_LLM_API_KEY = os.environ.get("LOCAL_LLM_API_KEY", "not-needed")
+LOCAL_LLM_MODEL   = os.environ.get("LOCAL_LLM_MODEL") or "local"
+OPENROUTER_TOKEN  = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_URL    = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_MODEL  = os.environ.get("OPENROUTER_MODEL")
 
 POLL_INTERVAL = int(os.environ.get("NEXIDION_POLL_INTERVAL", "5"))
 AUDIT_DIR     = os.environ.get("NEXIDION_AUDIT_DIR", "./audit_logs")
+STREAM_DEBUG_DIR = os.environ.get("NEXIDION_STREAM_DEBUG_DIR", "./audit_logs/streams")
+CAPTURE_STREAM_PAYLOADS = os.environ.get("NEXIDION_CAPTURE_STREAM_PAYLOADS", "false").lower() == "true"
+REQUEST_TIMEOUT_S = float(os.environ.get("NEXIDION_LLM_REQUEST_TIMEOUT_SECONDS", "1800"))
+HARD_TURN_TIMEOUT_S = float(os.environ.get("NEXIDION_LLM_HARD_TURN_TIMEOUT_SECONDS", "1800"))
+REASONING_EFFORT = os.environ.get("NEXIDION_REASONING_EFFORT") or None
+MAX_OUTPUT_TOKENS = int(os.environ.get("NEXIDION_MAX_OUTPUT_TOKENS", "12000"))
 
 MAX_LOOP_TURNS   = 25
 MAX_TOOL_FETCHES = 20
@@ -63,8 +73,8 @@ BLACKLIST_ICON = "bxs-lock-alt"
 # Nodes with this icon are fully private — agent cannot read OR write content.
 READ_LOCK_ICON = "bxs-no-entry"
 
-if not GPT_TOKEN and not LOCAL_LLM_URL:
-    print("ERROR: Neither OPENAI_API_KEY nor LOCAL_LLM_URL is set in .env", flush=True)
+if not GPT_TOKEN and not LOCAL_LLM_URL and not OPENROUTER_TOKEN:
+    print("ERROR: No local, OpenAI, or OpenRouter LLM provider is configured", flush=True)
     sys.exit(1)
 
 
@@ -118,7 +128,8 @@ def claim_oldest_task(conn):
         cur.execute("""
             WITH grabbed AS (
                 SELECT id, vault_id, instruction, context_node_ids, created_at, status,
-                       requested_by_id, executed_by_id
+                       requested_by_id, executed_by_id, llm_provider, llm_model,
+                       allowed_write_node_ids, allowed_write_operations
                 FROM tasks
                 WHERE status = 'pending'
                 ORDER BY created_at ASC
@@ -190,25 +201,61 @@ def _execute_task(task_row: dict, conn) -> None:
         )
 
         try:
-            _log("Mode: REAL LLM")
+            # NULL provider preserves the pre-selection behaviour: a configured
+            # local endpoint wins, otherwise OpenAI, then OpenRouter.
+            provider = task_row.get("llm_provider") or (
+                "local" if LOCAL_LLM_URL else "openai" if GPT_TOKEN else "openrouter"
+            )
+            provider_config = {
+                "local": (LOCAL_LLM_API_KEY, task_row.get("llm_model") or LOCAL_LLM_MODEL, LOCAL_LLM_URL, None),
+                "openai": (GPT_TOKEN, task_row.get("llm_model") or GPT_MODEL, None, None),
+                "openrouter": (
+                    OPENROUTER_TOKEN,
+                    task_row.get("llm_model") or OPENROUTER_MODEL,
+                    OPENROUTER_URL,
+                    {
+                        key: value for key, value in {
+                            "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER"),
+                            "X-Title": os.environ.get("OPENROUTER_APP_TITLE"),
+                        }.items() if value
+                    },
+                ),
+            }
+            if provider not in provider_config:
+                raise RuntimeError(f"Unsupported LLM provider: {provider}")
+            token, model, base_url, default_headers = provider_config[provider]
+            if provider == "local" and not base_url:
+                raise RuntimeError("Local LLM provider is not configured")
+            if provider != "local" and not token:
+                raise RuntimeError(f"{provider.title()} API key is not configured")
+            if not model:
+                raise RuntimeError(f"No model is configured for {provider}")
+            _log(f"Mode: REAL LLM ({provider})")
             summary = run_agent(
                 task_row=task_row,
                 audit=audit,
                 agent_user_id=task_agent_user_id,
-                gpt_token=GPT_TOKEN,
-                gpt_model=GPT_MODEL,
-                local_llm_url=LOCAL_LLM_URL,
-                local_llm_api_key=LOCAL_LLM_API_KEY,
+                gpt_token=token,
+                gpt_model=model,
+                local_llm_url=base_url,
+                local_llm_api_key=token or LOCAL_LLM_API_KEY,
+                default_headers=default_headers,
                 max_loop_turns=MAX_LOOP_TURNS,
                 max_tool_fetches=MAX_TOOL_FETCHES,
                 blacklist_icon=BLACKLIST_ICON,
                 read_lock_icon=READ_LOCK_ICON,
                 log_fn=_log,
                 record_full_text=False,
+                request_timeout_s=REQUEST_TIMEOUT_S,
+                hard_turn_timeout_s=HARD_TURN_TIMEOUT_S,
+                reasoning_effort=REASONING_EFFORT,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+                stream_debug_dir=STREAM_DEBUG_DIR,
+                capture_stream_payloads=CAPTURE_STREAM_PAYLOADS,
             )
             mark_task_raw(conn, task_id, "completed", summary=summary,
                           operations=audit.writes)
-            audit.save("completed", summary, AUDIT_DIR, GPT_MODEL, _log)
+            audit.save("completed", summary, AUDIT_DIR, model, _log)
             _log(f"✅ {summary}")
 
 
@@ -217,7 +264,7 @@ def _execute_task(task_row: dict, conn) -> None:
             _log(f"✗ Task failed: {e}")
             mark_task_raw(conn, task_id, "failed", summary=str(e),
                           operations=audit.writes)
-            audit.save("failed", str(e), AUDIT_DIR, GPT_MODEL, _log)
+            audit.save("failed", str(e), AUDIT_DIR, task_row.get("llm_model") or "unknown", _log)
 
 
 # ---------------------------------------------------------------------------

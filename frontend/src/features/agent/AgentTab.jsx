@@ -23,6 +23,62 @@ const OPERATION_META = {
 
 // How many minutes before a "processing" task is considered stale/stuck.
 const STUCK_THRESHOLD_MINUTES = 10;
+const CUSTOM_MODEL_VALUE = '__custom__';
+
+function formatTokenPrice(value) {
+    if (value === null || value === undefined) return 'price unavailable';
+    const digits = value < 0.01 ? 4 : value < 1 ? 2 : value < 10 ? 2 : 0;
+    return `$${Number(value).toFixed(digits)}`;
+}
+
+const ACTIONS = [
+    {
+        id: 'bubble-up',
+        icon: '↑',
+        title: 'Roll up branch knowledge',
+        description: 'Select a parent. Rewrite it and its non-leaf descendants from existing child knowledge, bottom-up.',
+        impact: 'Leaves stay unchanged. Parent notes and their AI summaries are rewritten from the deepest parent upward, finishing at each selected root. Structure stays unchanged.',
+        confirmLabel: 'Selected destination root',
+        buttonLabel: 'Roll up to selected root',
+        instruction: `Roll up knowledge bottom-up for every selected context node, treating each selected node as the destination root of its branch.
+
+For each subtree:
+1. Use get_subtree to discover the complete hierarchy.
+2. Identify leaves and non-leaf parents. Leaves are source material only: do not call write_node, patch_node, rename_node, move_node, or any other write tool on a leaf. Do not change a leaf's content, title, summary, version, or location.
+3. Process only non-leaf nodes, deepest first and each selected root last. For each parent, read its immediate children's current content or summaries. Children that are themselves parents will already contain the newly rolled-up result from the previous step.
+4. Rewrite the parent's Markdown content as a useful, coherent synthesis of the knowledge in its immediate children. Preserve important existing parent context when it remains relevant; do not merely concatenate summaries.
+5. In the same write_node call, set the parent's ai_summary to exactly three useful bullet points beginning with "- ". Both content and summary must be updated for every accessible non-leaf node in scope.
+6. Do not create, delete, move, rename, or reorganize nodes. Skip private or write-protected parents that cannot be updated and mention them in the final result.
+
+If a selected root is a leaf, leave it unchanged and report that it has no child knowledge to roll up. Finish with the number of parent notes updated, confirmation that leaves were unchanged, and any nodes skipped.`,
+    },
+    {
+        id: 'refresh-selected',
+        icon: '✦',
+        title: 'Refresh selected summaries',
+        description: 'Regenerate concise summaries for the selected nodes only.',
+        impact: 'Updates only the selected nodes’ AI summaries. Children, note content, and structure stay unchanged.',
+        buttonLabel: 'Refresh summaries',
+        instruction: `Refresh the AI summary of each selected context node, and only those nodes.
+
+Read each selected node's content and replace its ai_summary with exactly three useful bullet points beginning with "- ". Use patch_node with an empty patches array so Markdown content is unchanged. Do not process descendants unless they are separately selected. Do not create, delete, move, rename, or reorganize nodes. Skip private nodes that cannot be read and mention them in the final result.
+
+Finish with the number of summaries updated and any nodes skipped.`,
+    },
+    {
+        id: 'improve-titles',
+        icon: '✎',
+        title: 'Improve unclear titles',
+        description: 'Review selected nodes and rename only titles that are vague or misleading.',
+        impact: 'May rename selected nodes. Note content, summaries, children, and locations stay unchanged.',
+        buttonLabel: 'Review titles',
+        instruction: `Review the titles of the selected context nodes, and only those nodes.
+
+Read enough of each selected node to judge whether its title is vague, generic, or misleading. Rename a node only when a clearer, concise title is strongly supported by its content. Leave already useful titles unchanged. Do not modify content or AI summaries, and do not create, delete, move, or reorganize any nodes. Do not process descendants unless they are separately selected.
+
+Finish with a list of renamed nodes and explicitly state when no rename was needed.`,
+    },
+];
 
 // ─── OperationDetail ──────────────────────────────────────────────────────────
 
@@ -115,6 +171,8 @@ function RetryButton({ task, vaultId }) {
                 vault_id: parseInt(vaultId),
                 instruction: task.instruction,
                 context_node_ids: task.context_node_ids || [],
+                llm_provider: task.llm_provider || undefined,
+                llm_model: task.llm_model || undefined,
             }),
         onSuccess: () => {
             toast.success('Task re-queued');
@@ -168,6 +226,11 @@ function TaskDetail({ taskId, vaultId, taskStatus }) {
                 <div className="agent-task-box is-input">
                     {data.instruction || <span className="text-muted">—</span>}
                 </div>
+                {(data.llm_provider || data.llm_model) && (
+                    <div className="agent-task-model">
+                        {data.llm_provider || 'legacy default'} · {data.llm_model || 'default model'}
+                    </div>
+                )}
             </div>
 
             <div>
@@ -284,9 +347,59 @@ export default function AgentTab() {
     const { vaultId, nodeId } = useParams();
     const queryClient = useQueryClient();
     const toast = useToast();
-    const [instruction, setInstruction] = useState('');
-    const [isSending, setIsSending] = useState(false);
+    const [pendingAction, setPendingAction] = useState(null);
+    const [excludedRollupNodeIds, setExcludedRollupNodeIds] = useState(() => new Set());
     const [statusFilter, setStatusFilter] = useState('');
+    const [llmProvider, setLlmProvider] = useState(() => localStorage.getItem('nexidion-task-provider') || '');
+    const [llmModel, setLlmModel] = useState(() => localStorage.getItem('nexidion-task-model') || '');
+
+    const { data: systemConfig } = useQuery({
+        queryKey: ['systemConfig'],
+        queryFn: () => apiClient.get('/api/system/config').then(res => res.data),
+        staleTime: 60_000,
+    });
+    const providerConfig = useMemo(
+        () => systemConfig?.task_providers || systemConfig?.llm_providers || systemConfig?.summary_providers || {},
+        [systemConfig],
+    );
+    const availableProviders = useMemo(() => Object.entries(providerConfig)
+        .filter(([, config]) => config?.configured)
+        .map(([id, config]) => ({
+            id,
+            label: config.label || ({ local: 'Local', openai: 'OpenAI', openrouter: 'OpenRouter' }[id] || id),
+            models: Array.isArray(config.models) && config.models.length
+                ? config.models
+                : [config.default_model || config.model].filter(Boolean),
+            defaultModel: config.default_model || config.model || '',
+            supportsCustomModel: Boolean(config.supports_custom_model),
+        })), [providerConfig]);
+    const selectedProvider = availableProviders.find(provider => provider.id === llmProvider);
+    const { data: openRouterCatalog } = useQuery({
+        queryKey: ['openrouterModels'],
+        queryFn: () => apiClient.get('/api/system/openrouter-models').then(res => res.data),
+        enabled: llmProvider === 'openrouter',
+        staleTime: 5 * 60_000,
+        retry: 1,
+    });
+    const curatedModels = llmProvider === 'openrouter'
+        ? (openRouterCatalog?.models || [])
+        : (selectedProvider?.models || []).map(id => ({ id, name: id }));
+    const selectedCatalogModel = curatedModels.find(model => model.id === llmModel);
+    const usesCustomModel = Boolean(selectedProvider?.supportsCustomModel && llmModel && !selectedCatalogModel);
+
+    useEffect(() => {
+        if (!availableProviders.length) return;
+        const provider = availableProviders.find(item => item.id === llmProvider) || availableProviders[0];
+        if (provider.id !== llmProvider) setLlmProvider(provider.id);
+        if (!llmModel || (!provider.supportsCustomModel && provider.models.length && !provider.models.includes(llmModel))) {
+            setLlmModel(provider.defaultModel || provider.models[0] || '');
+        }
+    }, [availableProviders, llmProvider, llmModel]);
+
+    useEffect(() => {
+        if (llmProvider) localStorage.setItem('nexidion-task-provider', llmProvider);
+        if (llmModel) localStorage.setItem('nexidion-task-model', llmModel);
+    }, [llmProvider, llmModel]);
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
     const isEditingNode = useWorkspaceStore(state => state.isEditingNode);
@@ -300,6 +413,34 @@ export default function AgentTab() {
             .map(id => ({ id, title: nodeMap.get(id)?.title || id }))
             .sort((a, b) => a.title.localeCompare(b.title));
     }, [selectedNodeIds, allNodesFlat]);
+
+    const rollupPreview = useMemo(() => {
+        if (pendingAction?.id !== 'bubble-up') return { parents: [], leafCount: 0 };
+        const selectedIds = new Set(selectedNodeIds);
+        const parents = new Map();
+        const leaves = new Set();
+        const visit = (node, depth = 0, insideRoot = false) => {
+            const inScope = insideRoot || selectedIds.has(node.id);
+            const children = Array.isArray(node.children) ? node.children : [];
+            if (inScope) {
+                if (children.length) parents.set(node.id, {
+                    id: node.id, title: node.title, depth,
+                    writeAllowed: node.write_allowed !== false,
+                });
+                else leaves.add(node.id);
+            }
+            children.forEach(child => visit(child, depth + 1, inScope));
+        };
+        (queryData?.tree || []).forEach(node => visit(node));
+        return {
+            parents: Array.from(parents.values()).sort((a, b) => b.depth - a.depth || a.title.localeCompare(b.title)),
+            leafCount: leaves.size,
+        };
+    }, [pendingAction, queryData?.tree, selectedNodeIds]);
+
+    useEffect(() => {
+        setExcludedRollupNodeIds(new Set());
+    }, [pendingAction, selectedNodeIds]);
 
 
     const { data: tasks = [], isLoading: loadingTasks } = useQuery({
@@ -350,49 +491,112 @@ export default function AgentTab() {
         }
     }, [tasks, vaultId, nodeId, isEditingNode, queryClient]);
 
-    const handleSend = async () => {
-        if (!instruction.trim() || isSending) return;
-        setIsSending(true);
-        try {
-            await apiClient.post('/api/tasks', {
-                vault_id: parseInt(vaultId),
-                instruction: instruction.trim(),
-                context_node_ids: Array.from(selectedNodeIds),
-            });
-            setInstruction('');
-            toast.success('Task added to queue');
+    const queueMutation = useMutation({
+        mutationFn: async (action) => {
+            const jobs = action.jobs || [{
+                instruction: action.instruction,
+                contextNodeIds: Array.from(selectedNodeIds),
+            }];
+            if (action.jobs) {
+                return apiClient.post('/api/tasks/batch', {
+                    vault_id: parseInt(vaultId),
+                    llm_provider: llmProvider,
+                    llm_model: llmModel,
+                    jobs: jobs.map(job => ({
+                        instruction: job.instruction,
+                        context_node_ids: job.contextNodeIds,
+                        allowed_write_node_ids: job.allowedWriteNodeIds,
+                        allowed_write_operations: ['write_node'],
+                    })),
+                });
+            }
+            const responses = [];
+            for (const job of jobs) {
+                responses.push(await apiClient.post('/api/tasks', {
+                    vault_id: parseInt(vaultId),
+                    instruction: job.instruction,
+                    context_node_ids: job.contextNodeIds,
+                    llm_provider: llmProvider,
+                    llm_model: llmModel,
+                    ...(job.allowedWriteNodeIds ? {
+                        allowed_write_node_ids: job.allowedWriteNodeIds,
+                        allowed_write_operations: ['write_node'],
+                    } : {}),
+                }));
+            }
+            return responses;
+        },
+        onSuccess: (_, action) => {
+            setPendingAction(null);
+            toast.success(`${action.title} added to queue`);
             queryClient.invalidateQueries({ queryKey: ['agentTasks', vaultId] });
-        } catch (err) {
+        },
+        onError: (err) => {
             const msg = err.response?.data?.error;
             if (err.response?.status === 403) {
                 toast.error(msg || "You don't have permission to submit tasks in this vault.");
             } else if (err.response?.status === 429) {
                 toast.error('Too many tasks — please wait before submitting again.');
             } else {
-                toast.error(msg || 'Failed to queue task — check your connection.');
+                toast.error(msg || 'Failed to queue action — check your connection.');
             }
-        } finally {
-            setIsSending(false);
+        },
+    });
+
+    const handleConfirmAction = async () => {
+        if (!pendingAction || selectedNodes.length === 0 || !llmProvider || !llmModel || queueMutation.isPending) return;
+        let queuedAction = pendingAction;
+        if (pendingAction.id === 'bubble-up') {
+            const included = rollupPreview.parents.filter(node => node.writeAllowed && !excludedRollupNodeIds.has(node.id));
+            if (!included.length) {
+                toast.error('Select at least one parent node to update.');
+                return;
+            }
+            const excluded = rollupPreview.parents
+                .filter(node => !node.writeAllowed || excludedRollupNodeIds.has(node.id))
+                .map(node => `${node.title} (${node.id})`).join(', ') || '(none)';
+            queuedAction = {
+                ...pendingAction,
+                title: `${pendingAction.title} (${included.length} parent jobs)`,
+                jobs: included.map((node, index) => ({
+                    contextNodeIds: [node.id],
+                    allowedWriteNodeIds: [node.id],
+                    instruction: `Perform bounded roll-up job ${index + 1} of ${included.length}. Update exactly one parent: ${node.title} (${node.id}).
+
+Use get_subtree, then fetch the full current Markdown content of this parent and every immediate child with get_node_content. This full-content evidence is mandatory; summaries alone are insufficient. The children are read-only source material and earlier jobs may already have refreshed their content. Rewrite this parent's Markdown as a coherent, useful synthesis that preserves still-relevant existing parent context. In the same write_node call, set exactly three useful AI-summary bullets beginning with "- ".
+
+Do not write, patch, rename, move, create, or delete any other node. The only UUID permitted for a write is ${node.id}. Leaves and all descendants must remain unchanged. Parents excluded by the user from the overall roll-up: ${excluded}.
+
+Finish after this one parent has been updated, or explain why it could not be updated.`,
+                })),
+            };
+        }
+        try {
+            await queueMutation.mutateAsync(queuedAction);
+        } catch {
+            // The mutation displays the API error through the toast provider.
         }
     };
 
-    const handleKeyDown = (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSend();
-    };
-
     return (
-        <div className="p-3 d-flex flex-column gap-3 h-100">
+        <div className="agent-actions-panel p-3 d-flex flex-column gap-3 h-100">
             <div className="flex-shrink-0">
-                <h6 className="text-muted mb-2">Queue Agent Task</h6>
+                <div className="agent-actions-heading">
+                    <div>
+                        <h6 className="mb-1">AI actions</h6>
+                        <p>Run a focused background job. Use MCP for open-ended AI conversations.</p>
+                    </div>
+                    <span className="agent-worker-badge">Task runner</span>
+                </div>
 
-                <div className="mb-2">
-                    <small className="text-muted fw-bold d-block mb-1">
-                        Context nodes ({selectedNodes.length})
+                <div className={`agent-context-box ${selectedNodes.length === 0 ? 'is-empty' : ''}`}>
+                    <small className="agent-context-label">
+                        Selected context <span>{selectedNodes.length}</span>
                     </small>
                     {selectedNodes.length === 0 ? (
-                        <small className="text-muted fst-italic">
-                            No nodes selected — use the tree to select context nodes
-                        </small>
+                        <div className="agent-empty-context">
+                            Select one or more nodes in the tree to enable actions.
+                        </div>
                     ) : (
                         <div className="agent-context-list">
                             {selectedNodes.map(n => (
@@ -404,27 +608,126 @@ export default function AgentTab() {
                     )}
                 </div>
 
-                <textarea
-                    className="form-control form-control-sm font-monospace"
-                    rows={4}
-                    placeholder={"Instruction for the agent…\n\n(Ctrl+Enter to send)"}
-                    value={instruction}
-                    onChange={e => setInstruction(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={isSending}
-                    style={{ resize: 'vertical', fontSize: '0.82rem' }}
-                />
-
-                <div className="d-grid mt-3">
-                    <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={handleSend}
-                        disabled={!instruction.trim() || isSending}
-                    >
-                        {isSending ? 'Queuing…' : 'Queue Task ↗'}
-                    </Button>
+                <div className="agent-model-selector">
+                    <Form.Group>
+                        <Form.Label>Provider</Form.Label>
+                        <Form.Select size="sm" value={llmProvider} onChange={event => {
+                            const next = availableProviders.find(item => item.id === event.target.value);
+                            setLlmProvider(event.target.value);
+                            setLlmModel(next?.defaultModel || next?.models[0] || '');
+                        }} disabled={!availableProviders.length}>
+                            {!availableProviders.length && <option value="">No provider configured</option>}
+                            {availableProviders.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+                        </Form.Select>
+                    </Form.Group>
+                    <Form.Group>
+                        <Form.Label>Model</Form.Label>
+                        {curatedModels.length || selectedProvider?.supportsCustomModel ? (
+                            <>
+                                <Form.Select
+                                    size="sm"
+                                    value={usesCustomModel || !llmModel ? CUSTOM_MODEL_VALUE : llmModel}
+                                    onChange={event => setLlmModel(event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value)}
+                                >
+                                    {curatedModels.map(model => (
+                                        <option key={model.id} value={model.id}>
+                                            {model.name}{model.price_tier ? ` · ${model.price_tier}` : ''}
+                                        </option>
+                                    ))}
+                                    {selectedProvider?.supportsCustomModel && <option value={CUSTOM_MODEL_VALUE}>Custom model…</option>}
+                                </Form.Select>
+                                {(usesCustomModel || !llmModel) && selectedProvider?.supportsCustomModel && (
+                                    <Form.Control
+                                        className="mt-1"
+                                        size="sm"
+                                        value={llmModel}
+                                        onChange={event => setLlmModel(event.target.value)}
+                                        placeholder="provider/model-id"
+                                        aria-label="Custom model ID"
+                                    />
+                                )}
+                                {selectedCatalogModel && (
+                                    <div className="agent-model-price">
+                                        <span className={`agent-price-tier tier-${selectedCatalogModel.price_tier?.toLowerCase() || 'unknown'}`}>
+                                            {selectedCatalogModel.price_tier || 'Price unavailable'}
+                                        </span>
+                                        {selectedCatalogModel.input_price !== null && selectedCatalogModel.input_price !== undefined && (
+                                            <span>{formatTokenPrice(selectedCatalogModel.input_price)} input / {formatTokenPrice(selectedCatalogModel.output_price)} output per 1M tokens</span>
+                                        )}
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <Form.Control size="sm" value={llmModel} onChange={event => setLlmModel(event.target.value)} placeholder="Model ID" />
+                        )}
+                    </Form.Group>
                 </div>
+
+                <div className="agent-action-grid" aria-label="Available AI actions">
+                    {ACTIONS.map(action => (
+                        <button
+                            key={action.id}
+                            type="button"
+                            className={`agent-action-card ${pendingAction?.id === action.id ? 'is-selected' : ''}`}
+                            onClick={() => setPendingAction(action)}
+                            disabled={selectedNodes.length === 0 || !llmProvider || !llmModel || queueMutation.isPending}
+                        >
+                            <span className="agent-action-icon" aria-hidden="true">{action.icon}</span>
+                            <span className="agent-action-copy">
+                                <strong>{action.title}</strong>
+                                <span>{action.description}</span>
+                            </span>
+                            <span className="agent-action-arrow" aria-hidden="true">›</span>
+                        </button>
+                    ))}
+                </div>
+
+                {pendingAction && (
+                    <div className="agent-action-confirm" role="region" aria-label={`Confirm ${pendingAction.title}`}>
+                        <strong>{pendingAction.title}</strong>
+                        <p>{pendingAction.impact}</p>
+                        <div className="agent-action-confirm-context">
+                            {pendingAction.confirmLabel || 'Selected context'}: {selectedNodes.length} {selectedNodes.length === 1 ? 'node' : 'nodes'}
+                        </div>
+                        {pendingAction.id === 'bubble-up' && (
+                            <div className="agent-rollup-preview">
+                                <div className="agent-rollup-preview-heading">
+                                    <strong>Parent notes to rewrite</strong>
+                                    <span>{rollupPreview.parents.filter(node => node.writeAllowed && !excludedRollupNodeIds.has(node.id)).length} of {rollupPreview.parents.length}</span>
+                                </div>
+                                {rollupPreview.parents.length ? (
+                                    <div className="agent-rollup-node-list">
+                                        {rollupPreview.parents.map(node => (
+                                            <Form.Check
+                                                key={node.id}
+                                                id={`rollup-${node.id}`}
+                                                type="checkbox"
+                                                checked={node.writeAllowed && !excludedRollupNodeIds.has(node.id)}
+                                                disabled={!node.writeAllowed}
+                                                label={`${node.title}${node.writeAllowed ? '' : ' — connector-managed, read-only'}`}
+                                                onChange={event => setExcludedRollupNodeIds(previous => {
+                                                    const next = new Set(previous);
+                                                    if (event.target.checked) next.delete(node.id);
+                                                    else next.add(node.id);
+                                                    return next;
+                                                })}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : <div className="agent-rollup-empty">The selected node has no children to roll up.</div>}
+                                <small>{rollupPreview.leafCount} leaf {rollupPreview.leafCount === 1 ? 'node is' : 'nodes are'} used as unchanged source material.</small>
+                            </div>
+                        )}
+                        <div className="agent-action-confirm-buttons">
+                            <Button variant="outline-secondary" size="sm" onClick={() => setPendingAction(null)} disabled={queueMutation.isPending}>
+                                Cancel
+                            </Button>
+                            <Button variant="primary" size="sm" onClick={handleConfirmAction} disabled={queueMutation.isPending || (pendingAction.id === 'bubble-up' && !rollupPreview.parents.some(node => node.writeAllowed && !excludedRollupNodeIds.has(node.id)))}>
+                                {queueMutation.isPending ? 'Queuing…' : pendingAction.buttonLabel}
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <hr className="my-1" />
@@ -432,7 +735,7 @@ export default function AgentTab() {
             <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: 0 }}>
                 <div className="d-flex justify-content-between align-items-center mb-2">
                     <h6 className="text-muted mb-0">
-                        Tasks
+                        Recent jobs
                         <span className="ms-1" style={{ fontSize: '0.7rem', fontWeight: 400 }}>
                             (last 20)
                         </span>

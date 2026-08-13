@@ -309,6 +309,39 @@ def create_node(vault_id: int):
         return jsonify({"error": "An internal server error occurred"}), 500
 
 
+@nodes_bp.route('/<string:node_id>/copy', methods=['POST'], strict_slashes=False)
+@jwt_required()
+@limiter.limit("30 per minute; 200 per hour")
+def copy_node_to_vault(vault_id: int, node_id: str):
+    """Copy a node/subtree into another writable vault using fresh UUIDs."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    destination_vault_id = data.get('destination_vault_id')
+    if not isinstance(destination_vault_id, int) or isinstance(destination_vault_id, bool):
+        return jsonify({"error": "destination_vault_id must be an integer."}), 400
+    recursive = data.get('recursive', True)
+    if not isinstance(recursive, bool):
+        return jsonify({"error": "recursive must be a boolean."}), 400
+    destination_parent_id = data.get('destination_parent_id')
+    if destination_parent_id is not None and not isinstance(destination_parent_id, str):
+        return jsonify({"error": "destination_parent_id must be a string or null."}), 400
+
+    try:
+        from backend.services.node_copy_service import copy_node_to_vault as copy_service
+        result = copy_service(
+            node_id, vault_id, destination_vault_id, user_id,
+            recursive=recursive, destination_parent_id=destination_parent_id,
+        )
+        return jsonify(result), 201
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logging.error("Cross-vault node copy failed", exc_info=True)
+        return jsonify({"error": "An internal server error occurred"}), 500
+
+
 @nodes_bp.route('/<string:node_id>', methods=['PUT'], strict_slashes=False)
 @jwt_required()
 @limiter.limit("60 per minute; 500 per hour")

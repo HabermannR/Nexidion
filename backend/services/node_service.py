@@ -228,6 +228,9 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
     )
     ui_node_map = {}
     agent_node_map = {}
+    frozen_source_ids = {row[0] for row in db.session.query(SourceItem.node_id).filter(
+        SourceItem.node_id.isnot(None), SourceItem.policy.in_(("snapshot", "managed")),
+    ).all()}
 
     # 2. Build flat dictionaries
     for n in nodes:
@@ -237,6 +240,7 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
             'title': title,
             'parent_id': n.parent_id,
             'icon': n.icon,
+            'write_allowed': n.id not in frozen_source_ids,
             'children': []
         }
         agent_node_map[n.id] = {
@@ -244,6 +248,7 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
             'title': title,
             'parent_id': n.parent_id,
             'icon': n.icon,
+            'write_allowed': n.id not in frozen_source_ids,
             'ai_summary': n.ai_summary,
             'summary_is_current': n.summary_is_current,
             'children': []

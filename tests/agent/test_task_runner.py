@@ -118,6 +118,167 @@ def test_agent_workflow_write_node(mock_openai_class, setup_agent_env, db_sessio
 
 
 @patch("agent.agent.OpenAI")
+def test_bubble_up_updates_non_leaf_nodes_bottom_up_without_touching_leaves(
+        mock_openai_class, setup_agent_env, db_session):
+    """A selected grandparent rolls existing leaf knowledge into parents, then itself."""
+    vault, agent, grandparent, mock_task = setup_agent_env
+    from backend.services.node_service import create_node
+
+    parent = create_node(
+        "Parent", "Original parent content.\n\nStill original.",
+        grandparent.id, vault.id, agent.id,
+    )
+    leaf_a = create_node(
+        "Leaf A", "Leaf A source content.\n\nMust remain unchanged.",
+        parent.id, vault.id, agent.id,
+    )
+    leaf_b = create_node(
+        "Leaf B", "Leaf B source content.\n\nMust remain unchanged.",
+        parent.id, vault.id, agent.id,
+    )
+    leaf_a.ai_summary = "- A fact\n- A detail\n- A conclusion"
+    leaf_b.ai_summary = "- B fact\n- B detail\n- B conclusion"
+    db_session.session.commit()
+
+    original_leaves = {
+        leaf_a.id: (leaf_a.current_version, leaf_a.current_version_object.content,
+                    leaf_a.ai_summary),
+        leaf_b.id: (leaf_b.current_version, leaf_b.current_version_object.content,
+                    leaf_b.ai_summary),
+    }
+
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
+    mock_response = MagicMock()
+    mock_response.output = [
+        create_mock_tool_call("write_node", {
+            "node_id": parent.id,
+            "content": "Combined knowledge from Leaf A and Leaf B.\n\nThis is the parent synthesis.",
+            "ai_summary": "- Parent fact\n- Parent detail\n- Parent conclusion",
+        }),
+        create_mock_tool_call("write_node", {
+            "node_id": grandparent.id,
+            "content": "Combined knowledge from the newly updated parent.\n\nThis is the root synthesis.",
+            "ai_summary": "- Root fact\n- Root detail\n- Root conclusion",
+        }),
+        create_mock_tool_call("finish", {
+            "summary": "Rolled existing leaf knowledge up through two parents.",
+        }),
+    ]
+    mock_client.responses.create.return_value = mock_response
+
+    audit = Audit(
+        task_id=mock_task.id, vault_id=vault.id,
+        instruction="Bubble up to the selected grandparent.",
+        context_node_ids=[grandparent.id], created_at=mock_task.created_at,
+    )
+    task_row = {
+        "instruction": "Bubble up to the selected grandparent.",
+        "vault_id": vault.id,
+        "context_node_ids": [grandparent.id],
+    }
+
+    run_agent_helper(task_row, audit, agent.id)
+    db_session.session.expire_all()
+
+    updated_parent = db_session.session.get(Node, parent.id)
+    updated_grandparent = db_session.session.get(Node, grandparent.id)
+    assert updated_parent.current_version_object.content.startswith("Combined knowledge")
+    assert updated_parent.ai_summary.startswith("- Parent fact")
+    assert updated_grandparent.current_version_object.content.startswith("Combined knowledge")
+    assert updated_grandparent.ai_summary.startswith("- Root fact")
+
+    for leaf_id, expected in original_leaves.items():
+        leaf = db_session.session.get(Node, leaf_id)
+        assert (leaf.current_version, leaf.current_version_object.content,
+                leaf.ai_summary) == expected
+
+    assert [(write["operation"], write["node_id"]) for write in audit.writes] == [
+        ("write_node", parent.id),
+        ("write_node", grandparent.id),
+    ]
+
+
+@patch("agent.agent.OpenAI")
+def test_bounded_task_rejects_wrong_node_and_wrong_operation(
+        mock_openai_class, setup_agent_env, db_session):
+    vault, agent, allowed_node, mock_task = setup_agent_env
+    from backend.services.node_service import create_node
+    other = create_node("Other", "Original other content.", None, vault.id, agent.id)
+    original_other = other.current_version_object.content
+
+    response = MagicMock()
+    response.output = [
+        create_mock_tool_call("write_node", {
+            "node_id": other.id,
+            "content": "Forbidden replacement.\n\nMust not be stored.",
+            "ai_summary": "- One\n- Two\n- Three",
+        }),
+        create_mock_tool_call("patch_node", {
+            "node_id": allowed_node.id,
+            "patches": [],
+            "ai_summary": "- One\n- Two\n- Three",
+        }),
+        create_mock_tool_call("finish", {"summary": "Policy checked."}),
+    ]
+    mock_openai_class.return_value.responses.create.return_value = response
+    audit = Audit(
+        task_id=mock_task.id, vault_id=vault.id, instruction="Bounded",
+        context_node_ids=[allowed_node.id], created_at=mock_task.created_at,
+    )
+
+    run_agent_helper({
+        "instruction": "Bounded", "vault_id": vault.id,
+        "context_node_ids": [allowed_node.id],
+        "allowed_write_node_ids": [allowed_node.id],
+        "allowed_write_operations": ["write_node"],
+    }, audit, agent.id)
+
+    db_session.session.expire_all()
+    assert db_session.session.get(Node, other.id).current_version_object.content == original_other
+    assert audit.writes == []
+    blocked = [call for call in audit.turns[0]["tool_calls"] if call["result"] == "blocked"]
+    assert [call["name"] for call in blocked] == ["write_node", "patch_node"]
+
+
+@patch("agent.agent.OpenAI")
+def test_bounded_write_requires_full_parent_and_child_content(
+        mock_openai_class, setup_agent_env, db_session):
+    vault, agent, parent, mock_task = setup_agent_env
+    from backend.services.node_service import create_node
+    child = create_node("Evidence child", "Full child evidence.", parent.id, vault.id, agent.id)
+    original_parent = parent.current_version_object.content
+    response = MagicMock()
+    response.output = [
+        create_mock_tool_call("write_node", {
+            "node_id": parent.id,
+            "content": "Unsupported synthesis.\n\nMust not be stored.",
+            "ai_summary": "- One\n- Two\n- Three",
+        }),
+        create_mock_tool_call("finish", {"summary": "Evidence checked."}),
+    ]
+    mock_openai_class.return_value.responses.create.return_value = response
+    audit = Audit(
+        task_id=mock_task.id, vault_id=vault.id, instruction="Bounded",
+        context_node_ids=[parent.id], created_at=mock_task.created_at,
+    )
+
+    run_agent_helper({
+        "instruction": "Bounded", "vault_id": vault.id,
+        "context_node_ids": [parent.id],
+        "allowed_write_node_ids": [parent.id],
+        "allowed_write_operations": ["write_node"],
+    }, audit, agent.id)
+
+    db_session.session.expire_all()
+    assert db_session.session.get(Node, parent.id).current_version_object.content == original_parent
+    blocked = audit.turns[0]["tool_calls"][0]
+    assert blocked["result"] == "blocked"
+    assert parent.id in blocked["detail"]
+    assert child.id in blocked["detail"]
+
+
+@patch("agent.agent.OpenAI")
 def test_agent_workflow_move_node(mock_openai_class, setup_agent_env, db_session):
     vault, agent, child_node, mock_task = setup_agent_env
 

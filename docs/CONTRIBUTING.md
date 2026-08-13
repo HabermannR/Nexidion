@@ -175,7 +175,7 @@ Copy `.env.example` to `.env` and adjust the values. All variables are loaded by
 | `DB_PASSWORD` | Yes | —              | Database password. |
 | `FLASK_ENV` | No | `production`   | Set to `development` to enable Flask debug mode outside Docker. |
 | `OPENAI_API_KEY` | No | —              | API key for the AI Task Runner. Leave blank to disable. |
-| `OPENAI_MODEL` | No | `gpt-5.4`      | Model name passed to the OpenAI-compatible API. |
+| `OPENAI_MODEL` | No | `gpt-5.6-luna` | Model name passed to the OpenAI API. The UI offers GPT-5.6 Luna, Terra, and Sol. |
 | `OPENAI_BASE_URL` | No | OpenAI default | Override to point at a local LLM (e.g. Ollama). |
 | `NEXIDION_POLL_INTERVAL` | No | `5`            | How often (seconds) the Task Runner polls for new tasks. |
 | `ASSET_STORAGE_FOLDER` | No | `./asset_storage` | Persistent managed-image storage; mount it as a Docker volume. |
