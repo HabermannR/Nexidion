@@ -13,6 +13,7 @@ import os
 from backend.models import db, Node, SourceItem, Task, User, UserType
 from backend.services.vault_service import (_verify_vault_access, assert_write_allowed,
                                             get_vault_access)
+from backend.services import node_policy_service
 
 # Valid status values, used for validation across create and filter operations.
 VALID_STATUSES = {'pending', 'processing', 'completed', 'failed'}
@@ -87,6 +88,16 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
             "AI is disabled for this vault. Enable an AI agent in Vault access settings."
         )
 
+    requested_ids = set(context_node_ids) | set(allowed_write_node_ids or [])
+    nodes = Node.query.filter(Node.vault_id == vault_id, Node.id.in_(requested_ids)).all()
+    if len(nodes) != len(requested_ids):
+        raise ValueError("Every context/write node must belong to the task vault.")
+    write_ids = set(allowed_write_node_ids or [])
+    for node in nodes:
+        node_policy_service.assert_readable(node, agent.id)
+        if node.id in write_ids:
+            node_policy_service.assert_writable(node, agent.id)
+
     try:
         task = Task(
             vault_id=vault_id,
@@ -107,7 +118,25 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
         raise e
 
 
-def get_tasks(vault_id: int, user_id: int, status: str | None = None, limit: int | None = None) -> list[Task]:
+def _assert_task_nodes_readable(task: Task, user_id: int, *, actor_type: str | None,
+                                include_quarantined: bool) -> None:
+    if not node_policy_service.is_ai_actor(user_id, actor_type):
+        return
+    node_ids = set(task.context_node_ids or []) | set(task.allowed_write_node_ids or [])
+    if not node_ids:
+        return
+    nodes = Node.query.filter(Node.vault_id == task.vault_id, Node.id.in_(node_ids)).all()
+    if len(nodes) != len(node_ids):
+        raise PermissionError("Task context is unavailable to this actor.")
+    for node in nodes:
+        node_policy_service.assert_readable(
+            node, user_id, actor_type=actor_type,
+            include_quarantined=include_quarantined)
+
+
+def get_tasks(vault_id: int, user_id: int, status: str | None = None,
+              limit: int | None = None, *, actor_type: str | None = None,
+              include_quarantined: bool = False) -> list[Task]:
     """
     Ruft Tasks für einen Vault ab, optional gefiltert nach Status und mit einem Limit.
 
@@ -132,15 +161,28 @@ def get_tasks(vault_id: int, user_id: int, status: str | None = None, limit: int
     if status is not None:
         query = query.filter(Task.status == status)
 
-    if limit is not None:
+    if limit is not None and not node_policy_service.is_ai_actor(user_id, actor_type):
         if not isinstance(limit, int) or limit < 1:
             raise ValueError("Limit must be a positive integer.")
         query = query.limit(limit)
 
-    return query.all()
+    tasks = query.all()
+    if node_policy_service.is_ai_actor(user_id, actor_type):
+        visible = []
+        for task in tasks:
+            try:
+                _assert_task_nodes_readable(
+                    task, user_id, actor_type=actor_type,
+                    include_quarantined=include_quarantined)
+            except PermissionError:
+                continue
+            visible.append(task)
+        return visible[:limit] if limit is not None else visible
+    return tasks
 
 
-def get_task_by_id(task_id: str, user_id: int) -> Task:
+def get_task_by_id(task_id: str, user_id: int, *, actor_type: str | None = None,
+                   include_quarantined: bool = False) -> Task:
     """
     Ruft einen einzelnen Task anhand seiner ID ab, nachdem der Zugriff überprüft wurde.
 
@@ -154,4 +196,7 @@ def get_task_by_id(task_id: str, user_id: int) -> Task:
 
     # Zugriff über den übergeordneten Vault prüfen
     _verify_vault_access(task.vault_id, user_id)
+    _assert_task_nodes_readable(
+        task, user_id, actor_type=actor_type,
+        include_quarantined=include_quarantined)
     return task

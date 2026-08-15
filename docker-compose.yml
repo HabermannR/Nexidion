@@ -53,6 +53,27 @@ services:
     profiles:
       - with-task-runner   # opt-in: only starts when explicitly requested
 
+  mcp:
+    build:
+      context: ../nexidion-mcp
+      dockerfile: Dockerfile
+    image: nexidion-mcp:local
+    environment:
+      - NEXIDION_BASE_URL=http://nexidion:5001
+      - NEXIDION_PUBLIC_URL=http://localhost:5002
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - MCP_STATE_DB=/state/oauth_state.db
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=5002
+    ports:
+      - "127.0.0.1:5002:5002"
+    volumes:
+      - nexidion-mcp-state:/state
+    depends_on:
+      - nexidion
+    profiles:
+      - with-mcp
+
   postgres:
     image: postgres:18
     environment:
@@ -75,3 +96,4 @@ services:
 volumes:
   nexidion-db-data:
   nexidion-asset-data:
+  nexidion-mcp-state:

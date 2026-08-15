@@ -17,21 +17,9 @@ export default function ContextBarContainer() {
     const allNodesFlat = useMemo(() => queryData?.allNodesFlat || [], [queryData]);
 
     const selectedNodeIds = useWorkspaceStore(state => state.selectedNodeIds);
-    const savedSets = useWorkspaceStore(state => state.savedSets);
     const clearSelection = useWorkspaceStore(state => state.clearSelection);
-    const setSelection = useWorkspaceStore(state => state.setSelection);
-    const saveCurrentSet = useWorkspaceStore(state => state.saveCurrentSet);
-    const deleteSet = useWorkspaceStore(state => state.deleteSet);
+    const removeNodeFromContext = useWorkspaceStore(state => state.removeNodeFromContext);
     const selectionSize = selectedNodeIds.size;
-
-    const savedSetsForDisplay = useMemo(() => {
-        if (!savedSets || typeof savedSets !== 'object') return [];
-        return Object.entries(savedSets).map(([name, ids]) => ({
-            name,
-            count: Array.isArray(ids) ? ids.length : 0,
-            ids: Array.isArray(ids) ? ids : [],
-        }));
-    }, [savedSets]);
 
     const selectedNodesWithTitles = useMemo(() => {
         if (allNodesFlat.length === 0 || selectedNodeIds.size === 0) return [];
@@ -68,11 +56,8 @@ export default function ContextBarContainer() {
     return (
         <ContextBarDisplay
             selectionSize={selectionSize}
-            savedSets={savedSetsForDisplay}
             onClear={clearSelection}
-            onSave={saveCurrentSet}
-            onLoadSet={setSelection}
-            onDeleteSet={deleteSet}
+            onRemoveNode={removeNodeFromContext}
             isExpanded={isExpanded}
             onToggleExpand={() => setIsExpanded(prev => !prev)}
             selectedNodes={selectedNodesWithTitles}

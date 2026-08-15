@@ -10,6 +10,7 @@ import re
 # Importiere die Services und Modelle (inkl. _verify_vault_access für Lesevorgänge!)
 from backend.services.vault_service import get_vault_access, assert_write_allowed, _verify_vault_access
 from backend.models import db, Node, Version, Vault, User, UserType, SourceItem
+from backend.services import node_policy_service
 
 PRIVATE_ICON = "bxs-no-entry"
 
@@ -19,9 +20,11 @@ def _is_machine_actor(user_id: int) -> bool:
     return bool(user and user.user_type == UserType.LLM_ASSISTANT)
 
 
-def _assert_node_readable(node: Node, user_id: int) -> None:
-    if node.icon == PRIVATE_ICON and _is_machine_actor(user_id):
-        raise PermissionError("This node is private and unavailable to machine actors.")
+def _assert_node_readable(node: Node, user_id: int, *, actor_type: str | None = None,
+                          include_quarantined: bool = False) -> None:
+    node_policy_service.assert_readable(
+        node, user_id, actor_type=actor_type, include_quarantined=include_quarantined
+    )
 
 
 def _assert_source_mutable(node_id: str, allow_managed_source: bool = False) -> None:
@@ -167,7 +170,9 @@ def _is_descendant(ancestor_id: str, descendant_id: str, vault_id: int) -> bool:
     return db.session.query(cte.c.id).filter(cte.c.id == ancestor_id).scalar() is not None
 
 
-def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user_id: int) -> List[Node]:
+def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user_id: int, *,
+                                        actor_type: str | None = None,
+                                        include_quarantined: bool = False) -> List[Node]:
     """
     Zentrale, strikte Hilfsfunktion: Holt eine Liste von Nodes anhand ihrer IDs, lädt
     deren aktuelle Versionen und Autoren effizient vor und validiert den Zugriff.
@@ -203,7 +208,8 @@ def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user
     for node in nodes:
         if node.vault_id != vault_id:
             raise PermissionError(f"Permission denied to access node with ID: {node.id}")
-        _assert_node_readable(node, user_id)
+        _assert_node_readable(node, user_id, actor_type=actor_type,
+                              include_quarantined=include_quarantined)
 
     # Schritt 4: Wenn alle Prüfungen bestanden wurden, die Liste der Nodes zurückgeben
     return nodes
@@ -241,6 +247,8 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
             'parent_id': n.parent_id,
             'icon': n.icon,
             'write_allowed': n.id not in frozen_source_ids,
+            'access_policy': n.to_dict(include_content=False)['access_policy'],
+            'effective_access_policy': node_policy_service.effective_policy(n).to_dict(),
             'children': []
         }
         agent_node_map[n.id] = {
@@ -251,6 +259,8 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
             'write_allowed': n.id not in frozen_source_ids,
             'ai_summary': n.ai_summary,
             'summary_is_current': n.summary_is_current,
+            'access_policy': n.to_dict(include_content=False)['access_policy'],
+            'effective_access_policy': node_policy_service.effective_policy(n).to_dict(),
             'children': []
         }
 
@@ -294,23 +304,40 @@ def rebuild_vault_tree_cache(vault_id: int) -> dict:
     }
 
 
-def get_nodes_as_tree(vault_id: int, user_id: int, format_type: str = 'tree', client_etag: Optional[str] = None):
+def get_nodes_as_tree(vault_id: int, user_id: int, format_type: str = 'tree', client_etag: Optional[str] = None,
+                      *, actor_type: str | None = None, include_quarantined: bool = False):
     _verify_vault_access(vault_id, user_id)
     vault = db.session.get(Vault, vault_id)
     if not vault:
         raise ValueError("Vault not found.")
-    is_ui = (format_type == 'tree')
+    ai_actor = node_policy_service.is_ai_actor(user_id, actor_type)
+    is_ui = (format_type == 'tree' and not ai_actor)
     target_etag = vault.cached_ui_tree_etag if is_ui else vault.cached_agent_tree_etag
-    if target_etag and client_etag and client_etag.strip('"') == target_etag:
-        return None, target_etag, True
     target_tree = vault.cached_ui_tree if is_ui else vault.cached_agent_tree
     if not target_tree:
         trees = rebuild_vault_tree_cache(vault_id)
         target_tree, target_etag = trees['ui'] if is_ui else trees['agent']
+    if ai_actor:
+        def visible(items):
+            result = []
+            for item in items:
+                policy = item.get('effective_access_policy', {})
+                read = policy.get('ai_read', 'allow')
+                if read == 'deny' or (read == 'explicit_only' and not include_quarantined):
+                    continue
+                copy = dict(item)
+                copy['children'] = visible(item.get('children', []))
+                result.append(copy)
+            return result
+        target_tree = visible(target_tree)
+        target_etag = hashlib.md5(json.dumps(target_tree, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if target_etag and client_etag and client_etag.strip('"') == target_etag:
+        return None, target_etag, True
     return target_tree, target_etag, False
 
 
-def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False) -> list[dict]:
+def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False, *,
+                      actor_type: str | None = None, include_quarantined: bool = False) -> list[dict]:
     _verify_vault_access(vault_id, user_id)
     nodes = (
         Node.query
@@ -320,36 +347,43 @@ def get_nodes_as_list(vault_id: int, user_id: int, v3_mode: bool = False) -> lis
         .order_by(Version.title)
         .all()
     )
-    if _is_machine_actor(user_id):
-        nodes = [node for node in nodes if node.icon != PRIVATE_ICON]
+    if node_policy_service.is_ai_actor(user_id, actor_type):
+        readable = []
+        for node in nodes:
+            try:
+                _assert_node_readable(node, user_id, actor_type=actor_type,
+                                      include_quarantined=include_quarantined)
+                readable.append(node)
+            except PermissionError:
+                pass
+        nodes = readable
     return [node.to_dict(include_content=True) for node in nodes]
 
 
-def find_node_by_title(title: str, vault_id: int, user_id: int) -> dict | None:
+def find_node_by_title(title: str, vault_id: int, user_id: int, *, actor_type: str | None = None,
+                       include_quarantined: bool = False) -> dict | None:
     _verify_vault_access(vault_id, user_id)
     if not title or not title.strip():
         raise ValueError("Search title cannot be empty")
     search_term = f"%{title}%"
     relevance = case((Version.title.ilike(title), 0), else_=1)
-    subquery = (
-        select(Version.node_id)
-        .join(Node, Version.node_id == Node.id)
-        .filter(
-            Node.vault_id == vault_id,
-            Version.title.ilike(search_term),
-            Node.current_version == Version.version
-        )
-        .order_by(relevance, Version.title)
-        .limit(1)
-        .scalar_subquery()
-    )
-    node = Node.query.options(joinedload(Node.current_version_object)).filter(Node.id == subquery).first()
-    if node:
-        _assert_node_readable(node, user_id)
-    return node.to_dict(include_content=True) if node else None
+    # Keep ordered candidates so a hidden title match cannot mask a later readable match.
+    nodes = (Node.query.options(joinedload(Node.current_version_object))
+             .join(Node.current_version_object)
+             .filter(Node.vault_id == vault_id, Version.title.ilike(search_term))
+             .order_by(relevance, Version.title).all())
+    for node in nodes:
+        try:
+            _assert_node_readable(node, user_id, actor_type=actor_type,
+                                  include_quarantined=include_quarantined)
+            return node.to_dict(include_content=True)
+        except PermissionError:
+            continue
+    return None
 
 
-def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 20) -> list[dict]:
+def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 20, *,
+                          actor_type: str | None = None, include_quarantined: bool = False) -> list[dict]:
     _verify_vault_access(vault_id, user_id)
     if not query or not query.strip():
         return []
@@ -374,8 +408,6 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
         .join(Node.current_version_object)
         .filter(
             Node.vault_id == vault_id,
-            *([or_(Node.icon.is_(None), Node.icon != PRIVATE_ICON)]
-              if _is_machine_actor(user_id) else []),
             or_(
                 Version.title.ilike(f"%{q}%"),
                 Version.fts_en.op("@@")(tsquery_en),
@@ -385,17 +417,24 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
             )
         )
         .order_by(relevance.desc())
-        .limit(limit)
         .all()
     )
-    return [
-        {**node.to_dict(), "relevance_score": float(score)}
-        for node, score in nodes
-    ]
+    results = []
+    for node, score in nodes:
+        try:
+            _assert_node_readable(node, user_id, actor_type=actor_type,
+                                  include_quarantined=include_quarantined)
+        except PermissionError:
+            continue
+        results.append({**node.to_dict(), "relevance_score": float(score)})
+        if len(results) == limit:
+            break
+    return results
 
 
 def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Optional[int] = None,
-                   v3_mode: bool = False) -> dict | None:
+                   v3_mode: bool = False, *, actor_type: str | None = None,
+                   include_quarantined: bool = False) -> dict | None:
     """Holt einen einzelnen Node nach ID, schnell und ohne Versionsverlauf."""
     _verify_vault_access(vault_id, user_id)
     node = (
@@ -406,7 +445,8 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
     )
     if not node:
         return None
-    _assert_node_readable(node, user_id)
+    _assert_node_readable(node, user_id, actor_type=actor_type,
+                          include_quarantined=include_quarantined)
 
     node_dict = node.to_dict(include_content=True)
 
@@ -446,16 +486,19 @@ def get_node_by_id(node_id: str, vault_id: int, user_id: int, target_version: Op
 
     node_dict['has_versions'] = version_count > 1
     node_dict['version_count'] = version_count
+    node_dict['effective_access_policy'] = node_policy_service.effective_policy(node).to_dict()
     return node_dict
 
 
-def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] | None:
+def get_node_versions(node_id: str, vault_id: int, user_id: int, *, actor_type: str | None = None,
+                      include_quarantined: bool = False) -> list[dict] | None:
     """Returns the version metadata history for a node."""
     _verify_vault_access(vault_id, user_id)
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         return None
-    _assert_node_readable(node, user_id)
+    _assert_node_readable(node, user_id, actor_type=actor_type,
+                          include_quarantined=include_quarantined)
 
     stmt = (
         select(
@@ -488,13 +531,15 @@ def get_node_versions(node_id: str, vault_id: int, user_id: int) -> list[dict] |
     return result
 
 
-def get_version_by_id(version_id: int, node_id: str, vault_id: int, user_id: int) -> dict | None:
+def get_version_by_id(version_id: int, node_id: str, vault_id: int, user_id: int, *,
+                      actor_type: str | None = None, include_quarantined: bool = False) -> dict | None:
     """Lazy-loads the full content of a single historical version."""
     _verify_vault_access(vault_id, user_id)
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         return None
-    _assert_node_readable(node, user_id)
+    _assert_node_readable(node, user_id, actor_type=actor_type,
+                          include_quarantined=include_quarantined)
 
     stmt = (
         select(Version)
@@ -513,14 +558,24 @@ def get_nodes_by_ids(node_ids: list[str], vault_id: int, user_id: int) -> list[d
     return [node.to_dict(include_content=True) for node in nodes]
 
 
-def get_nodes_by_ids_for_user(node_ids: List[str], vault_id: int, user_id: int) -> List[Node]:
-    return _get_nodes_by_ids_and_verify_access(node_ids, vault_id, user_id)
+def get_nodes_by_ids_for_user(node_ids: List[str], vault_id: int, user_id: int, *,
+                              actor_type: str | None = None,
+                              include_quarantined: bool = False) -> List[Node]:
+    return _get_nodes_by_ids_and_verify_access(
+        node_ids, vault_id, user_id, actor_type=actor_type,
+        include_quarantined=include_quarantined
+    )
 
 
-def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int) -> Dict[str, Any]:
+def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int, *,
+                          actor_type: str | None = None,
+                          include_quarantined: bool = False) -> Dict[str, Any]:
     if not node_ids:
         raise ValueError("Es muss mindestens eine Node-ID angegeben werden.")
-    nodes = _get_nodes_by_ids_and_verify_access(node_ids, vault_id, user_id)
+    nodes = _get_nodes_by_ids_and_verify_access(
+        node_ids, vault_id, user_id, actor_type=actor_type,
+        include_quarantined=include_quarantined,
+    )
     if not nodes:
         return {"titles": [], "content": ""}
 
@@ -541,7 +596,9 @@ def get_content_for_nodes(node_ids: List[str], vault_id: int, user_id: int) -> D
 UUID_REGEX = re.compile(r'^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$', re.IGNORECASE)
 
 
-def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dict:
+def resolve_link_targets(targets: list[str], vault_id: int, user_id: int, *,
+                         actor_type: str | None = None,
+                         include_quarantined: bool = False) -> dict:
     _verify_vault_access(vault_id, user_id)
     if not targets:
         return {}
@@ -559,7 +616,15 @@ def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dic
                 Node.vault_id == vault_id
             ).all()
         )
-        found_ids_map = {node.id: node for node in found_nodes}
+        found_ids_map = {}
+        for node in found_nodes:
+            try:
+                _assert_node_readable(
+                    node, user_id, actor_type=actor_type,
+                    include_quarantined=include_quarantined)
+            except PermissionError:
+                continue
+            found_ids_map[node.id] = node
 
         for uuid in potential_uuids:
             if uuid in found_ids_map:
@@ -582,6 +647,12 @@ def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dic
         )
         matches_by_title = {}
         for node in found_nodes_by_title:
+            try:
+                _assert_node_readable(
+                    node, user_id, actor_type=actor_type,
+                    include_quarantined=include_quarantined)
+            except PermissionError:
+                continue
             title_lower = node.title.lower()
             if title_lower not in matches_by_title:
                 matches_by_title[title_lower] = []
@@ -605,7 +676,9 @@ def resolve_link_targets(targets: list[str], vault_id: int, user_id: int) -> dic
     return results
 
 
-def search_nodes_for_autocomplete(query: str, vault_id: int, user_id: int) -> list[dict]:
+def search_nodes_for_autocomplete(query: str, vault_id: int, user_id: int, *,
+                                  actor_type: str | None = None,
+                                  include_quarantined: bool = False) -> list[dict]:
     _verify_vault_access(vault_id, user_id)
     search_pattern = f"%{query}%"
     nodes = (
@@ -619,7 +692,16 @@ def search_nodes_for_autocomplete(query: str, vault_id: int, user_id: int) -> li
         .limit(10)
         .all()
     )
-    return [{"id": node.id, "title": node.title} for node in nodes]
+    visible = []
+    for node in nodes:
+        try:
+            _assert_node_readable(
+                node, user_id, actor_type=actor_type,
+                include_quarantined=include_quarantined)
+        except PermissionError:
+            continue
+        visible.append({"id": node.id, "title": node.title})
+    return visible
 
 
 # ========================================================================
@@ -631,7 +713,8 @@ def create_node(
         parent_id: Optional[str],
         vault_id: int,
         author_id: int,
-        icon: Optional[str] = None
+        icon: Optional[str] = None,
+        actor_type: str | None = None,
 ) -> Node:
     """Erstellt einen neuen Node und seine initiale Version mit dem Titel."""
     vault, role = get_vault_access(vault_id, author_id)
@@ -646,6 +729,7 @@ def create_node(
             raise ValueError(f"Parent node with ID {parent_id} not found.")
         if parent_node.vault_id != vault_id:
             raise PermissionError("Cannot assign a parent from a different vault.")
+        node_policy_service.assert_writable(parent_node, author_id, actor_type=actor_type)
 
     final_icon = icon if icon is not None else DEFAULT_NODE_ICON
 
@@ -655,6 +739,11 @@ def create_node(
         vault_id=vault_id,
         icon=final_icon
     )
+    if parent_id:
+        parent_policy = node_policy_service.effective_policy(parent_node)
+        if parent_policy.ai_read == "explicit_only":
+            new_node.ai_read_policy = "explicit_only"
+            new_node.ai_write_locked = True
     db.session.add(new_node)
     db.session.flush()
 
@@ -673,7 +762,8 @@ def create_node(
 
 
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,
-                content: Optional[str] = None, allow_managed_source: bool = False) -> Node:
+                content: Optional[str] = None, allow_managed_source: bool = False,
+                actor_type: str | None = None) -> Node:
     _assert_source_mutable(node_id, allow_managed_source)
     """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt IMMER eine neue Version."""
     vault, role = get_vault_access(vault_id, user_id)
@@ -683,6 +773,7 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).options(joinedload(Node.current_version_object)).first()
     if not node:
         raise ValueError("Node not found in the specified vault")
+    node_policy_service.assert_writable(node, user_id, actor_type=actor_type)
     last_version = node.current_version_object
     if not last_version:
         raise ValueError("Cannot update a node with no existing versions.")
@@ -719,7 +810,8 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     return updated_node
 
 
-def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary: str) -> Node:
+def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary: str, *,
+                           actor_type: str | None = None) -> Node:
     """Updates the ai_summary field and marks it as current. No new version created."""
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
@@ -728,6 +820,7 @@ def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         raise ValueError("Node not found in the specified vault.")
+    node_policy_service.assert_writable(node, user_id, actor_type=actor_type)
     from backend.services.summary_service import start_summary, complete_summary
     artifact = start_summary(node, provider="manual", model=None,
                              requested_by_id=user_id, executed_by_id=user_id)
@@ -738,7 +831,8 @@ def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary
     return node
 
 
-def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: int) -> Node:
+def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: int, *,
+              actor_type: str | None = None) -> Node:
     """Bewegt einen Node zu einem neuen Parent (keine neue Version)."""
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
@@ -749,20 +843,25 @@ def move_node(node_id: str, new_parent_id: str | None, vault_id: int, user_id: i
     node_to_move = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node_to_move:
         raise ValueError("Node to move not found in the specified vault.")
+    node_policy_service.assert_writable(node_to_move, user_id, actor_type=actor_type)
     if new_parent_id:
         new_parent = Node.query.filter_by(id=new_parent_id, vault_id=vault_id).first()
         if not new_parent:
             raise ValueError("Target parent node not found in the specified vault.")
         if _is_descendant(node_id, new_parent_id, vault_id):
             raise ValueError("Cannot move a node into one of its own children.")
+        node_policy_service.assert_writable(new_parent, user_id, actor_type=actor_type)
 
     node_to_move.parent_id = new_parent_id
+    if new_parent_id and node_policy_service.effective_policy(new_parent).ai_read == "explicit_only":
+        node_policy_service.stamp_quarantine_subtree(node_to_move)
     db.session.commit()
     rebuild_vault_tree_cache(vault_id)
     return node_to_move
 
 
-def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[str]) -> Node:
+def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[str], *,
+                     actor_type: str | None = None) -> Node:
     """Aktualisiert das Icon eines Nodes."""
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
@@ -771,6 +870,7 @@ def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[s
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
     if not node:
         raise ValueError("Node not found in the specified vault.")
+    node_policy_service.assert_writable(node, user_id, actor_type=actor_type)
     processed_icon = icon
     if isinstance(icon, str) and icon.lower() in ["none", "null"]:
         processed_icon = None
@@ -784,7 +884,31 @@ def update_node_icon(node_id: str, vault_id: int, user_id: int, icon: Optional[s
     return node
 
 
-def delete_node(node_id: str, vault_id: int, user_id: int):
+def update_node_access_policy(node_id: str, vault_id: int, user_id: int, *,
+                              ai_read: str, ai_write_locked: bool,
+                              human_write_locked: bool, note: str | None = None) -> Node:
+    """Set local policy. This explicit owner/admin path may also unlock a node."""
+    vault, role = get_vault_access(vault_id, user_id)
+    user = db.session.get(User, user_id)
+    assert_write_allowed(role, user)
+    if vault.owner_id != user_id and not user.is_admin:
+        raise PermissionError("Only the vault owner or an administrator may change node policy.")
+    node = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
+    if not node:
+        raise ValueError("Node not found in the specified vault.")
+    node_policy_service.set_local_policy(
+        node, ai_read=ai_read, ai_write_locked=ai_write_locked,
+        human_write_locked=human_write_locked, note=note,
+    )
+    if ai_read == "explicit_only":
+        node_policy_service.stamp_quarantine_subtree(node)
+    db.session.commit()
+    db.session.refresh(node)
+    rebuild_vault_tree_cache(vault_id)
+    return node
+
+
+def delete_node(node_id: str, vault_id: int, user_id: int, *, actor_type: str | None = None):
     _assert_source_mutable(node_id)
     """
     Löscht einen Node. Kind-Nodes werden dabei an den Parent des gelöschten
@@ -798,6 +922,7 @@ def delete_node(node_id: str, vault_id: int, user_id: int):
 
     if not node_to_delete:
         raise ValueError("Node not found in the specified vault")
+    node_policy_service.assert_writable(node_to_delete, user_id, actor_type=actor_type)
 
     if node_to_delete.parent_id is None:
         raise PermissionError("The root summary node cannot be deleted.")

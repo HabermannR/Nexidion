@@ -24,6 +24,12 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
     const isSelected = selectedNodeIds.has(node.id);
     const isExpanded = !collapsedNodes.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
+    const policy = node.effective_access_policy || node.access_policy || {};
+    const writeLocked = Boolean(policy.human_write_locked);
+    const policyLabel = policy.ai_read === 'deny' ? 'AI invisible'
+        : policy.ai_read === 'explicit_only' ? 'Quarantine'
+            : policy.human_write_locked ? 'Write-locked'
+                : policy.ai_write_locked ? 'AI write-locked' : null;
 
     const isHighlighted = highlightedNodeIds.has(node.id);
     const isSearchFocused = scrollToNodeId === node.id;
@@ -31,13 +37,14 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
     const [{isDragging}, drag] = useDrag(() => ({
         type: ItemTypes.NODE,
         item: { id: node.id, parent_id: node.parent_id },
+        canDrag: !writeLocked,
         collect: (monitor) => ({ isDragging: !!monitor.isDragging() }),
     }));
 
     const [{isOver, canDrop}, drop] = useDrop(() => ({
         accept: ItemTypes.NODE,
         canDrop: (draggedItem) =>
-            draggedItem.id !== node.id && draggedItem.parent_id !== node.id,
+            !writeLocked && draggedItem.id !== node.id && draggedItem.parent_id !== node.id,
         drop: (draggedItem) => onMoveNode(draggedItem, node),
         collect: (monitor) => ({
             isOver: !!monitor.isOver(),
@@ -81,9 +88,11 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                 </span>
 
                 {/* 1. MOVED PLUS ICON TO THE FRONT */}
-                <span className="add-node-icon" onClick={handleAddClick} title="Kind-Element hinzufügen">
-                    <i className="bx bx-plus"></i>
-                </span>
+                {!writeLocked && (
+                    <span className="add-node-icon" onClick={handleAddClick} title="Kind-Element hinzufügen">
+                        <i className="bx bx-plus"></i>
+                    </span>
+                )}
 
                 <NavLink
                     to={`/vaults/${vaultId}/nodes/${node.id}`}
@@ -91,6 +100,10 @@ const TreeNode = React.memo(({ node, onAddNode, onMoveNode, onNodeClick, highlig
                     onClick={onNodeClick}
                 >
                     <span className="node-title" title={node.title}>{node.title}</span>
+                    {policyLabel && (
+                        <i className={`bx ${policy.ai_read === 'deny' ? 'bxs-no-entry' : 'bxs-shield'} ms-1`}
+                           title={`${policyLabel}${policy.inherited ? ' (inherited)' : ''}`} />
+                    )}
                 </NavLink>
             </div>
             {hasChildren && isExpanded && (

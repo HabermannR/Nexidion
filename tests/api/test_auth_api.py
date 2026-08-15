@@ -1,4 +1,4 @@
-# tests/api/test_auth_api.py
+from flask_jwt_extended import decode_token
 
 
 def test_v2_login_success(client, test_user_1_obj):
@@ -43,6 +43,27 @@ def test_get_me_success(client, auth_headers_1, test_user_1_obj):
     assert data['id'] == test_user_1_obj.id
     assert data['display_name'] == test_user_1_obj.display_name
     assert data['is_admin'] == test_user_1_obj.is_admin
+
+
+def test_actor_token_preserves_user_and_adds_trusted_mcp_claim(
+        app, client, auth_headers_1, test_user_1_obj):
+    response = client.post(
+        '/api/auth/actor-token', headers=auth_headers_1,
+        json={"actor_type": "mcp"},
+    )
+    assert response.status_code == 200
+    with app.app_context():
+        claims = decode_token(response.get_json()["access_token"])
+    assert claims["sub"] == str(test_user_1_obj.id)
+    assert claims["actor_type"] == "mcp"
+
+
+def test_actor_token_rejects_untrusted_actor_types(client, auth_headers_1):
+    response = client.post(
+        '/api/auth/actor-token', headers=auth_headers_1,
+        json={"actor_type": "system"},
+    )
+    assert response.status_code == 400
 
 def test_get_me_no_token(client):
     """Test: Versuchter Abruf ohne Token -> 401 Unauthorized."""

@@ -1,7 +1,7 @@
 # backend/api/tasks.py
 
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from backend.extensions import limiter
 from backend.services import task_service
 
@@ -90,6 +90,8 @@ def list_tasks():
             user_id=user_id,
             status=status,
             limit=limit,
+            actor_type=get_jwt().get('actor_type'),
+            include_quarantined=request.args.get('include_quarantined', 'false').lower() == 'true',
         )
         # Use short=True for the List API
         return jsonify([t.to_dict(short=True) for t in tasks])
@@ -111,7 +113,10 @@ def get_task(task_id):
     user_id = int(get_jwt_identity())
 
     try:
-        task = task_service.get_task_by_id(task_id=task_id, user_id=user_id)
+        task = task_service.get_task_by_id(
+            task_id=task_id, user_id=user_id,
+            actor_type=get_jwt().get('actor_type'),
+            include_quarantined=request.args.get('include_quarantined', 'false').lower() == 'true')
         return jsonify(task.to_dict())
     except ValueError as e:
         return jsonify({'error': str(e)}), 404

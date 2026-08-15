@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, ButtonGroup, Dropdown, Form, InputGroup } from 'react-bootstrap';
 import IconSelectorDropdown from './IconSelectorDropdown.jsx';
+import AccessPolicyDropdown from './AccessPolicyDropdown.jsx';
 import apiClient from '../../api/apiClient.js';
 import { useWorkspaceStore } from '../workspace/workspaceStore.js';
 import { useToast } from '../../components/ToastProvider.jsx';
@@ -82,7 +83,12 @@ export default function ContentHeader({
                     currentVersion={currentVersion}
                     vaultId={vaultId}
                     nodeId={nodeId}
+                    disabled={currentVersion?.effective_access_policy?.human_write_locked}
                 />
+            </div>
+
+            <div className="me-2">
+                <AccessPolicyDropdown currentVersion={currentVersion} vaultId={vaultId} nodeId={nodeId} />
             </div>
 
             {isRenaming ? (
@@ -127,6 +133,7 @@ export default function ContentHeader({
                                 size="sm"
                                 onClick={onAddSummary}
                                 title="Add AI Summary"
+                                disabled={currentVersion?.effective_access_policy?.human_write_locked}
                             >
                                 <i className="bx bx-bot"></i>
                                 <span className="d-none d-md-inline ms-1">Add Summary</span>
@@ -134,7 +141,9 @@ export default function ContentHeader({
                         )}
 
                         {/* Edit Content Button */}
-                        <Button variant="primary" size="sm" onClick={onEditClick} title="Edit Content" className="edit-button-responsive">
+                        <Button variant="primary" size="sm" onClick={onEditClick} title="Edit Content"
+                                disabled={currentVersion?.effective_access_policy?.human_write_locked}
+                                className="edit-button-responsive">
                             <i className="bx bx-pencil"></i>
                             <span className="d-none d-sm-inline ms-1">Edit</span>
                         </Button>
@@ -143,7 +152,8 @@ export default function ContentHeader({
                         <Dropdown as={ButtonGroup}>
                             <Dropdown.Toggle split variant="primary" size="sm" id="node-actions-dropdown" title="More Actions" />
                             <Dropdown.Menu align="end">
-                                <Dropdown.Item onClick={handleRenameClick}>
+                                <Dropdown.Item onClick={handleRenameClick}
+                                               disabled={currentVersion?.effective_access_policy?.human_write_locked}>
                                     <i className="bx bx-rename me-2"></i> Rename...
                                 </Dropdown.Item>
 
@@ -153,7 +163,8 @@ export default function ContentHeader({
                                 </Dropdown.Item>
 
                                 <Dropdown.Divider />
-                                <Dropdown.Item onClick={onDeleteClick} className="text-danger">
+                                <Dropdown.Item onClick={onDeleteClick} className="text-danger"
+                                               disabled={currentVersion?.effective_access_policy?.human_write_locked}>
                                     <i className="bx bxs-trash me-2"></i> Delete...
                                 </Dropdown.Item>
                             </Dropdown.Menu>

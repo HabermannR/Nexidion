@@ -1,40 +1,24 @@
 // src/features/workspace/ContextBarDisplay.jsx
 
 import React from 'react';
-import { Button, ButtonGroup, Dropdown } from 'react-bootstrap';
+import { Button, ButtonGroup } from 'react-bootstrap';
 import './ContextBar.css';
 
 export default function ContextBarDisplay({
     selectionSize,
-    savedSets,
     onClear,
-    onSave,
-    onLoadSet,
-    onDeleteSet,
+    onRemoveNode,
     isExpanded,
     onToggleExpand,
     selectedNodes,
     onCopyContent,
     copyStatus,
 }) {
-    const handleSave = () => {
-        const name = prompt('Enter a name for this selection:');
-        if (name) onSave(name);
-    };
-
-    const handleDelete = (e, name) => {
-        e.stopPropagation();
-        if (window.confirm(`Are you sure you want to delete the context set "${name}"?`)) {
-            onDeleteSet(name);
-        }
-    };
-
     const handleBarClick = (e) => {
-        if (e.target.closest('button, .dropdown-menu')) return;
+        if (e.target.closest('button')) return;
         if (selectionSize > 0) onToggleExpand();
     };
 
-    const hasSavedSets = savedSets.length > 0;
     const chevronIcon = isExpanded ? 'bxs-chevron-down' : 'bxs-chevron-right';
 
     const copyLabel = () => {
@@ -83,47 +67,6 @@ export default function ContextBarDisplay({
                         <i className="bx bx-x"></i> Clear
                     </Button>
 
-                    <Dropdown as={ButtonGroup}>
-                        <Dropdown.Toggle
-                            split
-                            variant="outline-secondary"
-                            size="sm"
-                            id="context-sets-dropdown"
-                            title="Manage saved context sets"
-                        />
-                        <Dropdown.Menu align="end">
-                            <Dropdown.Item onClick={handleSave} disabled={selectionSize === 0}>
-                                <i className="bx bx-save me-2"></i>Save current selection...
-                            </Dropdown.Item>
-                            <Dropdown.Divider />
-                            <Dropdown.Header>Saved sets</Dropdown.Header>
-                            {hasSavedSets ? (
-                                savedSets.map((set) => (
-                                    <Dropdown.Item
-                                        key={set.name}
-                                        className="context-set-item"
-                                        onClick={() => onLoadSet(set.ids)}
-                                        title={`Load set "${set.name}"`}
-                                    >
-                                        <span className="context-set-name">
-                                            {set.name} ({set.count})
-                                        </span>
-                                        <Button
-                                            variant="link"
-                                            size="sm"
-                                            className="text-danger p-0"
-                                            onClick={(e) => handleDelete(e, set.name)}
-                                            title={`Delete set "${set.name}"`}
-                                        >
-                                            <i className="bx bxs-trash"></i>
-                                        </Button>
-                                    </Dropdown.Item>
-                                ))
-                            ) : (
-                                <Dropdown.ItemText>No sets saved yet.</Dropdown.ItemText>
-                            )}
-                        </Dropdown.Menu>
-                    </Dropdown>
                 </ButtonGroup>
             </div>
 
@@ -133,7 +76,16 @@ export default function ContextBarDisplay({
                     <div className="context-expanded-list">
                         {selectedNodes.map(node => (
                             <div key={node.id} className="context-expanded-item" title={node.id}>
-                                {node.title}
+                                <button
+                                    type="button"
+                                    className="context-expanded-remove"
+                                    onClick={() => onRemoveNode(node.id)}
+                                    title={`Remove ${node.title} from context`}
+                                    aria-label={`Remove ${node.title} from context`}
+                                >
+                                    <i className="bx bx-x" aria-hidden="true"></i>
+                                </button>
+                                <span className="context-expanded-title">{node.title}</span>
                             </div>
                         ))}
                     </div>

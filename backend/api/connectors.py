@@ -3,7 +3,7 @@ import tempfile
 
 from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from backend.ingestion import connector_registry
 from backend.models import (db, ConnectorInstallation, IngestionRun, SourceItem, User,
@@ -15,6 +15,7 @@ from backend.services.ingestion_service import (
     VALID_MODES, VALID_POLICIES, run_connector, serialize_run, serialize_item,
 )
 from backend.services.vault_service import get_vault_access, assert_write_allowed
+from backend.services.node_policy_service import assert_readable, is_ai_actor
 
 connectors_bp = Blueprint('connectors', __name__, url_prefix='/api/connectors')
 MAX_PDF_BYTES = 100 * 1024 * 1024
@@ -30,6 +31,10 @@ def _installation_dict(row):
 def _require_vault_writer(vault_id, user_id):
     _, role = get_vault_access(vault_id, user_id)
     assert_write_allowed(role, db.session.get(User, user_id))
+
+
+def _include_quarantined():
+    return request.args.get('include_quarantined', 'false').lower() == 'true'
 
 
 def ingest_pdf_upload(vault_id: int, user_id: int):
@@ -264,6 +269,21 @@ def list_items(connector_id):
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     rows = SourceItem.query.filter_by(connector_id=connector_id).order_by(SourceItem.external_id).all()
+    actor_type = get_jwt().get('actor_type')
+    if is_ai_actor(user_id, actor_type):
+        visible = []
+        for row in rows:
+            node = db.session.get(Node, row.node_id) if row.node_id else None
+            if not node:
+                visible.append(row)
+                continue
+            try:
+                assert_readable(node, user_id, actor_type=actor_type,
+                                include_quarantined=_include_quarantined())
+            except PermissionError:
+                continue
+            visible.append(row)
+        rows = visible
     return jsonify([serialize_item(row) for row in rows])
 
 
@@ -290,6 +310,8 @@ def node_provenance(node_id):
         return jsonify({"error": "Node not found."}), 404
     try:
         get_vault_access(node.vault_id, user_id)
+        assert_readable(node, user_id, actor_type=get_jwt().get('actor_type'),
+                        include_quarantined=_include_quarantined())
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     links = NodeSourceLink.query.filter_by(node_id=node_id).order_by(NodeSourceLink.id).all()

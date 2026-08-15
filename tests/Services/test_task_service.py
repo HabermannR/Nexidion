@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import patch
-from backend.services import task_service, vault_service
+from backend.services import node_service, task_service, vault_service
 
 
 
@@ -32,7 +32,10 @@ def test_create_task_success(db_session, test_user_1_obj):
     vault = vault_service.create_vault("Task-Create-Vault", user_id)
 
     instruction = "Fasse diese Dokumente zusammen"
-    context_nodes = ["node-id-1", "node-id-2"]
+    context_nodes = [
+        node_service.create_node("Context 1", "one", None, vault.id, user_id).id,
+        node_service.create_node("Context 2", "two", None, vault.id, user_id).id,
+    ]
 
     task = task_service.create_task(vault.id, instruction, context_nodes, user_id)
 

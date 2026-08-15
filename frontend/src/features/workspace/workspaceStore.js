@@ -18,7 +18,6 @@ export const useWorkspaceStore = create(
             // Tree/selection state
             selectedNodeIds: new Set(),
             collapsedNodes: new Set(),
-            savedSets: {},
 
             // UI layout
             activeContextTab: 'agent',
@@ -42,7 +41,6 @@ export const useWorkspaceStore = create(
                 lastValidPaths: get().lastValidPaths,
                 selectedNodeIds: new Set(),
                 collapsedNodes: new Set(),
-                savedSets: {},
                 breadcrumbPath: [],
             }),
 
@@ -59,7 +57,6 @@ export const useWorkspaceStore = create(
                 return { selectedNodeIds: newSelection };
             }),
             clearSelection: () => set({ selectedNodeIds: new Set() }),
-            setSelection: (nodeIds) => set({ selectedNodeIds: new Set(nodeIds) }),
 
             toggleNodeCollapse: (nodeId) => set((state) => {
                 const newCollapsed = new Set(state.collapsedNodes);
@@ -75,39 +72,10 @@ export const useWorkspaceStore = create(
                 collapsedNodes: new Set(),
             })),
 
-            // Saved sets
-            saveCurrentSet: (name) => {
-                if (!name?.trim()) return;
-                const currentSelection = get().selectedNodeIds;
-                if (currentSelection.size === 0) return;
-                set((state) => ({
-                    savedSets: {
-                        ...state.savedSets,
-                        [name.trim()]: Array.from(currentSelection),
-                    },
-                }));
-            },
-            deleteSet: (name) => set((state) => {
-                const newSets = { ...state.savedSets };
-                delete newSets[name];
-                return { savedSets: newSets };
-            }),
-
             removeNodeFromContext: (nodeId) => set((state) => {
                 const newSelection = new Set(state.selectedNodeIds);
                 newSelection.delete(nodeId);
-                const newCollapsed = new Set(state.collapsedNodes);
-                newCollapsed.delete(nodeId);
-                const newSavedSets = {};
-                Object.entries(state.savedSets).forEach(([setName, idArray]) => {
-                    const filtered = idArray.filter(id => id !== nodeId);
-                    if (filtered.length > 0) newSavedSets[setName] = filtered;
-                });
-                return {
-                    selectedNodeIds: newSelection,
-                    collapsedNodes: newCollapsed,
-                    savedSets: newSavedSets,
-                };
+                return { selectedNodeIds: newSelection };
             }),
 
             // Print Preview Actions
@@ -139,7 +107,6 @@ export const useWorkspaceStore = create(
                 lastActiveVaultId: state.lastActiveVaultId,
                 selectedNodeIds: state.selectedNodeIds,
                 collapsedNodes: state.collapsedNodes,
-                savedSets: state.savedSets,
                 activeContextTab: state.activeContextTab,
                 // printPreviewData is intentionally left out so it doesn't persist
             }),

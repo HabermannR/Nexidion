@@ -15,4 +15,5 @@ secure_images
 backups
 *.zip
 frontend/node_modules
+packages/remark-internal-links/node_modules
 frontend/dist

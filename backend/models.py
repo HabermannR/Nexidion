@@ -146,6 +146,11 @@ class Node(db.Model):
     language = db.Column(db.String(16), nullable=True)
     tags = db.Column(db.JSON, nullable=False, default=list)
     metadata_json = db.Column(db.JSON, nullable=False, default=dict)
+    # Machine-readable access policy. Icons are presentation only.
+    ai_read_policy = db.Column(db.String(20), nullable=False, default='allow')
+    ai_write_locked = db.Column(db.Boolean, nullable=False, default=False)
+    human_write_locked = db.Column(db.Boolean, nullable=False, default=False)
+    policy_note = db.Column(db.Text, nullable=True)
 
     fts_summary_en = db.Column(postgresql.TSVECTOR(), sa.Computed(
         "setweight(to_tsvector('english', coalesce(ai_summary,'')), 'C')",
@@ -198,6 +203,12 @@ class Node(db.Model):
             'language': self.language,
             'tags': self.tags or [],
             'metadata': self.metadata_json or {},
+            'access_policy': {
+                'ai_read': self.ai_read_policy,
+                'ai_write_locked': bool(self.ai_write_locked or self.human_write_locked),
+                'human_write_locked': bool(self.human_write_locked),
+                'note': self.policy_note,
+            },
         }
 
         if include_content:

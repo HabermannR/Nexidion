@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 
 from backend.models import db, Node, User, Vault, Version
 from backend.services.node_service import _assert_node_readable
+from backend.services import node_policy_service
 from backend.services.vault_service import assert_write_allowed, get_vault_access
 
 
@@ -38,6 +39,7 @@ def copy_node_to_vault(
     *,
     recursive: bool = True,
     destination_parent_id: str | None = None,
+    actor_type: str | None = None,
 ) -> dict:
     """Create independent version-1 copies and return the old-to-new UUID map."""
     if source_vault_id == destination_vault_id:
@@ -59,12 +61,13 @@ def copy_node_to_vault(
         parent = db.session.get(Node, destination_parent_id)
         if not parent or parent.vault_id != destination_vault_id:
             raise ValueError("Destination parent not found in the destination vault.")
+        node_policy_service.assert_writable(parent, user_id, actor_type=actor_type)
 
     nodes = []
     queue = [source]
     while queue:
         node = queue.pop(0)
-        _assert_node_readable(node, user_id)
+        _assert_node_readable(node, user_id, actor_type=actor_type)
         nodes.append(node)
         if recursive:
             children = (
@@ -101,7 +104,16 @@ def copy_node_to_vault(
                 language=node.language,
                 tags=copy.deepcopy(node.tags or []),
                 metadata_json=copy.deepcopy(node.metadata_json or {}),
+                ai_read_policy=node.ai_read_policy,
+                ai_write_locked=node.ai_write_locked,
+                human_write_locked=node.human_write_locked,
+                policy_note=node.policy_note,
             )
+            if (destination_parent_id is not None and
+                    node_policy_service.effective_policy(parent).ai_read == "explicit_only"):
+                if new_node.ai_read_policy != "deny":
+                    new_node.ai_read_policy = "explicit_only"
+                new_node.ai_write_locked = True
             db.session.add(new_node)
             db.session.add(Version(
                 node_id=new_node.id,

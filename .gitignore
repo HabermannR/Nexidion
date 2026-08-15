@@ -30,6 +30,7 @@ coverage.xml
 # 4. Frontend (Node.js)
 # ===================================
 frontend/node_modules/
+packages/*/node_modules/
 frontend/build/
 frontend/dist/
 frontend/.vite/
@@ -85,7 +86,6 @@ kerntest.py
 backup/
 *:Zone.Identifier
 nexidion-runner.service
-remark-internal-links/
 
 # Local Claude Code project/infra notes (contains private infra details)
 CLAUDE.md

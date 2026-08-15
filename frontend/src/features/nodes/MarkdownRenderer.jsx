@@ -2,22 +2,15 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import rehypeSanitize from 'rehype-sanitize';
 
 import wikiLinkPlugin from '@nexidion/remark-internal-links';
 import InternalLink from './InternalLink';
 import ResizableImage from '../../components/ResizableImage.jsx';
+import { markdownSanitizeSchema } from './markdownSanitizeSchema.js';
 import './MarkdownRenderer.css';
 
 export default function MarkdownRenderer({ content }) {
-    const sanitizeSchema = {
-        ...defaultSchema,
-        attributes: {
-            ...defaultSchema.attributes,
-            span: [...(defaultSchema.attributes?.span || []), 'className', 'data-uuid', 'data-target', 'data-display-text'],
-            img: [...(defaultSchema.attributes?.img || []), 'src', 'alt', 'title'],
-        },
-    };
     const markdownComponents = {
         span: ({ children, className, ...props }) => { // Holen uns die className
             const displayText = props['data-display-text'] ? decodeURIComponent(props['data-display-text']) : children;
@@ -46,7 +39,7 @@ export default function MarkdownRenderer({ content }) {
         <div className="markdown-body">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm, wikiLinkPlugin]}
-                rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+                rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
                 components={markdownComponents}
                 skipHtml={false}
             >

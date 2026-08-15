@@ -4,8 +4,8 @@
 FROM node:20-slim AS frontend-builder
 WORKDIR /workspace
 
-# Copy the custom plugin AND the frontend code
-COPY remark-internal-links ./remark-internal-links
+# Copy the internal package AND the frontend code
+COPY packages/remark-internal-links ./packages/remark-internal-links
 COPY frontend ./frontend
 
 # Install dependencies and build the static files
@@ -17,6 +17,8 @@ RUN npm run build
 # STAGE 2: Setup Python Backend & Run
 # ==========================================
 FROM python:3.13-slim
+LABEL org.opencontainers.image.title="Nexidion" \
+      org.opencontainers.image.version="4.3.1"
 WORKDIR /app
 
 # Install system dependencies (needed for Postgres/psycopg2)

@@ -1,7 +1,9 @@
 services:
   # --- THE FRONTEND (Vite with Hot-Reloading) ---
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     working_dir: /app
     ports:
       - "5173:5173"
@@ -11,7 +13,7 @@ services:
       # Prevents local empty node_modules from overwriting container
       - /app/node_modules
       # Maps the custom remark plugin
-      - ./remark-internal-links:/remark-internal-links
+      - ./packages/remark-internal-links:/packages/remark-internal-links
     environment:
       # Tell React where the backend is so it can make API calls!
       - VITE_API_URL=http://localhost:5001

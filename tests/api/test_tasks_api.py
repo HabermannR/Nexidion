@@ -23,23 +23,34 @@ def setup_llm_agent_and_access(db_session, test_llm_agent_obj):
 # CREATE TASK TESTS (POST /api/tasks)
 # ========================================================================
 
-def test_create_task_success(client, auth_headers_1, test_vault_1_obj):
+def test_create_task_success(client, auth_headers_1, test_node_obj):
     """Testet das erfolgreiche Erstellen eines Tasks via API."""
     payload = {
-        "vault_id": test_vault_1_obj.id,
+        "vault_id": test_node_obj.vault_id,
         "instruction": "Please summarize these nodes.",
-        "context_node_ids": ["node-xyz-123", "node-abc-456"]
+        "context_node_ids": [test_node_obj.id]
     }
 
     response = client.post('/api/tasks', headers=auth_headers_1, json=payload)
 
     assert response.status_code == 201
     data = response.get_json()
-    assert data['vault_id'] == test_vault_1_obj.id
+    assert data['vault_id'] == test_node_obj.vault_id
     assert data['instruction'] == "Please summarize these nodes."
-    assert data['context_node_ids'] == ["node-xyz-123", "node-abc-456"]
+    assert data['context_node_ids'] == [test_node_obj.id]
     assert data['status'] == "pending"
     assert 'id' in data
+
+
+def test_create_task_rejects_unknown_context_node(
+        client, auth_headers_1, test_vault_1_obj):
+    response = client.post('/api/tasks', headers=auth_headers_1, json={
+        "vault_id": test_vault_1_obj.id,
+        "instruction": "Summarize.",
+        "context_node_ids": ["node-does-not-exist"],
+    })
+    assert response.status_code == 400
+    assert "must belong to the task vault" in response.get_json()["error"]
 
 
 def test_create_task_with_llm_selection(client, auth_headers_1, test_vault_1_obj, monkeypatch):

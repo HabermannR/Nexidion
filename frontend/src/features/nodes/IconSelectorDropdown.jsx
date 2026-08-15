@@ -113,7 +113,7 @@ const iconGroups = [
     },
 ];
 
-export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId }) {
+export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId, disabled = false }) {
     const queryClient = useQueryClient(); // NEU: QueryClient für die Invalidierung
 
     // NEU: Mutation für die Icon-Änderung
@@ -139,7 +139,7 @@ export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId }
     if (!currentVersion) return null;
 
     const handleIconSelect = (iconId) => {
-        if (iconId === currentVersion.icon || changeIconMutation.isPending) {
+        if (disabled || iconId === currentVersion.icon || changeIconMutation.isPending) {
             return; // Verhindere Klicks während eine Änderung läuft
         }
 
@@ -160,7 +160,7 @@ export default function IconSelectorDropdown({ currentVersion, vaultId, nodeId }
                 id="icon-selector-dropdown"
                 title="Icon ändern"
                 className="d-flex align-items-center icon-selector-toggle"
-                disabled={changeIconMutation.isPending}
+                disabled={disabled || changeIconMutation.isPending}
             >
                 {/* Das Haupt-Icon */}
                 <i className={`bx ${displayIcon} fs-5`}></i>

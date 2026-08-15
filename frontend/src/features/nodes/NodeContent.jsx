@@ -251,7 +251,9 @@ export default function NodeContent() {
                             <div className="fw-bold mb-2 text-info d-flex align-items-center justify-content-between">
                                 <div><i className="bx bx-brain me-1"></i> AI Summary</div>
                                 {!isEditingSummary && (
-                                    <Button variant="link" size="sm" className="p-0 text-info text-decoration-none" onClick={handleEditSummaryClick}>
+                                    <Button variant="link" size="sm" className="p-0 text-info text-decoration-none"
+                                            disabled={currentBaseVersion?.effective_access_policy?.human_write_locked}
+                                            onClick={handleEditSummaryClick}>
                                         <i className="bx bx-pencil"></i> Edit
                                     </Button>
                                 )}

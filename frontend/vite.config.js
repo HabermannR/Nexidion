@@ -15,11 +15,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
 
+    // npm installs the vendored package as a symlink. Resolve imports from the
+    // consumer path so the package's runtime dependencies use frontend/node_modules.
     resolve: {
-      alias: {
-        // Dynamically points to the sibling directory, regardless of OS
-        '@nexidion/remark-internal-links': path.resolve(projectDir, '../remark-internal-links/src/index.js'),
-      },
+      preserveSymlinks: true,
     },
 
     server: {
@@ -38,6 +37,10 @@ export default defineConfig(({ mode }) => {
         },
       },
       host: true, // Listen on all network interfaces for Docker
-    }
+    },
+
+    test: {
+      environment: 'jsdom',
+    },
   };
 });

@@ -37,7 +37,8 @@ Nexidion/
 ├── frontend/                 # React / Vite SPA
 │   ├── src/
 │   └── Dockerfile
-├── remark-internal-links/    # Custom Remark plugin (local npm package)
+├── packages/
+│   └── remark-internal-links/ # Internal Remark package
 ├── docs/                     # User-facing documentation (markdown)
 ├── tests/                    # Pytest test suite
 │   ├── Services/
@@ -218,7 +219,7 @@ npm run lint
 
 ## 8. The remark-internal-links plugin
 
-The `[[Node Name|uuid]]` internal link syntax is handled by a **custom Remark plugin** located in `remark-internal-links/`. It is a local npm package mounted into the frontend container via a volume.
+The `[[Node Name|uuid]]` internal link syntax is handled by an **internal Remark package** located in `packages/remark-internal-links/`. Nexidion vendors and ships this package with its own source, so builds do not require access to a separate package registry or private GitHub repository.
 
 During the Vite build, this plugin intercepts `[[...]]` syntax in Markdown and transforms it into `<span class="internal-link" data-target="..." data-display-text="...">` elements. This avoids React hydration crashes caused by block-level elements inside `<p>` tags.
 

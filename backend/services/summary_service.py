@@ -51,6 +51,10 @@ def complete_summary(artifact: SummaryArtifact, summary: str, used_vision: bool 
     node = db.session.get(Node, artifact.node_id)
     if not node:
         raise ValueError("Summary target node no longer exists.")
+    if artifact.executed_by_id is not None and artifact.provider != "manual":
+        from backend.services.node_policy_service import assert_readable, assert_writable
+        assert_readable(node, artifact.executed_by_id, actor_type="ai")
+        assert_writable(node, artifact.executed_by_id, actor_type="ai")
     artifact.summary = summary
     artifact.used_vision = used_vision
     artifact.status = "completed"

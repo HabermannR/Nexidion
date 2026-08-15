@@ -3,7 +3,7 @@ import hashlib
 import json
 
 from flask import Blueprint, request, jsonify, Response
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 
 from backend.extensions import limiter
 # Import the services and the new exceptions +++
@@ -13,6 +13,14 @@ from backend.exceptions import InsufficientVaultRoleError
 # The blueprint contains the vault_id as a dynamic part of the prefix.
 # All routes are relative to this prefix.
 nodes_bp = Blueprint('nodes_v2', __name__, url_prefix='/api/vaults/<int:vault_id>/nodes')
+
+
+def _actor_type() -> str | None:
+    return get_jwt().get('actor_type')
+
+
+def _include_quarantined() -> bool:
+    return request.args.get('include_quarantined', 'false').lower() == 'true'
 
 
 # ========================================================================
@@ -53,12 +61,16 @@ def get_nodes(vault_id: int):
         # 1. Title Search
         if 'title' in request.args:
             search_title = request.args.get('title')
-            node = node_service.find_node_by_title(search_title, vault_id, user_id)
+            node = node_service.find_node_by_title(
+                search_title, vault_id, user_id, actor_type=_actor_type(),
+                include_quarantined=_include_quarantined())
             return jsonify([node] if node else [])
 
         # 2. List Format
         if format_type == 'list':
-            nodes = node_service.get_nodes_as_list(vault_id, user_id)
+            nodes = node_service.get_nodes_as_list(
+                vault_id, user_id, actor_type=_actor_type(),
+                include_quarantined=_include_quarantined())
             return jsonify(nodes)
 
         # 3. TREE OR AGENT TREE (Via Service Layer)
@@ -67,7 +79,8 @@ def get_nodes(vault_id: int):
 
             # Ask the service for the tree!
             tree_data, etag, is_not_modified = node_service.get_nodes_as_tree(
-                vault_id, user_id, format_type, client_etag
+                vault_id, user_id, format_type, client_etag,
+                actor_type=_actor_type(), include_quarantined=_include_quarantined()
             )
 
             if is_not_modified:
@@ -111,7 +124,9 @@ def search_nodes_by_title(vault_id: int):
 
     try:
         # Call the dedicated service function containing the logic.
-        nodes = node_service.search_nodes_for_autocomplete(query, vault_id, user_id)
+        nodes = node_service.search_nodes_for_autocomplete(
+            query, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=_include_quarantined())
         return jsonify(nodes)
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
@@ -142,7 +157,9 @@ def full_text_search(vault_id: int):
         return jsonify({"error": "Parameter 'limit' must be between 1 and 100."}), 400
 
     try:
-        results = node_service.search_nodes_fulltext(query, vault_id, user_id, limit)
+        results = node_service.search_nodes_fulltext(
+            query, vault_id, user_id, limit, actor_type=_actor_type(),
+            include_quarantined=_include_quarantined())
         return jsonify({
             "query": query,
             "limit": limit,
@@ -170,7 +187,9 @@ def resolve_internal_links(vault_id: int):
         return jsonify({"error": "Request body must contain a list of 'targets'."}), 400
 
     try:
-        results = node_service.resolve_link_targets(targets, vault_id, user_id)
+        results = node_service.resolve_link_targets(
+            targets, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=bool(data.get('include_quarantined', False)))
         return jsonify({"results": results})
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
@@ -197,7 +216,9 @@ def get_multiple_nodes(vault_id: int):
         return jsonify([])
 
     try:
-        nodes = node_service.get_nodes_by_ids_for_user(node_ids, vault_id, user_id)
+        nodes = node_service.get_nodes_by_ids_for_user(
+            node_ids, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=bool(data.get('include_quarantined', False)))
         response_data = []
         for node in nodes:
             version = node.current_version_object
@@ -229,7 +250,9 @@ def get_single_node(vault_id: int, node_id: str):
             return jsonify({"error": "Invalid version parameter"}), 400
 
     try:
-        node = node_service.get_node_by_id(node_id, vault_id, user_id, target_version=target_version)
+        node = node_service.get_node_by_id(
+            node_id, vault_id, user_id, target_version=target_version,
+            actor_type=_actor_type(), include_quarantined=_include_quarantined())
         if node is None:
             return jsonify({"error": "Node not found"}), 404
         return cached_jsonify(node)
@@ -248,7 +271,9 @@ def get_node_versions_route(vault_id: int, node_id: str):
     """
     user_id = int(get_jwt_identity())
     try:
-        versions = node_service.get_node_versions(node_id, vault_id, user_id)
+        versions = node_service.get_node_versions(
+            node_id, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=_include_quarantined())
         if versions is None:
             return jsonify({"error": "Node not found"}), 404
         return cached_jsonify(versions)
@@ -265,7 +290,9 @@ def get_single_version_route(vault_id: int, node_id: str, version_id: int):
     """
     user_id = int(get_jwt_identity())
     try:
-        version = node_service.get_version_by_id(version_id, node_id, vault_id, user_id)
+        version = node_service.get_version_by_id(
+            version_id, node_id, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=_include_quarantined())
         if version is None:
             return jsonify({"error": "Version not found"}), 404
         return cached_jsonify(version)
@@ -296,7 +323,8 @@ def create_node(vault_id: int):
             content=data.get('content', ''),
             parent_id=data.get('parent_id'),
             vault_id=vault_id,
-            author_id=user_id
+            author_id=user_id,
+            actor_type=_actor_type(),
         )
         return jsonify(new_node.to_dict()), 201
 
@@ -331,6 +359,7 @@ def copy_node_to_vault(vault_id: int, node_id: str):
         result = copy_service(
             node_id, vault_id, destination_vault_id, user_id,
             recursive=recursive, destination_parent_id=destination_parent_id,
+            actor_type=_actor_type(),
         )
         return jsonify(result), 201
     except (PermissionError, InsufficientVaultRoleError) as e:
@@ -361,7 +390,8 @@ def update_node(vault_id: int, node_id: str):
             vault_id=vault_id,
             user_id=user_id,
             title=data.get('title'),
-            content=data.get('content')
+            content=data.get('content'),
+            actor_type=_actor_type(),
         )
         return jsonify(updated_node.to_dict())
 
@@ -381,7 +411,8 @@ def move_node_route(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'parent_id' (can be null)."}), 400
 
     try:
-        updated_node = node_service.move_node(node_id, data['parent_id'], vault_id, user_id)
+        updated_node = node_service.move_node(
+            node_id, data['parent_id'], vault_id, user_id, actor_type=_actor_type())
         return jsonify(updated_node.to_dict())
 
     except (PermissionError, InsufficientVaultRoleError) as e:
@@ -399,7 +430,8 @@ def set_node_icon_route(vault_id: int, node_id: str):
     if 'icon' not in data:
         return jsonify({"error": "Request body must contain 'icon' (can be a string or null)."}), 400
     try:
-        updated_node = node_service.update_node_icon(node_id, vault_id, user_id, data['icon'])
+        updated_node = node_service.update_node_icon(
+            node_id, vault_id, user_id, data['icon'], actor_type=_actor_type())
         return jsonify(updated_node.to_dict())
 
     except (PermissionError, InsufficientVaultRoleError) as e:
@@ -414,7 +446,7 @@ def set_node_icon_route(vault_id: int, node_id: str):
 def delete_node(vault_id: int, node_id: str):
     user_id = int(get_jwt_identity())
     try:
-        node_service.delete_node(node_id, vault_id, user_id)
+        node_service.delete_node(node_id, vault_id, user_id, actor_type=_actor_type())
         return jsonify({"message": "Node deleted successfully"}), 200
 
     except (PermissionError, InsufficientVaultRoleError) as e:
@@ -433,7 +465,8 @@ def update_ai_summary(vault_id: int, node_id: str):
         return jsonify({"error": "Request body must contain 'ai_summary'."}), 400
 
     try:
-        updated_node = node_service.update_node_ai_summary(node_id, vault_id, user_id, data['ai_summary'])
+        updated_node = node_service.update_node_ai_summary(
+            node_id, vault_id, user_id, data['ai_summary'], actor_type=_actor_type())
         return jsonify(updated_node.to_dict())
 
     except (PermissionError, InsufficientVaultRoleError) as e:
@@ -457,8 +490,12 @@ def generate_ai_summary(vault_id: int, node_id: str):
             return jsonify({"error": "Node not found"}), 404
         from backend.models import Node
         from backend.services.summary_service import request_summary
+        from backend.services.node_policy_service import assert_readable, assert_writable
+        target = db.session.get(Node, node_id)
+        assert_readable(target, user_id, actor_type='ai')
+        assert_writable(target, user_id, actor_type='ai')
         artifact = request_summary(
-            db.session.get(Node, node_id), data.get('provider', 'local'),
+            target, data.get('provider', 'local'),
             data.get('model'), user_id, visual_mode=data.get('visual_mode', 'off')
         )
         return jsonify({"id": artifact.id, "status": artifact.status,
@@ -469,12 +506,42 @@ def generate_ai_summary(vault_id: int, node_id: str):
         return jsonify({"error": str(e)}), 403
 
 
+@nodes_bp.route('/<string:node_id>/access-policy', methods=['PATCH'], strict_slashes=False)
+@jwt_required()
+def set_node_access_policy_route(vault_id: int, node_id: str):
+    if _actor_type() in {'mcp', 'ai', 'agent'}:
+        return jsonify({"error": "AI-mediated requests cannot change node access policy."}), 403
+    data = request.get_json(silent=True) or {}
+    required = {'ai_read', 'ai_write_locked', 'human_write_locked'}
+    if not required.issubset(data):
+        return jsonify({"error": "ai_read, ai_write_locked and human_write_locked are required."}), 400
+    if not isinstance(data['ai_write_locked'], bool) or not isinstance(data['human_write_locked'], bool):
+        return jsonify({"error": "Lock values must be booleans."}), 400
+    try:
+        node = node_service.update_node_access_policy(
+            node_id, vault_id, int(get_jwt_identity()), ai_read=data['ai_read'],
+            ai_write_locked=data['ai_write_locked'],
+            human_write_locked=data['human_write_locked'], note=data.get('note'),
+        )
+        payload = node.to_dict()
+        from backend.services.node_policy_service import effective_policy
+        payload['effective_access_policy'] = effective_policy(node).to_dict()
+        return jsonify(payload)
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @nodes_bp.route('/<string:node_id>/summary/history', methods=['GET'], strict_slashes=False)
 @jwt_required()
 def get_ai_summary_history(vault_id: int, node_id: str):
     user_id = int(get_jwt_identity())
     try:
-        if not node_service.get_node_by_id(node_id, vault_id, user_id):
+        if not node_service.get_node_by_id(
+            node_id, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=_include_quarantined()
+        ):
             return jsonify({"error": "Node not found"}), 404
         from backend.models import SummaryArtifact
         rows = SummaryArtifact.query.filter_by(node_id=node_id).order_by(SummaryArtifact.created_at.desc()).all()
@@ -508,7 +575,9 @@ def post_nodes_content(vault_id: int):
         return jsonify({"error": "'node_ids' must be a list."}), 400
 
     try:
-        result = node_service.get_content_for_nodes(node_ids, vault_id, user_id)
+        result = node_service.get_content_for_nodes(
+            node_ids, vault_id, user_id, actor_type=_actor_type(),
+            include_quarantined=bool(data.get('include_quarantined', False)))
         return jsonify(result)
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403

@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+
+# IDE configuration
+.idea/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

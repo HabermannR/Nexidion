@@ -42,6 +42,23 @@ def get_current_user_profile():
     return jsonify({"error": "User not found"}), 404
 
 
+@auth_bp.route('/actor-token', methods=['POST'], strict_slashes=False)
+@jwt_required()
+@limiter.limit("30 per minute; 300 per hour")
+def create_actor_token():
+    """Exchange a user token for a short-lived, more restrictive actor token."""
+    data = request.get_json(silent=True) or {}
+    actor_type = data.get('actor_type')
+    if actor_type != 'mcp':
+        return jsonify({"error": "actor_type must be mcp"}), 400
+    token = create_access_token(
+        identity=str(get_jwt_identity()),
+        additional_claims={"actor_type": "mcp"},
+        expires_delta=timedelta(minutes=15),
+    )
+    return jsonify(access_token=token, actor_type="mcp"), 200
+
+
 @auth_bp.route('/change-password', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @limiter.limit("10 per hour")

@@ -41,3 +41,17 @@
         margin-right: 0.25rem; /* Entspricht me-1 von Bootstrap */
     }
 }
+.access-policy-toggle,
+.access-policy-toggle:hover,
+.access-policy-toggle:focus,
+.access-policy-toggle:active,
+.access-policy-toggle.show {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.access-policy-toggle::after {
+    color: var(--text-muted, #6c757d);
+    margin-left: 0.25rem;
+}

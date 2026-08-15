@@ -85,11 +85,67 @@ def test_machine_actor_cannot_copy_private_descendant(
     _grant(test_llm_agent_obj.id, test_vault_2_obj.id)
     root = _node(test_vault_1_obj.id, test_user_1_obj.id, 'Root')
     _node(test_vault_1_obj.id, test_user_1_obj.id, 'Private', parent_id=root.id,
-          icon='bxs-no-entry')
+          icon='bxs-no-entry', ai_read_policy='deny', ai_write_locked=True)
     db.session.commit()
-    with pytest.raises(PermissionError, match='private'):
+    with pytest.raises(PermissionError, match='unavailable'):
         copy_node_to_vault(root.id, test_vault_1_obj.id, test_vault_2_obj.id,
                            test_llm_agent_obj.id)
+
+
+def test_copy_preserves_access_policy_metadata(
+        db_session, test_user_1_obj, test_vault_1_obj, test_vault_2_obj):
+    _grant(test_user_1_obj.id, test_vault_2_obj.id)
+    source = _node(
+        test_vault_1_obj.id, test_user_1_obj.id, 'Protected',
+        ai_read_policy='deny', ai_write_locked=True, human_write_locked=True,
+        policy_note='Reviewed reference')
+    db.session.commit()
+
+    result = copy_node_to_vault(
+        source.id, test_vault_1_obj.id, test_vault_2_obj.id, test_user_1_obj.id)
+    copied = db.session.get(Node, result['root_node_id'])
+
+    assert copied.ai_read_policy == 'deny'
+    assert copied.ai_write_locked is True
+    assert copied.human_write_locked is True
+    assert copied.policy_note == 'Reviewed reference'
+
+
+def test_copy_rejects_locked_destination_parent(
+        db_session, test_user_1_obj, test_vault_1_obj, test_vault_2_obj):
+    _grant(test_user_1_obj.id, test_vault_2_obj.id)
+    source = _node(test_vault_1_obj.id, test_user_1_obj.id, 'Source')
+    parent = _node(
+        test_vault_2_obj.id, test_user_1_obj.id, 'Locked destination',
+        human_write_locked=True, ai_write_locked=True)
+    db.session.commit()
+
+    with pytest.raises(PermissionError, match='write-locked'):
+        copy_node_to_vault(
+            source.id, test_vault_1_obj.id, test_vault_2_obj.id,
+            test_user_1_obj.id, destination_parent_id=parent.id)
+
+
+def test_copy_into_quarantine_stamps_copied_subtree(
+        db_session, test_user_1_obj, test_vault_1_obj, test_vault_2_obj):
+    _grant(test_user_1_obj.id, test_vault_2_obj.id)
+    source = _node(test_vault_1_obj.id, test_user_1_obj.id, 'Source')
+    child = _node(test_vault_1_obj.id, test_user_1_obj.id, 'Child', parent_id=source.id)
+    parent = _node(
+        test_vault_2_obj.id, test_user_1_obj.id, 'Quarantine',
+        ai_read_policy='explicit_only', ai_write_locked=True)
+    db.session.commit()
+
+    result = copy_node_to_vault(
+        source.id, test_vault_1_obj.id, test_vault_2_obj.id,
+        test_user_1_obj.id, destination_parent_id=parent.id)
+
+    copied_root = db.session.get(Node, result['root_node_id'])
+    copied_child = db.session.get(Node, result['uuid_map'][child.id])
+    assert copied_root.ai_read_policy == 'explicit_only'
+    assert copied_child.ai_read_policy == 'explicit_only'
+    assert copied_root.ai_write_locked is True
+    assert copied_child.ai_write_locked is True
 
 
 def test_copy_rejects_managed_image_and_leaves_destination_unchanged(
