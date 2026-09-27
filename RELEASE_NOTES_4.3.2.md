@@ -46,6 +46,9 @@ data-integrity bugs.
   longer fails.
 - Task batches are all-or-nothing.
 - Worker-completed summaries and PDF imports refresh the cached vault tree.
+- The database driver is named explicitly (`postgresql+psycopg2`). SQLAlchemy 2.1
+  maps a bare `postgresql://` URL to psycopg 3, which is not installed, so fresh
+  images failed at startup.
 - Malformed vault imports are rejected with a clear error; request bodies are
   capped at 128 MiB (`NEXIDION_MAX_UPLOAD_MB`).
 

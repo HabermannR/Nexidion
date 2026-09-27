@@ -60,7 +60,7 @@ class TestConfig(Config):
     if db_host == "postgres" and not os.path.exists("/.dockerenv"):
         db_host = "localhost"
 
-    SQLALCHEMY_DATABASE_URI = f"postgresql://{db_user}:{db_password}@{db_host}:5432/nexidion_test"
+    SQLALCHEMY_DATABASE_URI = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:5432/nexidion_test"
 
 
 @pytest.fixture(scope='session')

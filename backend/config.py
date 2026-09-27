@@ -28,7 +28,9 @@ class Config:
     DB_NAME = os.getenv('DB_NAME', 'Nexidion')
 
     # Build the PostgreSQL connection URI
-    SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    # Name the driver: SQLAlchemy 2.1 maps a bare postgresql:// to psycopg 3, which is
+    # not installed (we ship psycopg2-binary), and the app then fails at startup.
+    SQLALCHEMY_DATABASE_URI = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # --- AUTHENTICATION & SECURITY ---
