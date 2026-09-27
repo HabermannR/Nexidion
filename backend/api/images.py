@@ -1,8 +1,9 @@
 from flask import Blueprint, jsonify, request, send_file
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from backend.models import db, ImageAsset
 from backend.services.image_asset_service import create_asset, asset_path, delete_asset
+from backend.services.retrieval_service import asset_readable_by_ai
 from backend.services.vault_service import get_vault_access
 
 
@@ -35,6 +36,12 @@ def serve_asset(vault_id, asset_id):
         return jsonify({'error': str(exc)}), 403
     asset = db.session.get(ImageAsset, asset_id)
     if not asset or asset.vault_id != vault_id:
+        return jsonify({'error': 'Image asset not found.'}), 404
+    # Knowing an asset URL is not permission: AI actors must reach it through a
+    # node they may read. Answer 404 so the refusal does not confirm the asset exists.
+    include_quarantined = request.args.get('include_quarantined', 'false').lower() == 'true'
+    if not asset_readable_by_ai(asset, int(get_jwt_identity()), get_jwt().get('actor_type'),
+                                include_quarantined):
         return jsonify({'error': 'Image asset not found.'}), 404
     path = asset_path(asset)
     if not path.is_file():

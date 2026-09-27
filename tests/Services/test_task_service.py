@@ -223,3 +223,20 @@ def test_get_task_by_id_permission_denied(db_session, test_user_1_obj, test_user
 
     with pytest.raises(PermissionError, match='You do not have permission to access this vault.'):
         task_service.get_task_by_id(created_task.id, test_user_2_obj.id)
+
+
+def test_worker_completed_summary_refreshes_cached_tree(db_session, test_user_1_obj, test_vault_1_obj):
+    # Regression: summaries finished by the worker left the cached agent tree stale.
+    from backend.models import Node
+    from backend.services import node_service
+    from backend.services.summary_service import start_summary, complete_summary
+
+    node = node_service.create_node("Summarised", "body", None, test_vault_1_obj.id, test_user_1_obj.id)
+    node_service.get_nodes_as_tree(test_vault_1_obj.id, test_user_1_obj.id, 'agent_tree')
+    artifact = start_summary(db_session.session.get(Node, node.id), "local", "m",
+                             test_user_1_obj.id, None)
+    complete_summary(artifact, "Fresh summary")
+    db_session.session.commit()
+
+    tree, _, _ = node_service.get_nodes_as_tree(test_vault_1_obj.id, test_user_1_obj.id, 'agent_tree')
+    assert tree[0]['ai_summary'] == "Fresh summary"

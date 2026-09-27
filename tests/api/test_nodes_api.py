@@ -832,3 +832,13 @@ def test_get_single_node_with_valid_version_param(client, auth_headers_1, test_v
     assert data['version'] == 1
     assert data['title'] == "Titel V1"
     assert data['content'] == "Content V1"
+
+
+def test_generate_summary_queues_instead_of_crashing(client, auth_headers_1, test_vault_1_obj, db_session):
+    # Regression: the route referenced `db` without importing it and always returned 500.
+    node = client.post(f'/api/vaults/{test_vault_1_obj.id}/nodes/', headers=auth_headers_1,
+                       json={"title": "Summarise me", "content": "Some content"}).get_json()
+    response = client.post(f'/api/vaults/{test_vault_1_obj.id}/nodes/{node["id"]}/summary/generate',
+                           headers=auth_headers_1, json={"provider": "local"})
+    assert response.status_code == 202, response.text
+    assert response.get_json()["status"] == "pending"

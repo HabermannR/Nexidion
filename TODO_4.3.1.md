@@ -2,7 +2,7 @@
 
 4.3.1 is a focused patch release restoring internal links and introducing
 metadata-backed node access policies across the UI, API, task runner, and MCP.
-Unrelated feature work is tracked in `TODO_4.3.2.md`.
+Unrelated feature work is tracked in `TODO_4.3.3.md`.
 
 ## Node access policies
 

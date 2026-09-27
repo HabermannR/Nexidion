@@ -229,3 +229,12 @@ def test_curation_creates_derived_nodes_with_page_provenance(
     provenance = client.get(f'/api/connectors/provenance/nodes/{node.id}', headers=auth_headers_1)
     assert provenance.status_code == 200
     assert provenance.get_json()[0]["is_stale"] is True
+
+
+def test_imported_sources_show_as_read_only_in_the_tree(client, auth_headers_1, test_vault_1_obj, db_session):
+    # Regression: the tree was cached before the frozen-source binding existed.
+    _upload(client, auth_headers_1, test_vault_1_obj.id, "Frozen")
+    tree = client.get(f'/api/vaults/{test_vault_1_obj.id}/nodes/?format=tree', headers=auth_headers_1).get_json()
+    container = next(node for node in tree if node['title'] == 'manual')
+    assert container['write_allowed'] is False
+    assert [child['write_allowed'] for child in container['children']] == [False]

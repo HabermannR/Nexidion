@@ -15,6 +15,10 @@ class Config:
     # Construct the path using the project root and the folder name.
     ASSET_STORAGE_FOLDER = os.getenv('ASSET_STORAGE_FOLDER', os.path.join(project_root, 'asset_storage'))
 
+    # Largest accepted request body (HTTP 413 above it). PDFs are capped at 100 MiB;
+    # vault imports are parsed in memory, which the Pi cannot afford unbounded.
+    MAX_CONTENT_LENGTH = int(os.getenv('NEXIDION_MAX_UPLOAD_MB', '128')) * 1024 * 1024
+
     ## --- DATABASE CONFIGURATION ---
     # Fetch DB details from environment variables
     DB_USER = os.getenv('DB_USER', 'default_user')

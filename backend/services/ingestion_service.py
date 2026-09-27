@@ -18,6 +18,11 @@ def serialize_run(run: IngestionRun) -> dict:
         "requested_by_id": run.requested_by_id, "executed_by_id": run.executed_by_id,
         "created_at": run.created_at.isoformat(),
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "artifact_id": run.artifact_id,
+        "attempts": run.attempts or 0,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "heartbeat_at": run.heartbeat_at.isoformat() if run.heartbeat_at else None,
+        "curation_job_id": (run.stats or {}).get("curation_job_id"),
     }
 
 
@@ -35,7 +40,8 @@ def serialize_item(item: SourceItem) -> dict:
 
 
 def run_connector(connector_id: str, requested_by_id: int, executed_by_id: int | None = None,
-                  config_override: dict | None = None) -> IngestionRun:
+                  config_override: dict | None = None, run: IngestionRun | None = None) -> IngestionRun:
+    """Import a connector's documents. Pass `run` to execute an already-queued run."""
     installation = db.session.get(ConnectorInstallation, connector_id)
     if not installation or not installation.enabled:
         raise ValueError("Connector is missing or disabled.")
@@ -46,9 +52,16 @@ def run_connector(connector_id: str, requested_by_id: int, executed_by_id: int |
         raise PermissionError("This connector installation is not allowed to ingest.")
 
     actor_id = executed_by_id or requested_by_id
-    run = IngestionRun(connector_id=connector_id, requested_by_id=requested_by_id,
-                       executed_by_id=actor_id, status="processing")
-    db.session.add(run)
+    now = datetime.now(timezone.utc)
+    if run is None:
+        run = IngestionRun(connector_id=connector_id, requested_by_id=requested_by_id,
+                           executed_by_id=actor_id, status="processing", started_at=now,
+                           heartbeat_at=now, attempts=1)
+        db.session.add(run)
+    else:
+        run.status = "processing"
+        run.started_at = run.started_at or now
+        run.heartbeat_at = now
     db.session.commit()
     created = updated = unchanged = 0
     try:
@@ -117,6 +130,9 @@ def run_connector(connector_id: str, requested_by_id: int, executed_by_id: int |
         run.stats = {"created": created, "updated": updated, "unchanged": unchanged,
                      "total": created + updated + unchanged, "items": item_results}
         run.completed_at = datetime.now(timezone.utc)
+        # Nodes were re-parented and bound as frozen sources after create_node cached
+        # the tree, so the cache would show them in the wrong place and as editable.
+        node_service.invalidate_vault_tree_cache(vault.id)
         db.session.commit()
         return run
     except Exception as exc:

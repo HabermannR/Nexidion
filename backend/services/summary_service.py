@@ -61,6 +61,10 @@ def complete_summary(artifact: SummaryArtifact, summary: str, used_vision: bool 
     artifact.completed_at = datetime.now(timezone.utc)
     node.ai_summary = summary
     node.summary_is_current = artifact.source_content_hash == content_hash(node)
+    # The cached agent tree carries summaries; worker-completed summaries must not
+    # leave list_nodes showing the old one.
+    from backend.services.node_service import invalidate_vault_tree_cache
+    invalidate_vault_tree_cache(node.vault_id)
 
 
 def fail_summary(artifact: SummaryArtifact, error: str) -> None:

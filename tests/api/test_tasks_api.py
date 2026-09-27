@@ -263,3 +263,17 @@ def test_unauthenticated_access(client, test_vault_1_obj, test_task_obj):
     # 3. POST /api/tasks
     res3 = client.post('/api/tasks', json={"vault_id": test_vault_1_obj.id})
     assert res3.status_code == 401
+
+
+def test_task_batch_is_all_or_nothing(client, auth_headers_1, test_node_obj):
+    from backend.models import Task
+    jobs = [{"instruction": "Valid job", "context_node_ids": [test_node_obj.id]},
+            {"instruction": "   "}]  # rejected: empty instruction
+    response = client.post('/api/tasks/batch', headers=auth_headers_1, json={
+        "vault_id": test_node_obj.vault_id, "jobs": jobs})
+    assert response.status_code == 400
+    assert Task.query.count() == 0
+
+    malformed = client.post('/api/tasks/batch', headers=auth_headers_1, json={
+        "vault_id": test_node_obj.vault_id, "jobs": ["not an object"]})
+    assert malformed.status_code == 400

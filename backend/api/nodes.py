@@ -2,12 +2,12 @@ import logging
 import hashlib
 import json
 
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify, Response, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 
 from backend.extensions import limiter
 # Import the services and the new exceptions +++
-from backend.services import node_service
+from backend.services import node_service, retrieval_service
 from backend.exceptions import InsufficientVaultRoleError
 
 # The blueprint contains the vault_id as a dynamic part of the prefix.
@@ -21,6 +21,11 @@ def _actor_type() -> str | None:
 
 def _include_quarantined() -> bool:
     return request.args.get('include_quarantined', 'false').lower() == 'true'
+
+
+def _flag(name: str, default: bool) -> bool:
+    value = request.args.get(name)
+    return default if value is None else value.lower() in ('1', 'true', 'yes')
 
 
 # ========================================================================
@@ -150,16 +155,29 @@ def full_text_search(vault_id: int):
     user_id = int(get_jwt_identity())
     query = request.args.get('q', '').strip()
     limit = request.args.get('limit', 20, type=int)
+    snippets = _flag('snippets', False)
+    snippet_length = request.args.get('snippet_length', 600, type=int)
+    max_snippets = request.args.get('max_snippets', 3, type=int)
 
     if not query:
         return jsonify({"error": "Missing search query parameter 'q'."}), 400
     if limit < 1 or limit > 100:
         return jsonify({"error": "Parameter 'limit' must be between 1 and 100."}), 400
+    if snippet_length < 100 or snippet_length > 4000:
+        return jsonify({"error": "Parameter 'snippet_length' must be between 100 and 4000."}), 400
+    if max_snippets < 0 or max_snippets > 10:
+        return jsonify({"error": "Parameter 'max_snippets' must be between 0 and 10."}), 400
 
     try:
         results = node_service.search_nodes_fulltext(
             query, vault_id, user_id, limit, actor_type=_actor_type(),
-            include_quarantined=_include_quarantined())
+            include_quarantined=_include_quarantined(), snippets=snippets,
+            snippet_length=snippet_length, max_snippets=max_snippets,
+            include_content=_flag('include_content', True),
+            include_summary=_flag('include_summary', True),
+            subtree_root_id=request.args.get('subtree_root_id') or None,
+            content_kind=request.args.get('content_kind') or None,
+            authority=request.args.get('authority') or None)
         return jsonify({
             "query": query,
             "limit": limit,
@@ -481,7 +499,7 @@ def generate_ai_summary(vault_id: int, node_id: str):
     user_id = int(get_jwt_identity())
     data = request.get_json(silent=True) or {}
     try:
-        from backend.models import User
+        from backend.models import db, User
         from backend.services.vault_service import get_vault_access, assert_write_allowed
         _, role = get_vault_access(vault_id, user_id)
         assert_write_allowed(role, db.session.get(User, user_id))
@@ -556,6 +574,118 @@ def get_ai_summary_history(vault_id: int, node_id: str):
         } for row in rows])
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
+
+
+# ========================================================================
+# API ROUTES (AGENT-NATIVE RETRIEVAL)
+# ========================================================================
+
+@nodes_bp.route('/<string:node_id>/assets', methods=['GET'], strict_slashes=False)
+@jwt_required()
+def list_node_assets_route(vault_id: int, node_id: str):
+    """Managed assets embedded in the node's current content or summary."""
+    try:
+        return jsonify(retrieval_service.list_node_assets(
+            node_id, vault_id, int(get_jwt_identity()), actor_type=_actor_type(),
+            include_quarantined=_include_quarantined()))
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@nodes_bp.route('/<string:node_id>/assets/<string:asset_id>', methods=['GET'])
+@jwt_required()
+def get_node_asset_route(vault_id: int, node_id: str, asset_id: str):
+    """Serve an asset through the node that embeds it, so the node's access policy
+    applies. representation=preview returns a downscaled image (max_px, default 1024)."""
+    from backend.services.image_asset_service import asset_path
+
+    representation = request.args.get('representation', 'original')
+    if representation not in ('original', 'preview'):
+        return jsonify({"error": "representation must be original or preview"}), 400
+    max_px = request.args.get('max_px', 1024, type=int)
+    if max_px < 64 or max_px > 4096:
+        return jsonify({"error": "max_px must be between 64 and 4096"}), 400
+    try:
+        asset = retrieval_service.get_node_asset(
+            node_id, asset_id, vault_id, int(get_jwt_identity()), actor_type=_actor_type(),
+            include_quarantined=_include_quarantined())
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    path = asset_path(asset)
+    if not path.is_file():
+        return jsonify({"error": "Image asset file is missing."}), 404
+    if representation == 'preview':
+        data, media_type = retrieval_service.render_preview(path, asset.media_type, max_px)
+        return Response(data, mimetype=media_type, headers={
+            "X-Asset-Id": asset.id, "X-Original-Media-Type": asset.media_type})
+    return send_file(path, mimetype=asset.media_type, conditional=True, etag=asset.content_hash,
+                     download_name=asset.original_filename)
+
+
+@nodes_bp.route('/<string:node_id>/context', methods=['GET'], strict_slashes=False)
+@jwt_required()
+@limiter.limit("60 per minute")
+def get_context_bundle_route(vault_id: int, node_id: str):
+    """Deterministic, policy-filtered graph neighbourhood of a node (no synthesis)."""
+    try:
+        bundle = retrieval_service.build_context_bundle(
+            node_id, vault_id, int(get_jwt_identity()), actor_type=_actor_type(),
+            include_quarantined=_include_quarantined(),
+            depth=request.args.get('depth', 1, type=int),
+            include_parent=_flag('include_parent', True),
+            include_children=_flag('include_children', True),
+            include_outlinks=_flag('include_outlinks', True),
+            include_backlinks=_flag('include_backlinks', True),
+            include_content=request.args.get('include_content', 'snippets'),
+            snippet_chars=request.args.get('snippet_chars', 1200, type=int),
+            include_summaries=_flag('include_summaries', True),
+            include_assets_metadata=_flag('include_assets_metadata', True),
+            max_items=request.args.get('max_items', 30, type=int),
+            max_chars=request.args.get('max_chars', 30000, type=int))
+        return jsonify(bundle)
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@nodes_bp.route('/context-search', methods=['GET'], strict_slashes=False)
+@jwt_required()
+@limiter.limit("30 per minute")
+def search_context_bundle_route(vault_id: int):
+    """Search for seed nodes and expand their neighbourhoods into one bundle."""
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({"error": "Missing search query parameter 'q'."}), 400
+    try:
+        bundle = retrieval_service.build_search_context_bundle(
+            query, vault_id, int(get_jwt_identity()), actor_type=_actor_type(),
+            include_quarantined=_include_quarantined(),
+            seed_limit=request.args.get('seed_limit', 5, type=int),
+            depth=request.args.get('depth', 1, type=int),
+            max_snippets=request.args.get('max_snippets', 2, type=int),
+            snippet_length=max(100, min(request.args.get('snippet_length', 400, type=int), 4000)),
+            subtree_root_id=request.args.get('subtree_root_id') or None,
+            include_parent=_flag('include_parent', True),
+            include_children=_flag('include_children', True),
+            include_outlinks=_flag('include_outlinks', True),
+            include_backlinks=_flag('include_backlinks', True),
+            include_content=request.args.get('include_content', 'snippets'),
+            snippet_chars=request.args.get('snippet_chars', 1200, type=int),
+            include_summaries=_flag('include_summaries', True),
+            max_items=request.args.get('max_items', 30, type=int),
+            max_chars=request.args.get('max_chars', 30000, type=int))
+        return jsonify(bundle)
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
 # ========================================================================

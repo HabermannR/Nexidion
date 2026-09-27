@@ -3,6 +3,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from backend.extensions import limiter
+from backend.models import db
 from backend.services import task_service
 
 tasks_bp = Blueprint('tasks', __name__, url_prefix='/api/tasks')
@@ -18,6 +19,8 @@ def create_task_batch():
     jobs = data.get('jobs')
     if not isinstance(jobs, list) or not jobs or len(jobs) > 50:
         return jsonify({'error': 'jobs must contain between 1 and 50 tasks'}), 400
+    if not all(isinstance(job, dict) for job in jobs):
+        return jsonify({'error': 'every job must be an object'}), 400
     vault_id = data.get('vault_id')
     if not vault_id:
         return jsonify({'error': 'vault_id is required'}), 400
@@ -34,11 +37,15 @@ def create_task_batch():
                 llm_model=data.get('llm_model'),
                 allowed_write_node_ids=job.get('allowed_write_node_ids'),
                 allowed_write_operations=job.get('allowed_write_operations'),
+                commit=False,
             ))
+        db.session.commit()  # all jobs or none: a rejected job must not leave its predecessors queued
         return jsonify({'tasks': [task.to_dict() for task in created]}), 201
     except ValueError as exc:
+        db.session.rollback()
         return jsonify({'error': str(exc)}), 400
     except PermissionError as exc:
+        db.session.rollback()
         return jsonify({'error': str(exc)}), 403
 
 

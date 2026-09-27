@@ -1,7 +1,15 @@
-# Nexidion 4.3.2 Roadmap
+# Nexidion 4.3.3 Roadmap
 
-This roadmap contains the feature and infrastructure work intentionally deferred
-from the focused 4.3.1 security and link-restoration patch release.
+This roadmap contains the feature and infrastructure work deferred from the 4.3.1
+security and link-restoration patch release. It was planned as 4.3.2; that number
+went to the agent-native retrieval and ingestion-reliability release instead (see
+`RELEASE_NOTES_4.3.2.md`), and everything below remains open for 4.3.3.
+
+Already delivered in 4.3.2 and therefore only partly open below: background PDF
+ingestion with heartbeat recovery and retry (not yet cancellation, dry-run or
+idempotency keys), MCP redirect-URI allowlisting and the first automated OAuth
+tests, and an `include_quarantined` schema regression test (not yet verified end
+to end against a published connector).
 
 ## Release-critical
 
@@ -20,6 +28,10 @@ from the focused 4.3.1 security and link-restoration patch release.
 
 ### MCP security
 
+- [ ] Make the quarantine override reliably available in real MCP clients: expose
+  `include_quarantined` in every relevant tool schema (especially `get_node`),
+  verify it end to end against the published connector, add a schema regression
+  test, and document how existing ChatGPT connections refresh cached tool schemas.
 - [ ] Remove `JWT_SECRET_KEY` from the MCP container.
 - [ ] Replace locally minted Nexidion JWTs with a narrowly scoped server-to-server
   token exchange or delegated-token endpoint in Nexidion.

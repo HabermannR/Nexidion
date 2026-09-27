@@ -1,24 +1,19 @@
-import os
-import tempfile
 
-from flask import Blueprint, jsonify, request
-from werkzeug.utils import secure_filename
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from backend.ingestion import connector_registry
 from backend.models import (db, ConnectorInstallation, IngestionRun, SourceItem, User,
-                            UserType, SourceArtifact, CurationJob, NodeSourceLink, Node)
-from backend.ingestion.pdf import extract_pdf
-from backend.services.curation_service import PROMPT_VERSION, serialize_curation_job
-from backend.services.image_asset_service import create_asset
+                            SourceArtifact, CurationJob, NodeSourceLink, Node)
+from backend.services import ingestion_worker, pdf_ingestion_service
+from backend.services.curation_service import serialize_curation_job
 from backend.services.ingestion_service import (
-    VALID_MODES, VALID_POLICIES, run_connector, serialize_run, serialize_item,
+    VALID_MODES, run_connector, serialize_run, serialize_item,
 )
 from backend.services.vault_service import get_vault_access, assert_write_allowed
 from backend.services.node_policy_service import assert_readable, is_ai_actor
 
 connectors_bp = Blueprint('connectors', __name__, url_prefix='/api/connectors')
-MAX_PDF_BYTES = 100 * 1024 * 1024
 
 
 def _installation_dict(row):
@@ -38,115 +33,26 @@ def _include_quarantined():
 
 
 def ingest_pdf_upload(vault_id: int, user_id: int):
-    """Run deterministic PDF ingestion for a multipart upload."""
-    _require_vault_writer(vault_id, user_id)
+    """Run deterministic PDF ingestion for a multipart upload, inside the request."""
     upload = request.files.get('file')
-    if not upload or not upload.filename:
-        raise ValueError("A PDF is required in multipart field 'file'.")
-    filename = secure_filename(upload.filename)
-    if not filename or not filename.lower().endswith('.pdf'):
-        raise ValueError("The uploaded file must have a .pdf extension.")
-    parent_id = request.form.get('parent_id') or None
-    workflow = request.form.get('mode', 'extract')
-    if workflow not in {'extract', 'extract_and_curate', 'curate_only'}:
-        raise ValueError('mode must be extract, extract_and_curate, or curate_only')
-    granularity = request.form.get('granularity', 'auto')
-    if granularity not in {'auto', 'document', 'chapter', 'page'}:
-        raise ValueError('granularity must be auto, document, chapter, or page')
-    policy = request.form.get('policy', 'managed')
-    if policy not in VALID_POLICIES:
-        raise ValueError(f"policy must be one of: {', '.join(sorted(VALID_POLICIES))}")
+    pdf_request = pdf_ingestion_service.parse_request(
+        vault_id, user_id, request.form, upload.filename if upload else None)
+    return pdf_ingestion_service.ingest_now(pdf_request, upload.stream)
 
-    installation = ConnectorInstallation.query.filter_by(
-        vault_id=vault_id, plugin_name='pdf', name='PDF uploads'
-    ).first()
-    if not installation:
-        installation = ConnectorInstallation(
-            vault_id=vault_id, plugin_name='pdf', name='PDF uploads', mode='ingest',
-            config={"policy": "managed"}, created_by_id=user_id,
-        )
-        db.session.add(installation)
-        db.session.commit()
 
-    fd, path = tempfile.mkstemp(prefix='nexidion_pdf_', suffix='.pdf')
-    try:
-        size = 0
-        with os.fdopen(fd, 'wb') as target:
-            while chunk := upload.stream.read(1024 * 1024):
-                size += len(chunk)
-                if size > MAX_PDF_BYTES:
-                    raise ValueError("PDF exceeds the 100 MiB upload limit.")
-                target.write(chunk)
-        with open(path, 'rb') as probe:
-            if probe.read(5) != b'%PDF-':
-                raise ValueError("The uploaded file is not a valid PDF.")
-        extraction = extract_pdf(path)
-        artifact = SourceArtifact.query.filter_by(connector_id=installation.id,
-            external_id=filename, content_hash=extraction.content_hash).first()
-        if not artifact:
-            previous_artifact_ids = db.session.execute(db.select(SourceArtifact.id).filter_by(
-                connector_id=installation.id, external_id=filename)).scalars().all()
-            if previous_artifact_ids:
-                NodeSourceLink.query.filter(NodeSourceLink.artifact_id.in_(previous_artifact_ids)).update(
-                    {"is_stale": True}, synchronize_session=False)
-            artifact = SourceArtifact(connector_id=installation.id, external_id=filename,
-                content_hash=extraction.content_hash, mime_type='application/pdf',
-                source_uri=f"upload://{filename}", payload=extraction.payload,
-                extracted_json={"pages": extraction.pages, "outline": extraction.outline},
-                metadata_json=extraction.metadata)
-            db.session.add(artifact)
-            db.session.commit()
+def _wants_background() -> bool:
+    return (request.form.get('background') or '').lower() in ('1', 'true', 'yes')
 
-        image_urls_by_page = {}
-        for image in extraction.images:
-            try:
-                asset = create_asset(vault_id, user_id, image['data'],
-                    f"{os.path.splitext(filename)[0]}-page-{image['page']}-{image['xref']}.{image['extension']}",
-                    source_artifact_id=artifact.id, page_number=image['page'])
-                image_urls_by_page.setdefault(str(image['page']), []).append(
-                    f'/api/vaults/{vault_id}/assets/{asset.id}')
-            except ValueError:
-                continue
 
-        run = None
-        if workflow != 'curate_only':
-            run = run_connector(installation.id, user_id, config_override={
-                "path": path, "external_id": filename, "title": os.path.splitext(filename)[0],
-                "source_uri": f"upload://{filename}", "parent_id": parent_id, "policy": policy,
-                "granularity": granularity,
-                "image_urls_by_page": image_urls_by_page,
-            })
-
-        job = None
-        if workflow != 'extract':
-            provider = request.form.get('provider', 'local')
-            visual_mode = request.form.get('visual_mode', 'off')
-            if provider not in {'local', 'openai', 'openrouter'}:
-                raise ValueError('provider must be local, openai, or openrouter')
-            if visual_mode not in {'off', 'auto', 'all'}:
-                raise ValueError('visual_mode must be off, auto, or all')
-            executor = User.query.filter_by(user_type=UserType.LLM_ASSISTANT).first()
-            if not executor:
-                raise ValueError("No LLM assistant user is configured.")
-            get_vault_access(vault_id, executor.id)
-            curation_parent_id = parent_id
-            if run:
-                container_binding = SourceItem.query.filter_by(
-                    connector_id=installation.id, external_id=f"{filename}#container").first()
-                if container_binding and container_binding.node_id:
-                    curation_parent_id = container_binding.node_id
-            job = CurationJob(artifact_id=artifact.id, vault_id=vault_id, parent_id=curation_parent_id,
-                mode=workflow, provider=provider, model=request.form.get('model') or None,
-                visual_mode=visual_mode, prompt_version=PROMPT_VERSION,
-                requested_by_id=user_id, executed_by_id=executor.id)
-            db.session.add(job)
-            db.session.commit()
-        return run, installation, job, artifact
-    finally:
-        try:
-            os.unlink(path)
-        except FileNotFoundError:
-            pass
+def enqueue_pdf_upload(vault_id: int, user_id: int):
+    """Store the PDF and a pending run; the ingestion worker does the rest."""
+    upload = request.files.get('file')
+    pdf_request = pdf_ingestion_service.parse_request(
+        vault_id, user_id, request.form, upload.filename if upload else None)
+    run, installation, artifact = pdf_ingestion_service.enqueue(pdf_request, upload.stream)
+    ingestion_worker.start_worker(current_app._get_current_object())
+    ingestion_worker.notify()
+    return run, installation, artifact
 
 
 @connectors_bp.get('/plugins')
@@ -215,6 +121,13 @@ def upload_pdf():
         vault_id = request.form.get('vault_id', type=int)
         if not vault_id:
             raise ValueError("vault_id is required.")
+        if _wants_background():
+            run, installation, artifact = enqueue_pdf_upload(vault_id, user_id)
+            payload = serialize_run(run)
+            payload["connector"] = _installation_dict(installation)
+            payload["artifact_id"] = artifact.id
+            payload["curation_job"] = None
+            return jsonify(payload), 202
         run, installation, job, artifact = ingest_pdf_upload(vault_id, user_id)
         payload = serialize_run(run) if run else {"status": "accepted", "stats": {}}
         payload["connector"] = _installation_dict(installation)

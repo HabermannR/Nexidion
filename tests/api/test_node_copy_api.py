@@ -46,3 +46,26 @@ def test_copy_node_api_validates_body(client, auth_headers_1, test_node_obj,
     assert client.post(url, headers=auth_headers_1,
                        json={'destination_vault_id': test_vault_1_obj.id,
                              'recursive': 'yes'}).status_code == 400
+
+
+def test_copying_out_of_a_private_branch_keeps_it_private(
+        app, client, auth_headers_1, test_user_1_obj, test_vault_1_obj, test_vault_2_obj):
+    from flask_jwt_extended import create_access_token
+    db.session.add(VaultAccess(user_id=test_user_1_obj.id,
+                               vault_id=test_vault_2_obj.id, role=VaultRole.EDITOR))
+    parent = _source(test_vault_1_obj, test_user_1_obj)
+    parent.ai_read_policy, parent.ai_write_locked = 'deny', True
+    child = _source(test_vault_1_obj, test_user_1_obj)
+    child.parent_id = parent.id  # locally 'allow', private only by inheritance
+    db.session.commit()
+
+    response = client.post(f'/api/vaults/{test_vault_1_obj.id}/nodes/{child.id}/copy',
+                           headers=auth_headers_1, json={'destination_vault_id': test_vault_2_obj.id})
+    assert response.status_code == 201, response.text
+    copy_id = response.get_json()['root_node_id']
+
+    with app.app_context():
+        mcp = {"Authorization": "Bearer " + create_access_token(
+            identity=str(test_user_1_obj.id), additional_claims={"actor_type": "mcp"})}
+    assert client.get(f'/api/vaults/{test_vault_2_obj.id}/nodes/{copy_id}', headers=mcp).status_code == 403
+    assert client.get(f'/api/vaults/{test_vault_2_obj.id}/nodes/{copy_id}', headers=auth_headers_1).status_code == 200

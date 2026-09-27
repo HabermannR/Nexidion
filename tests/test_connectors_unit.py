@@ -81,3 +81,50 @@ def test_repeated_pdf_image_is_emitted_for_each_page(tmp_path, monkeypatch):
     extraction = extract_pdf(path)
 
     assert [image["page"] for image in extraction.images] == [1, 2]
+
+
+def test_chapter_mode_keeps_front_matter_and_tolerates_messy_outlines(tmp_path):
+    from backend.ingestion.pdf import documents_from_extraction
+
+    path = tmp_path / "book.pdf"
+    pdf = pymupdf.open()
+    for number in range(1, 7):
+        pdf.new_page().insert_text((72, 72), f"Body of page {number}")
+    pdf.set_toc([[1, "Chapter A", 3], [2, "A.1", 3], [1, "Chapter B", 5]])
+    pdf.save(path)
+    pdf.close()
+    extraction = extract_pdf(path)
+    # Out-of-range and duplicate-page entries are common in real outlines.
+    extraction.outline.extend([[1, "Broken link", -1], [1, "Same page as B", 5]])
+
+    documents = documents_from_extraction(extraction, {"granularity": "chapter"})
+    chapters = [(d.title, d.metadata["page_from"], d.metadata["page_to"]) for d in documents[1:]]
+
+    assert chapters == [("Front matter", 1, 2), ("Chapter A", 3, 4), ("Chapter B", 5, 6)]
+    assert "Body of page 1" in documents[1].markdown
+
+
+def test_connector_reuses_a_supplied_extraction(tmp_path, monkeypatch):
+    path = tmp_path / "once.pdf"
+    pdf = pymupdf.open()
+    pdf.new_page().insert_text((72, 72), "Once")
+    pdf.save(path)
+    pdf.close()
+    extraction = extract_pdf(path)
+    monkeypatch.setattr("backend.ingestion.pdf.extract_pdf",
+                        lambda *_: (_ for _ in ()).throw(AssertionError("extracted twice")))
+
+    documents = list(PdfConnector().discover(ConnectorContext(
+        config={"path": str(path), "extraction": extraction})))
+
+    assert documents[1].markdown.strip().endswith("Once")
+
+
+def test_search_snippets_are_exact_slices():
+    from backend.services.retrieval_service import find_matches
+
+    content = "Alpha " * 300 + "the Übungen with Wasserflaschen " + "Omega " * 300
+    [match] = find_matches(content, "Übung Wasserflasche", snippet_length=200)
+    assert content[match["start_char"]:match["end_char"]] == match["text"]
+    assert "Übungen with Wasserflaschen" in match["text"]
+    assert match["truncated_before"] and match["truncated_after"]

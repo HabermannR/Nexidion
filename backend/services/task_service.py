@@ -24,10 +24,11 @@ VALID_WRITE_OPERATIONS = {'write_node', 'patch_node', 'rename_node', 'move_node'
 def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id: int,
                 llm_provider: str | None = None, llm_model: str | None = None,
                 allowed_write_node_ids: list | None = None,
-                allowed_write_operations: list | None = None) -> Task:
+                allowed_write_operations: list | None = None, commit: bool = True) -> Task:
     """
     Erstellt einen neuen Task für einen Vault, nachdem der Zugriff überprüft wurde.
     Wirft Fehler bei ungültigen Daten oder fehlenden Berechtigungen.
+    With commit=False the task is only flushed, so a batch can commit all-or-nothing.
     """
     instruction_stripped = instruction.strip() if isinstance(instruction, str) else ""
     if not instruction_stripped:
@@ -111,7 +112,10 @@ def create_task(vault_id: int, instruction: str, context_node_ids: list, user_id
             executed_by_id=agent.id,
         )
         db.session.add(task)
-        db.session.commit()
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
         return task
     except Exception as e:
         db.session.rollback()

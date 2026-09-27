@@ -215,6 +215,17 @@ def _get_nodes_by_ids_and_verify_access(node_ids: list[str], vault_id: int, user
     return nodes
 
 
+def invalidate_vault_tree_cache(vault_id: int) -> None:
+    """Drop the cached trees so the next read rebuilds them. For writers that do
+    not otherwise rebuild; the caller commits."""
+    vault = db.session.get(Vault, vault_id)
+    if vault:
+        vault.cached_ui_tree = None
+        vault.cached_ui_tree_etag = None
+        vault.cached_agent_tree = None
+        vault.cached_agent_tree_etag = None
+
+
 def rebuild_vault_tree_cache(vault_id: int) -> dict:
     """Builds and caches both the UI tree and Agent tree in a single pass."""
 
@@ -383,7 +394,16 @@ def find_node_by_title(title: str, vault_id: int, user_id: int, *, actor_type: s
 
 
 def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 20, *,
-                          actor_type: str | None = None, include_quarantined: bool = False) -> list[dict]:
+                          actor_type: str | None = None, include_quarantined: bool = False,
+                          snippets: bool = False, snippet_length: int = 600, max_snippets: int = 3,
+                          include_content: bool = True, include_summary: bool = True,
+                          subtree_root_id: str | None = None, content_kind: str | None = None,
+                          authority: str | None = None) -> list[dict]:
+    """Ranked full-text search. With `snippets`, each hit carries verbatim matches from
+    its current content (see retrieval_service.enrich_search_result). Policy filtering
+    happens before any snippet is built."""
+    from backend.services import retrieval_service
+
     _verify_vault_access(vault_id, user_id)
     if not query or not query.strip():
         return []
@@ -403,7 +423,7 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
             func.ts_rank(combined_de, tsquery_de) +
             title_length_bonus
     ).label("relevance")
-    nodes = (
+    search = (
         db.session.query(Node, relevance)
         .join(Node.current_version_object)
         .filter(
@@ -416,9 +436,12 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
                 Node.fts_summary_de.op("@@")(tsquery_de),
             )
         )
-        .order_by(relevance.desc())
-        .all()
     )
+    if content_kind:
+        search = search.filter(Node.content_kind == content_kind)
+    if authority:
+        search = search.filter(Node.authority == authority)
+    nodes = search.order_by(relevance.desc(), Node.id).all()
     results = []
     for node, score in nodes:
         try:
@@ -426,7 +449,19 @@ def search_nodes_fulltext(query: str, vault_id: int, user_id: int, limit: int = 
                                   include_quarantined=include_quarantined)
         except PermissionError:
             continue
-        results.append({**node.to_dict(), "relevance_score": float(score)})
+        if subtree_root_id and not retrieval_service.is_in_subtree(node, subtree_root_id):
+            continue
+        result = {**node.to_dict(), "relevance_score": float(score)}
+        if snippets:
+            result = retrieval_service.enrich_search_result(
+                result, node, q, snippet_length=snippet_length, max_snippets=max_snippets,
+                include_content=include_content, include_summary=include_summary)
+        else:
+            if not include_content:
+                result.pop("content", None)
+            if not include_summary:
+                result.pop("ai_summary", None)
+        results.append(result)
         if len(results) == limit:
             break
     return results
@@ -764,11 +799,12 @@ def create_node(
 def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] = None,
                 content: Optional[str] = None, allow_managed_source: bool = False,
                 actor_type: str | None = None) -> Node:
-    _assert_source_mutable(node_id, allow_managed_source)
     """Aktualisiert Titel und/oder Inhalt eines Nodes und erstellt IMMER eine neue Version."""
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
     assert_write_allowed(role, user)
+    # After the access check, so outsiders cannot probe which ids are managed sources.
+    _assert_source_mutable(node_id, allow_managed_source)
 
     node = Node.query.filter_by(id=node_id, vault_id=vault_id).options(joinedload(Node.current_version_object)).first()
     if not node:
@@ -909,7 +945,6 @@ def update_node_access_policy(node_id: str, vault_id: int, user_id: int, *,
 
 
 def delete_node(node_id: str, vault_id: int, user_id: int, *, actor_type: str | None = None):
-    _assert_source_mutable(node_id)
     """
     Löscht einen Node. Kind-Nodes werden dabei an den Parent des gelöschten
     Nodes weitergereicht ("adoptiert").
@@ -917,6 +952,7 @@ def delete_node(node_id: str, vault_id: int, user_id: int, *, actor_type: str | 
     vault, role = get_vault_access(vault_id, user_id)
     user = db.session.get(User, user_id)
     assert_write_allowed(role, user)
+    _assert_source_mutable(node_id)
 
     node_to_delete = Node.query.filter_by(id=node_id, vault_id=vault_id).first()
 

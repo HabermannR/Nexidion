@@ -18,7 +18,7 @@ RUN npm run build
 # ==========================================
 FROM python:3.13-slim
 LABEL org.opencontainers.image.title="Nexidion" \
-      org.opencontainers.image.version="4.3.1"
+      org.opencontainers.image.version="4.3.2"
 WORKDIR /app
 
 # Install system dependencies (needed for Postgres/psycopg2)
@@ -31,7 +31,7 @@ RUN pip install --upgrade pip setuptools wheel uv
 COPY pyproject.toml .
 COPY backend/ ./backend/
 COPY agent/   ./agent/
-COPY wsgi.py task_runner.py serve.py ./
+COPY wsgi.py task_runner.py serve.py gunicorn.conf.py ./
 
 # MAGIC TRICK: Copy the compiled frontend from Stage 1 into the exact folder
 # your backend expects to find it!

@@ -73,6 +73,35 @@ def _replace_image_markers(markdown: str, page_number: int, config: dict) -> str
     return OMITTED_IMAGE_RE.sub(replacement, markdown)
 
 
+FRONT_MATTER_TITLE = "Front matter"
+
+
+def _chapter_starts(outline: list[list], page_count: int) -> list[tuple[str, int]]:
+    """Top-level outline entries as (title, start page), usable as page ranges.
+
+    Outlines are author-supplied and often messy: entries may point outside the
+    document (-1 or past the end), share a page, or be out of order. Chapters must
+    tile the whole document, so pages before the first entry become a front-matter
+    chapter instead of being dropped.
+    """
+    if page_count <= 0 or not outline:
+        return []
+    top_level = min(level for level, _, _ in outline)
+    starts: list[tuple[str, int]] = []
+    for level, name, page in outline:
+        if level != top_level:
+            continue
+        page = int(page)
+        if page < 1 or page > page_count:
+            continue
+        if starts and page <= starts[-1][1]:
+            continue  # same page as, or before, the previous chapter
+        starts.append(((name or "").strip() or f"Pages from {page}", page))
+    if starts and starts[0][1] > 1:
+        starts.insert(0, (FRONT_MATTER_TITLE, 1))
+    return starts
+
+
 def documents_from_extraction(extraction: PdfExtraction, config: dict) -> list[SourceDocument]:
     external_id = config.get("external_id") or extraction.metadata["filename"]
     title = config.get("title") or Path(extraction.metadata["filename"]).stem
@@ -100,7 +129,10 @@ def documents_from_extraction(extraction: PdfExtraction, config: dict) -> list[S
             metadata={**extraction.metadata, "page_from": 1, "page_to": len(extraction.pages), "granularity": "document"}, **common)]
 
     if granularity == "chapter" and extraction.outline:
-        top = [(name, max(1, int(page))) for level, name, page in extraction.outline if level == 1]
+        top = _chapter_starts(extraction.outline, len(extraction.pages))
+        if not top:
+            granularity = "page"
+    if granularity == "chapter" and extraction.outline:
         documents = [container]
         for index, (name, start) in enumerate(top):
             end = (top[index + 1][1] - 1) if index + 1 < len(top) else len(extraction.pages)
@@ -130,7 +162,12 @@ class PdfConnector:
     capabilities = frozenset({"ingest", "sync"})
 
     def discover(self, context: ConnectorContext):
-        path = Path(context.config["path"]).expanduser().resolve()
-        if not path.is_file() or path.suffix.lower() != ".pdf":
-            raise ValueError(f"Not a readable PDF: {path}")
-        yield from documents_from_extraction(extract_pdf(path), context.config)
+        # The upload path has already extracted the PDF to create image assets;
+        # extraction is the slow part, so reuse it instead of doing it twice.
+        extraction = context.config.get("extraction")
+        if extraction is None:
+            path = Path(context.config["path"]).expanduser().resolve()
+            if not path.is_file() or path.suffix.lower() != ".pdf":
+                raise ValueError(f"Not a readable PDF: {path}")
+            extraction = extract_pdf(path)
+        yield from documents_from_extraction(extraction, context.config)

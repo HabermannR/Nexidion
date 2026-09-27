@@ -109,6 +109,16 @@ def copy_node_to_vault(
                 human_write_locked=node.human_write_locked,
                 policy_note=node.policy_note,
             )
+            if node.id == source.id:
+                # Protection the source inherited from its ancestors does not travel
+                # with the copy on its own; stamp it onto the copied root so copying
+                # out of a private branch cannot make the content AI-readable.
+                inherited = node_policy_service.effective_policy(source)
+                if (node_policy_service.AI_READ_LEVEL[inherited.ai_read]
+                        > node_policy_service.AI_READ_LEVEL.get(new_node.ai_read_policy or "allow", 0)):
+                    new_node.ai_read_policy = inherited.ai_read
+                if new_node.ai_read_policy != "allow":
+                    new_node.ai_write_locked = True  # as set_local_policy enforces
             if (destination_parent_id is not None and
                     node_policy_service.effective_policy(parent).ai_read == "explicit_only"):
                 if new_node.ai_read_policy != "deny":

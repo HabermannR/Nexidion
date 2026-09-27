@@ -150,3 +150,49 @@ def test_import_vault_name_collision(db_session, test_user_1_obj, valid_export_d
     # Act & Assert
     with pytest.raises(ValueError, match="You already own a vault named 'Exported Vault'"):
         import_vault(valid_export_data, test_user_1_obj.id)
+
+
+def test_export_import_round_trip_keeps_access_policy_and_provenance(db_session, test_user_1_obj):
+    import json as _json
+    from datetime import datetime as _dt
+    from backend.models import Node as _Node
+    from backend.services import node_service, vault_service
+    from backend.services.export_service import export_vault
+    from backend.services.node_policy_service import assert_readable
+
+    vault = vault_service.create_vault("Round trip", test_user_1_obj.id)
+    private = node_service.create_node("Diary", "secret", None, vault.id, test_user_1_obj.id)
+    private.ai_read_policy, private.ai_write_locked, private.policy_note = "deny", True, "personal"
+    private.content_kind, private.authority, private.tags = "canonical_source", "primary_source", ["x"]
+    db_session.session.commit()
+
+    exported = _json.loads(export_vault(vault.id, test_user_1_obj.id))
+    stamp = exported["nodes"][0]["versions"][0]["created_at"]
+    assert stamp.endswith("Z") and "+" not in stamp
+    _dt.fromisoformat(stamp.replace("Z", "+00:00"))
+
+    new_vault_id, remap = import_vault(exported, test_user_1_obj.id, vault_name_override="Restored")
+    restored = db_session.session.get(_Node, remap[private.id])
+
+    assert (restored.ai_read_policy, restored.ai_write_locked, restored.policy_note) == ("deny", True, "personal")
+    assert (restored.content_kind, restored.authority, restored.tags) == ("canonical_source", "primary_source", ["x"])
+    with pytest.raises(PermissionError):
+        assert_readable(restored, test_user_1_obj.id, actor_type="mcp")
+
+
+def test_import_fails_closed_on_unknown_ai_read_value(db_session, test_user_1_obj, valid_export_data):
+    from backend.models import Node as _Node
+    valid_export_data["nodes"][0]["access_policy"] = {"ai_read": "maybe"}
+    _, remap = import_vault(valid_export_data, test_user_1_obj.id)
+    node = db_session.session.get(_Node, remap[valid_export_data["nodes"][0]["id"]])
+    assert node.ai_read_policy == "deny" and node.ai_write_locked is True
+
+
+@pytest.mark.parametrize("payload", [
+    [],
+    {"nexidion_export_version": 1, "vault": {"name": "x"}, "nodes": [{"title": "no id"}]},
+    {"nexidion_export_version": 1, "vault": "x", "nodes": []},
+])
+def test_import_rejects_malformed_exports_cleanly(db_session, test_user_1_obj, payload):
+    with pytest.raises(ValueError):
+        import_vault(payload, test_user_1_obj.id)

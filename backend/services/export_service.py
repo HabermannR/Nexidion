@@ -127,10 +127,31 @@ def _serialise_node(node: Node) -> dict[str, Any]:
         # title and content come from the current version
         "title": versions[-1].title if versions else "",
         "content": versions[-1].content if versions else "",
-        "created_at": versions[0].timestamp.isoformat() + "Z" if versions else None,
-        "updated_at": versions[-1].timestamp.isoformat() + "Z" if versions else None,
+        "created_at": _utc(versions[0].timestamp) if versions else None,
+        "updated_at": _utc(versions[-1].timestamp) if versions else None,
+        # Restoring a vault must not lift AI restrictions or lose provenance.
+        "access_policy": {
+            "ai_read": node.ai_read_policy or "allow",
+            "ai_write_locked": bool(node.ai_write_locked),
+            "human_write_locked": bool(node.human_write_locked),
+            "note": node.policy_note,
+        },
+        "content_kind": node.content_kind,
+        "authority": node.authority,
+        "language": node.language,
+        "tags": node.tags or [],
+        "metadata": node.metadata_json or {},
         "versions": [_serialise_version(v) for v in versions],
     }
+
+
+def _utc(timestamp: datetime | None) -> str | None:
+    """ISO 8601 in UTC with a single 'Z' suffix (timestamps are stored tz-aware)."""
+    if timestamp is None:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 def _serialise_version(version: Version) -> dict[str, Any]:
     """Serialise a single version. Uses display_name instead of author_id."""
@@ -141,6 +162,6 @@ def _serialise_version(version: Version) -> dict[str, Any]:
         "version": version.version,
         "title": version.title,
         "content": version.content,
-        "created_at": version.timestamp.isoformat() + "Z",
+        "created_at": _utc(version.timestamp),
         "author_display_name": author_name,
     }

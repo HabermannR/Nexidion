@@ -79,6 +79,16 @@ def create_app(config_class=Config):
     app.register_blueprint(connectors_bp)
     app.register_blueprint(system_bp)
 
+    # Background ingestion: started by the first request in each server process,
+    # never by CLI commands such as `flask db upgrade`. After a restart it also
+    # picks up queued runs and recovers runs the previous process abandoned.
+    from backend.services import ingestion_worker
+
+    @app.before_request
+    def _ensure_ingestion_worker():
+        if not ingestion_worker.worker_started():
+            ingestion_worker.start_worker(app)
+
     # CLI Commands
     register_commands(app)
 

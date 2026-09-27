@@ -154,3 +154,38 @@ def test_list_all_vaults_as_admin_success(client, admin_headers, test_vault_1_ob
     # Ensure the test vault is included in the admin's global overview
     vault_ids = [v.get('id') for v in data]
     assert test_vault_1_obj.id in vault_ids
+
+
+def test_delete_user_who_uploaded_and_requested_work(
+        app, client, admin_headers, auth_headers_1, test_user_1_obj, test_vault_1_obj, db_session, tmp_path):
+    # Regression: 4.3 tables (assets, ingestion, summaries, connectors) reference the
+    # user; deleting someone who had used them failed with an integrity error.
+    import io
+    import pymupdf
+    from PIL import Image
+    from backend.models import ImageAsset, IngestionRun, SummaryArtifact, User
+
+    app.config['ASSET_STORAGE_FOLDER'] = str(tmp_path / 'assets')
+    stream = io.BytesIO()
+    Image.new('RGB', (4, 4), 'red').save(stream, format='PNG')
+    assert client.post(f'/api/vaults/{test_vault_1_obj.id}/assets', headers=auth_headers_1,
+                       data={'file': (io.BytesIO(stream.getvalue()), 'a.png')},
+                       content_type='multipart/form-data').status_code == 201
+    pdf = pymupdf.open(); pdf.new_page().insert_text((72, 72), "x"); payload = pdf.tobytes(); pdf.close()
+    assert client.post('/api/connectors/pdf/ingest', headers=auth_headers_1, data={
+        "vault_id": str(test_vault_1_obj.id), "file": (io.BytesIO(payload), "a.pdf")},
+        content_type='multipart/form-data').status_code == 201
+    node = client.post(f'/api/vaults/{test_vault_1_obj.id}/nodes/', headers=auth_headers_1,
+                       json={"title": "t", "content": "c"}).get_json()
+    client.patch(f'/api/vaults/{test_vault_1_obj.id}/nodes/{node["id"]}/summary',
+                 headers=auth_headers_1, json={"ai_summary": "s"})
+    user_id = test_user_1_obj.id
+
+    response = client.delete(f'/api/admin/users/{user_id}', headers=admin_headers)
+
+    assert response.status_code == 200, response.text
+    assert db_session.session.get(User, user_id) is None
+    for model, column in ((ImageAsset, ImageAsset.created_by_id),
+                          (IngestionRun, IngestionRun.requested_by_id),
+                          (SummaryArtifact, SummaryArtifact.requested_by_id)):
+        assert model.query.filter(column == user_id).count() == 0

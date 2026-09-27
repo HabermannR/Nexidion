@@ -36,6 +36,7 @@ from backend.app import create_app
 from backend.models import db, User, UserType, SummaryArtifact, CurationJob
 from backend.services.summary_generation import process_summary_artifact
 from backend.services.curation_service import process_curation_job, fail_curation_job
+from backend.services import ingestion_worker
 from backend.services.vault_service import get_vault_access
 from agent.audit import Audit
 from agent.agent import run_agent
@@ -286,6 +287,15 @@ def run_loop():
 
     while True:
         with flask_app.app_context():
+            # Queued PDF imports come first: curation jobs wait on their extraction.
+            try:
+                ingestion_worker.recover_stale_runs()
+                if ingestion_worker.process_next_run(flask_app):
+                    continue
+            except Exception as exc:
+                db.session.rollback()
+                _log(f"Ingestion queue error: {exc}")
+
             curation_job = (
                 CurationJob.query.filter_by(status="pending")
                 .order_by(CurationJob.created_at.asc())

@@ -318,21 +318,42 @@ export default function ToolsTab() {
         if (ingestTargetId) {
             formData.append('parent_id', ingestTargetId);
         }
+        // Extraction runs on the server's ingestion worker; the upload returns at once.
+        formData.append('background', 'true');
+
+        const sleep = (ms) => new Promise(resolve => window.setTimeout(resolve, ms));
 
         try {
             const response = await apiClient.post('/api/connectors/pdf/ingest', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            const result = response.data;
-            setLastIngestion(result);
-            const stats = result.stats || {};
-            if (result.curation_job) {
+            let run = response.data;
+            setLastIngestion(run);
+
+            // Wait for the queued run. A run the worker abandoned is failed (or retried)
+            // by the server, so this always ends; the cap only guards a lost connection.
+            const runDeadline = Date.now() + 60 * 60 * 1000;
+            while (run.status === 'pending' || run.status === 'processing') {
+                if (Date.now() > runDeadline) {
+                    toast.info('The PDF is still being processed. Check back later.');
+                    return;
+                }
+                await sleep(2000);
+                run = (await apiClient.get(`/api/connectors/runs/${run.id}`)).data;
+                setLastIngestion(current => ({ ...current, ...run }));
+            }
+            if (run.status === 'failed') {
+                toast.error(`Ingestion failed: ${run.error || 'Unknown error'}`);
+                return;
+            }
+
+            const stats = run.stats || {};
+            if (run.curation_job_id) {
                 toast.success('PDF extracted and AI curation queued.');
-                const jobId = result.curation_job.id;
-                for (let attempt = 0; attempt < 120; attempt += 1) {
-                    await new Promise(resolve => window.setTimeout(resolve, 2500));
-                    const jobResponse = await apiClient.get(`/api/connectors/curation-jobs/${jobId}`);
-                    const job = jobResponse.data;
+                const jobDeadline = Date.now() + 30 * 60 * 1000;
+                for (;;) {
+                    await sleep(2500);
+                    const job = (await apiClient.get(`/api/connectors/curation-jobs/${run.curation_job_id}`)).data;
                     setLastIngestion(current => ({ ...current, curation_job: job }));
                     if (job.status === 'completed') {
                         toast.success(`AI curation complete: ${job.result?.count || 0} synthesis nodes created.`);
@@ -341,6 +362,10 @@ export default function ToolsTab() {
                     }
                     if (job.status === 'failed') {
                         toast.error(`AI curation failed: ${job.error || 'Unknown error'}`);
+                        break;
+                    }
+                    if (Date.now() > jobDeadline) {
+                        toast.info('AI curation is still running in the background.');
                         break;
                     }
                 }
@@ -454,7 +479,10 @@ export default function ToolsTab() {
                                 disabled={!isIngestAllowed || ingestStatus === 'ingesting'}
                             >
                                 {ingestStatus === 'ingesting' ? (
-                                    <><i className="bx bx-loader-alt bx-spin me-1"></i> Uploading...</>
+                                    <><i className="bx bx-loader-alt bx-spin me-1"></i> {{
+                                        pending: 'Queued...',
+                                        processing: 'Extracting PDF...',
+                                    }[lastIngestion?.status] || 'Uploading...'}</>
                                 ) : (
                                     <><i className="bx bxs-file-pdf me-1"></i> Ingest PDF to {ingestTargetTitle}</>
                                 )}
@@ -465,10 +493,14 @@ export default function ToolsTab() {
                                 </small>
                             )}
                             {lastIngestion && (
-                                <small className="text-success">
+                                <small className={lastIngestion.status === 'failed' ? 'text-danger' : 'text-success'}>
                                     {lastIngestion.curation_job
                                         ? `Curation job ${lastIngestion.curation_job.id}: ${lastIngestion.curation_job.status}`
-                                        : `Run ${lastIngestion.id}: ${lastIngestion.stats?.created || 0} created, ${lastIngestion.stats?.updated || 0} updated, ${lastIngestion.stats?.unchanged || 0} unchanged.`}
+                                        : lastIngestion.status === 'failed'
+                                            ? `Run ${lastIngestion.id} failed: ${lastIngestion.error || 'Unknown error'}`
+                                            : lastIngestion.status === 'completed'
+                                                ? `Run ${lastIngestion.id}: ${lastIngestion.stats?.created || 0} created, ${lastIngestion.stats?.updated || 0} updated, ${lastIngestion.stats?.unchanged || 0} unchanged.`
+                                                : `Run ${lastIngestion.id}: ${lastIngestion.status}`}
                                 </small>
                             )}
                     </>

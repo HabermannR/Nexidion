@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.models import db, Node, Vault, Version, User
+from backend.services.node_policy_service import AI_READ_VALUES
 from backend.services.vault_service import invalidate_vault_list_cache, grant_default_agent_access
 from backend.services.node_service import rebuild_vault_tree_cache
 
@@ -21,7 +22,7 @@ def import_vault(
     original UUIDs to fresh UUIDs created for this import.
     """
     # Accept a raw dict or a filepath string to provide flexibility
-    if isinstance(path, dict):
+    if isinstance(path, (dict, list)):  # already-parsed JSON (validated below)
         data = path
     else:
         data = json.loads(Path(path).read_text(encoding='utf-8'))
@@ -72,10 +73,17 @@ def import_vault(
 
 
 def _validate_version(data: dict[str, Any]):
+    if not isinstance(data, dict):
+        raise ValueError("Invalid export format: expected a JSON object.")
     if data.get("nexidion_export_version") != 1:
         raise ValueError("Unsupported or missing export format version.")
     if "vault" not in data or "nodes" not in data:
         raise ValueError("Invalid export format: missing 'vault' or 'nodes'.")
+    if not isinstance(data["vault"], dict) or not isinstance(data["vault"].get("name"), str):
+        raise ValueError("Invalid export format: 'vault' must contain a name.")
+    if not isinstance(data["nodes"], list) or not all(
+            isinstance(node, dict) and isinstance(node.get("id"), str) for node in data["nodes"]):
+        raise ValueError("Invalid export format: every node needs a string 'id'.")
 
 
 # In backend/services/import_service.py
@@ -94,7 +102,8 @@ def _create_node_from_export(
     new_parent_id = remap.get(old_parent_id) if old_parent_id else None
 
     versions_data = node_data.get('versions', [])
-    current_version_num = len(versions_data) if versions_data else 1
+    # The current version is the highest number, not the count: histories can have gaps.
+    current_version_num = max((v.get('version', 1) for v in versions_data), default=1)
 
     node = Node(
         id=new_id,
@@ -105,6 +114,7 @@ def _create_node_from_export(
         ai_summary=node_data.get('ai_summary'),                           # <-- ADDED
         summary_is_current=node_data.get('summary_is_current', False),    # <-- ADDED
     )
+    _apply_exported_attributes(node, node_data)
     db.session.add(node)
     db.session.flush()
 
@@ -153,6 +163,28 @@ def _create_node_from_export(
             db.session.add(version)
 
     return new_id
+
+
+def _apply_exported_attributes(node: Node, node_data: dict[str, Any]) -> None:
+    """Restore access policy and provenance. Older exports lack these keys and keep
+    the model defaults; an unknown ai_read value fails closed to 'deny'."""
+    policy = node_data.get('access_policy') or {}
+    if policy:
+        ai_read = policy.get('ai_read', 'allow')
+        node.ai_read_policy = ai_read if ai_read in AI_READ_VALUES else 'deny'
+        node.human_write_locked = bool(policy.get('human_write_locked'))
+        node.ai_write_locked = bool(policy.get('ai_write_locked') or node.human_write_locked
+                                    or node.ai_read_policy != 'allow')
+        note = policy.get('note')
+        node.policy_note = note.strip() if isinstance(note, str) and note.strip() else None
+    for key, attribute in (('content_kind', 'content_kind'), ('authority', 'authority'),
+                           ('language', 'language')):
+        if isinstance(node_data.get(key), str):
+            setattr(node, attribute, node_data[key])
+    if isinstance(node_data.get('tags'), list):
+        node.tags = node_data['tags']
+    if isinstance(node_data.get('metadata'), dict):
+        node.metadata_json = node_data['metadata']
 
 
 def _rewrite_internal_links(vault_id: int, remap: dict[str, str]):

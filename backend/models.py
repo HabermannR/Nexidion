@@ -395,6 +395,13 @@ class IngestionRun(db.Model):
     error = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Queued (background) runs keep what is needed to execute or retry them.
+    artifact_id = db.Column(db.String(36), db.ForeignKey('source_artifacts.id', ondelete='SET NULL'), nullable=True)
+    request_json = db.Column(db.JSON, nullable=False, default=dict)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Refreshed while a worker executes the run; a stale heartbeat means the worker died.
+    heartbeat_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
 class SourceItem(db.Model):
     """Stable binding between an external item and its canonical Nexidion node."""

@@ -3,7 +3,8 @@
 
 import logging
 
-from backend.models import db, User, UserType, Vault, Version, VaultAccess
+from backend.models import (db, User, UserType, Vault, Version, VaultAccess, Task, ConnectorInstallation,
+                            IngestionRun, CurationJob, ImageAsset, SummaryArtifact)
 
 
 def get_all_users() -> list[User]:
@@ -111,10 +112,21 @@ def delete_user(user_id_to_delete: int, acting_user_id: int):
         vault.name = target_name
         heir_existing_names.add(target_name)
 
-    # 3. Reassign their authored Versions
+    # 3. Reassign their authored Versions and every other record that names them
+    # (uploads, imports, summaries, tasks) so no foreign key blocks the delete.
     Version.query.filter_by(author_id=user_id_to_delete).update(
         {"author_id": heir_admin_id}, synchronize_session='fetch'
     )
+    for model, columns in (
+            (Task, ("requested_by_id", "executed_by_id")),
+            (ConnectorInstallation, ("created_by_id",)),
+            (IngestionRun, ("requested_by_id", "executed_by_id")),
+            (CurationJob, ("requested_by_id", "executed_by_id")),
+            (ImageAsset, ("created_by_id",)),
+            (SummaryArtifact, ("requested_by_id", "executed_by_id"))):
+        for column in columns:
+            model.query.filter(getattr(model, column) == user_id_to_delete).update(
+                {column: heir_admin_id}, synchronize_session='fetch')
 
     # 4. Delete their Vault Access rules (No inheritance needed here)
     VaultAccess.query.filter_by(user_id=user_id_to_delete).delete(synchronize_session='fetch')
