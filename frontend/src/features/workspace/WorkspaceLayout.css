@@ -75,7 +75,7 @@
 .breadcrumb-wrapper {
     flex-grow: 1; /* 1. Sagt: "Nimm allen verfügbaren Platz in der Mitte ein." */
     min-width: 0; /* 2. WICHTIGER FLEXBOX-FIX: Erlaubt dem Element, bei Bedarf zu schrumpfen. */
-    overflow: hidden; /* 3. Verhindert, dass der Inhalt aus dem Container "ausbricht". */
+    /* Allow the ancestor dropdown to extend below the action bar. */
 }
 
 /*
@@ -83,9 +83,50 @@
   dass sie nicht umbricht und den Text mit "..." abschneidet, wenn er zu lang ist.
 */
 .breadcrumb-wrapper .breadcrumb {
+    flex-wrap: nowrap;
     white-space: nowrap;
+}
+
+.breadcrumb-wrapper .breadcrumb-item {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 30%;
+}
+
+.breadcrumb-wrapper .breadcrumb-item.active {
+    flex: 1 1 0;
+    max-width: none;
+}
+
+.breadcrumb-wrapper .breadcrumb-item > a,
+.breadcrumb-wrapper .breadcrumb-label {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.breadcrumb-wrapper .breadcrumb-item::before {
+    flex-shrink: 0;
+}
+
+.breadcrumb-wrapper .breadcrumb-overflow {
+    flex-shrink: 0;
+    max-width: none;
+}
+
+.breadcrumb-ellipsis::after {
+    display: none;
+}
+
+.breadcrumb-overflow .dropdown-menu {
+    max-width: min(32rem, 80vw);
+}
+
+.breadcrumb-overflow .dropdown-item {
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* Stellt sicher, dass das linke Panel die ContextBar korrekt am Boden halten kann */

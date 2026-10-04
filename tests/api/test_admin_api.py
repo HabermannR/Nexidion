@@ -189,3 +189,16 @@ def test_delete_user_who_uploaded_and_requested_work(
                           (IngestionRun, IngestionRun.requested_by_id),
                           (SummaryArtifact, SummaryArtifact.requested_by_id)):
         assert model.query.filter(column == user_id).count() == 0
+
+
+def test_system_info_reports_version_and_migration(client, admin_headers, auth_headers_1):
+    from backend.version import app_version
+    import tomllib
+    expected = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+    assert app_version() == expected
+
+    response = client.get('/api/admin/system', headers=admin_headers)
+    assert response.status_code == 200
+    assert response.get_json()["version"] == expected
+    assert "db_revision" in response.get_json()
+    assert client.get('/api/admin/system', headers=auth_headers_1).status_code == 403

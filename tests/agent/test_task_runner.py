@@ -216,8 +216,12 @@ def test_bounded_task_rejects_wrong_node_and_wrong_operation(
         }),
         create_mock_tool_call("patch_node", {
             "node_id": allowed_node.id,
-            "patches": [],
-            "ai_summary": "- One\n- Two\n- Three",
+            "expected_version": 1,
+            "replacements": [{"old_text": "content", "new_text": "text", "expected_matches": 1}],
+            "dry_run": False,
+        }),
+        create_mock_tool_call("set_summary", {
+            "node_id": allowed_node.id, "ai_summary": "- One\n- Two\n- Three",
         }),
         create_mock_tool_call("finish", {"summary": "Policy checked."}),
     ]
@@ -238,7 +242,7 @@ def test_bounded_task_rejects_wrong_node_and_wrong_operation(
     assert db_session.session.get(Node, other.id).current_version_object.content == original_other
     assert audit.writes == []
     blocked = [call for call in audit.turns[0]["tool_calls"] if call["result"] == "blocked"]
-    assert [call["name"] for call in blocked] == ["write_node", "patch_node"]
+    assert [call["name"] for call in blocked] == ["write_node", "patch_node", "set_summary"]
 
 
 @patch("agent.agent.OpenAI")
@@ -459,8 +463,9 @@ def test_agent_workflow_fully_private_node_write(mock_openai_class, setup_agent_
         }),
         create_mock_tool_call("patch_node", {
             "node_id": node.id,
-            "patches": [{"find": original_content[:5], "replace": "HACK"}],
-            "ai_summary": "- Patch Sum 1\n- Patch Sum 2\n- Patch Sum 3"
+            "expected_version": node.current_version,
+            "replacements": [{"old_text": original_content[:5], "new_text": "HACK", "expected_matches": 1}],
+            "dry_run": False,
         }),
         create_mock_tool_call("finish", {"summary": "Attempted to modify private node."})
     ]
@@ -484,8 +489,8 @@ def test_agent_workflow_fully_private_node_write(mock_openai_class, setup_agent_
     assert "MALICIOUS OVERWRITE" not in protected_node.current_version_object.content
     assert "HACK" not in protected_node.current_version_object.content
 
-    assert "Patch Sum 1" in protected_node.ai_summary
-    assert "Patch Sum 2" in protected_node.ai_summary
+    assert "Write Sum 1" in protected_node.ai_summary
+    assert "Write Sum 2" in protected_node.ai_summary
 
     write_call = audit.turns[0]["tool_calls"][0]
     assert write_call["name"] == "write_node"
@@ -494,13 +499,12 @@ def test_agent_workflow_fully_private_node_write(mock_openai_class, setup_agent_
 
     patch_call = audit.turns[0]["tool_calls"][1]
     assert patch_call["name"] == "patch_node"
-    assert patch_call["result"] == "ok"
-    assert "summary was updated" in patch_call["detail"]
+    assert patch_call["result"] == "blocked"
 
     operations = [w["operation"] for w in audit.writes]
     # The actual write logs record the tool name rather than modified operation names
     assert "write_node" in operations
-    assert "patch_node" in operations
+    assert "patch_node" not in operations
 
 
 @patch("agent.agent.OpenAI")
@@ -566,8 +570,9 @@ def test_agent_workflow_patch_node_success(mock_openai_class, setup_agent_env, d
     mock_response.output = [
         create_mock_tool_call("patch_node", {
             "node_id": node.id,
-            "patches": [{"find": "brown fox", "replace": "red fox"}],
-            "ai_summary": "- Updated sum 1\n- Updated sum 2\n- Updated sum 3"
+            "expected_version": node.current_version,
+            "replacements": [{"old_text": "brown fox", "new_text": "red fox", "expected_matches": 1}],
+            "dry_run": False,
         }),
         create_mock_tool_call("finish", {"summary": "Patched the node."})
     ]
@@ -589,8 +594,78 @@ def test_agent_workflow_patch_node_success(mock_openai_class, setup_agent_env, d
 
     assert "red fox" in updated_node.current_version_object.content
     assert "brown fox" not in updated_node.current_version_object.content
-    assert "Updated sum 1" in updated_node.ai_summary
+    assert updated_node.current_version == 2
+    assert updated_node.summary_is_current is False
     assert audit.writes[0]["operation"] == "patch_node"
+    assert audit.writes[0]["detail"]["version"] == 2
+
+
+@pytest.mark.parametrize("scenario", ["dry_run", "noop", "stale", "count", "overlap", "locked"])
+@patch("agent.agent.OpenAI")
+def test_agent_patch_preconditions_and_preview(mock_openai_class, setup_agent_env, db_session, scenario):
+    vault, agent, node, task = setup_agent_env
+    from backend.models import Version
+    from agent.agent import TOOLS
+
+    original = node.current_version_object.content
+    replacements = [{"old_text": "content", "new_text": "updated", "expected_matches": 1}]
+    args = {"node_id": node.id, "expected_version": 1, "replacements": replacements,
+            "dry_run": scenario == "dry_run"}
+    if scenario == "noop":
+        replacements[0]["new_text"] = "content"
+    elif scenario == "stale":
+        args["expected_version"] = 2
+    elif scenario == "count":
+        replacements.append({"old_text": "missing", "new_text": "added", "expected_matches": 1})
+    elif scenario == "overlap":
+        replacements.append({"old_text": "the content", "new_text": "other", "expected_matches": 1})
+    elif scenario == "locked":
+        node.ai_write_locked = True
+        db_session.session.commit()
+    response = MagicMock()
+    response.output = [create_mock_tool_call("get_node_content", {"node_id": node.id}),
+                       create_mock_tool_call("patch_node", args),
+                       create_mock_tool_call("finish", {"summary": "Patch checked."})]
+    mock_openai_class.return_value.responses.create.return_value = response
+    audit = Audit(task.id, vault.id, task.instruction, [node.id], task.created_at)
+    run_agent_helper({"instruction": "Patch safely.", "vault_id": vault.id,
+                      "context_node_ids": [node.id]}, audit, agent.id)
+
+    db_session.session.expire_all()
+    assert db_session.session.get(Node, node.id).current_version_object.content == original
+    assert Version.query.filter_by(node_id=node.id).count() == 1
+    assert audit.writes == []
+    result = json.loads(audit.turns[0]["tool_calls"][1]["detail"])
+    assert result["ok"] is (scenario in ("dry_run", "noop"))
+    if scenario == "dry_run":
+        assert result["version"] == 1 and "updated" in result["diff"]
+    elif scenario == "count":
+        assert [item["actual_matches"] for item in result["matches"]] == [1, 0]
+    elif scenario == "stale":
+        assert result["current_version"] == 1
+    schema = next(tool for tool in TOOLS if tool["name"] == "patch_node")["parameters"]
+    assert "vault_id" not in schema["properties"]
+    assert set(schema["required"]) == {"node_id", "expected_version", "replacements", "dry_run"}
+
+
+@patch("agent.agent.OpenAI")
+def test_agent_summary_refresh_keeps_content_and_version(mock_openai_class, setup_agent_env, db_session):
+    vault, agent, node, task = setup_agent_env
+    original = node.current_version_object.content
+    response = MagicMock()
+    response.output = [create_mock_tool_call("set_summary", {
+        "node_id": node.id, "ai_summary": "- First\n- Second\n- Third",
+    }), create_mock_tool_call("finish", {"summary": "Summary refreshed."})]
+    mock_openai_class.return_value.responses.create.return_value = response
+    audit = Audit(task.id, vault.id, task.instruction, [node.id], task.created_at)
+    run_agent_helper({"instruction": "Refresh summary.", "vault_id": vault.id,
+                      "context_node_ids": [node.id]}, audit, agent.id)
+    db_session.session.expire_all()
+    saved = db_session.session.get(Node, node.id)
+    assert saved.current_version == 1 and saved.current_version_object.content == original
+    assert saved.ai_summary == "- First\n- Second\n- Third"
+    assert saved.summary_is_current is True
+    assert audit.writes[0]["operation"] == "set_summary"
 
 
 @patch("agent.agent.OpenAI")

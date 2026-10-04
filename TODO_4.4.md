@@ -1,0 +1,182 @@
+# Nexidion 4.4 — major release roadmap
+
+This roadmap carries every still-open item from the previous 4.3.3 plan after the
+small maintenance fixes were selected for [4.3.3](TODO_4.3.3.md). Preserve the
+remaining work here; 4.3.3 does not grow into the connector, identity, or
+infrastructure redesign.
+
+Partial work already delivered in 4.3.2: background PDF ingestion with heartbeat
+recovery and retry (cancellation, preview, and idempotency remain open), OAuth
+redirect-URI allowlisting and automated OAuth tests, and an `include_quarantined`
+schema regression test (published-connector verification remains open).
+
+Partial work delivered in the 4.3.3 checkout: summary copying now always includes
+titles and UUIDs with stable hierarchy, vault-switch image and workspace-state
+fixes have regression coverage, and default-provider selection chooses a
+configured provider or returns no default. Summary-export API/MCP options and
+broader mobile work remain below.
+
+## Release-critical
+
+### Copy AI summaries
+
+- [ ] Add a backend endpoint so clients do not have to reconstruct the summary
+  tree independently.
+- [ ] Add an MCP tool for exporting/copying AI summaries, with options for vault,
+  subtree, UUID inclusion, empty-summary handling, and hierarchy depth.
+- [ ] Apply the same private-node and vault-permission rules as other tree APIs.
+- [ ] Add UI, API, and MCP contract tests for titles, UUIDs, indentation, private
+  nodes, and empty summaries.
+
+### MCP security
+
+- [ ] Make the quarantine override reliably available in real MCP clients: expose
+  `include_quarantined` in every relevant tool schema (especially `get_node`),
+  verify it end to end against the published connector, add a schema regression
+  test, and document how existing ChatGPT connections refresh cached tool schemas.
+- [ ] Remove `JWT_SECRET_KEY` from the MCP container.
+- [ ] Replace locally minted Nexidion JWTs with a narrowly scoped server-to-server
+  token exchange or delegated-token endpoint in Nexidion.
+- [ ] Give MCP an explicit service identity with revocable credentials, scopes,
+  audit attribution, rotation, and expiry; do not grant implicit administrator
+  access.
+- [ ] Keep remote OAuth calls bound to the human who authenticated, while stdio
+  continues to use the dedicated `mcp` service account.
+- [ ] Define tool scopes (read, write, summaries, tasks, ingestion, destructive)
+  and enforce them in both Nexidion and MCP.
+- [ ] Retain the HTTP prohibition on `delete_node`, or replace it with an explicit
+  approval/capability mechanism.
+- [ ] Validate OAuth redirect URIs strictly and review registration, PKCE, state,
+  refresh-token rotation, replay protection, revocation, rate limiting, and login
+  error handling.
+- [ ] Complete automated OAuth/MCP security coverage beyond the existing auth,
+  OAuth, and tool-contract suites; retain the live self-test as a separate smoke test.
+- [ ] Resolve or pin away the MCP SDK/Pydantic
+  `IncompleteFieldDefinitionWarning` seen during production startup.
+- [ ] Document secret rotation and an emergency MCP-token revocation procedure.
+
+## Ingestion and connector platform
+
+- [ ] Formalize the third-party connector/plugin interface: manifest, version,
+  capabilities, configuration schema, credential references, health check, and
+  lifecycle hooks.
+- [ ] Decide how plugins are discovered and installed on Docker, Linux, and
+  Windows without allowing arbitrary untrusted code by default.
+- [ ] Add connector setup/edit/test/disable/remove controls in the UI.
+- [ ] Add ingestion-run history, progress, structured errors, retry, cancellation,
+  and dry-run/preview.
+- [ ] Move large imports and AI organization to durable background jobs while
+  retaining synchronous execution for small imports and API automation.
+- [ ] Make task-runner ownership explicit: background ingestion/curation and agent
+  tasks, not interactive MCP reads.
+- [ ] Add idempotency keys and safe resume behavior for interrupted imports.
+- [ ] Improve AI curation hierarchy quality: bounded 3–7 children where sensible,
+  schema validation, retry/repair, maximum depth, and a single import root.
+- [ ] Add SharePoint and generic wiki connectors after the plugin contract is
+  stable; define read-only, ingest-only, and combined behavior for each.
+- [ ] Expose connector registration, execution, and run status through MCP only
+  after scoped MCP authorization exists.
+
+## LLM and summaries
+
+- [ ] Restore explicit model selection for OpenAI and local OpenAI-compatible
+  providers for summaries and AI-assisted imports instead of relying on
+  hardcoded/default model names.
+- [ ] Add provider model discovery where supported and a manual model field where
+  it is not.
+- [ ] Keep API keys and endpoint configuration in deployment/admin settings;
+  model selectors may use configured providers but must not expose or store
+  secrets.
+- [ ] Store selected provider/model/prompt version on every curation and summary
+  artifact.
+- [ ] Keep visual/vision processing optional and clearly show whether images will
+  be sent to an external provider.
+- [ ] Add cost/token estimates and confirmation for external-API organization of
+  large documents.
+- [ ] Support queued summary generation and visible progress/failure history.
+- [ ] Improve stale-summary UX and provide bulk regenerate/clear operations.
+
+## Managed images and migration follow-up
+
+- [ ] Visually verify the 15 converted assets in the production vault, including
+  the four sanitized XHTML/SVG diagrams rasterized to PNG.
+- [ ] Keep `secure_images` and both pre-4.3 backups until that review is complete;
+  remove the legacy mount only in a separately rehearsed cleanup.
+- [ ] Decide whether unreferenced legacy images should be imported into an asset
+  library, archived, or left only in backup.
+- [ ] Add thumbnails, asset metadata UI, missing-file diagnostics, and safe
+  garbage collection for assets no longer referenced by any version or summary.
+- [ ] Make legacy conversion transactional per node/import batch and emit a
+  machine-readable report suitable for deployment automation.
+
+## Vault switching and mobile UX
+
+- [ ] Improve vault switching on mobile so the control is easier to find and use
+  in narrow layouts.
+
+## Cross-vault transfer
+
+- [ ] Add the copy operation to the frontend. The backend endpoint and tests are
+  present, but users cannot initiate a cross-vault copy from the tree yet.
+- [ ] Add transactional **Move to another vault** only after copy behavior is
+  proven. A move must preserve or explicitly redirect inbound links and must not
+  be implemented as shared ownership.
+- [ ] Do not introduce nodes owned by multiple vaults. Use vault access for shared
+  libraries; consider read-only cross-vault mounts only as a separately designed
+  future feature.
+
+## Authentication roadmap
+
+- [ ] Test the now-private Entra proof of concept on the Windows work PC before
+  deciding whether to integrate it.
+- [ ] After the proof of concept, add external identities keyed by issuer and
+  subject, just-in-time user provisioning, configurable tenant/domain policy,
+  and a local emergency-admin login.
+- [ ] Keep unrestricted self-registration disabled by default. Design invitation
+  or approved-domain registration separately from enterprise SSO.
+
+## Portability, operations, and release quality
+
+- [ ] Add CI for backend tests, frontend lint/build/audit, migrations, MCP tests,
+  and AMD64/ARM64 container builds.
+- [ ] Add container health checks for Nexidion, task runner, MCP, and PostgreSQL;
+  make deployments wait on health instead of container state alone.
+- [ ] Run application containers as non-root users and review writable paths and
+  read-only filesystem options.
+- [ ] Reduce the Nexidion runtime image and startup time; avoid loading ONNX/PDF
+  components for commands and services that do not need them.
+- [ ] Suppress or resolve harmless ONNX GPU-discovery noise on CPU-only hosts.
+- [ ] Split the oversized frontend bundle and retain reproducible `npm ci` builds.
+- [ ] Add Python vulnerability auditing and dependency-update automation alongside
+  the existing npm audit gate.
+- [ ] Add tested Docker and bare-metal installation/upgrade instructions for Linux
+  and Windows, including local-LLM networking examples.
+- [ ] Automate pre-deployment PostgreSQL, managed-asset, configuration, and MCP
+  state backups plus restore verification and digest-pinned rollback.
+- [ ] Add a release checklist covering GitHub releases, Docker manifests/digests,
+  migrations, conversion dry runs, Pi verification, and rollback evidence.
+
+## API, MCP, and documentation consistency
+
+- [ ] Publish an API contract for connectors, ingestion runs, summary artifacts,
+  managed assets, and summary-only tree export.
+- [ ] Bring MCP tools up to date with the 4.3 APIs instead of exposing only the
+  older node/task surface.
+- [ ] Document provenance fields and distinguish imported source nodes, human
+  notes, AI synthesis nodes, summaries, and executor/requester identities.
+- [ ] Update screenshots and user documentation after the Abaqus and connector
+  setup UI stabilizes.
+- [ ] Decide whether Nexidion's long-lived default branch should remain `master`;
+  do not rename it as part of 4.3.1 unless CI, deployment, and documentation are
+  updated together.
+
+## Exit criteria
+
+- [ ] All new backend, frontend, MCP, migration, and connector tests pass.
+- [ ] npm and Python security audits have no unresolved high-severity findings.
+- [ ] Docker images build and smoke-test on AMD64 and ARM64.
+- [ ] Pure-metal smoke tests pass on Linux and Windows.
+- [ ] Upgrade, Abaqus import, and rollback are rehearsed against a restored copy of
+  the Raspberry Pi vault before production deployment.
+- [ ] No legacy-image cleanup or MCP secret rotation occurs without a fresh,
+  checksum-verified, off-device backup.

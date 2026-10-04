@@ -42,6 +42,8 @@ export const useWorkspaceStore = create(
                 selectedNodeIds: new Set(),
                 collapsedNodes: new Set(),
                 breadcrumbPath: [],
+                isEditingNode: false,
+                printPreviewData: null,
             }),
 
             // UI layout

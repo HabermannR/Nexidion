@@ -36,6 +36,7 @@ from agent.svc import (
     svc_get_node_summary,
     svc_get_tree,
     svc_move_node,
+    svc_patch_node,
     svc_search,
     svc_update_node,
     svc_update_summary,
@@ -158,7 +159,7 @@ TOOLS = [
         "type": "function",
         "name": "get_node_content",
         "description": (
-            "Fetch the FULL content + summary of a node. "
+            "Fetch the FULL content + summary and current version of a node. "
             "Use only when the summary is insufficient. Counts against fetch budget."
         ),
         "strict": True,
@@ -213,35 +214,63 @@ TOOLS = [
         "type": "function",
         "name": "patch_node",
         "description": (
-            "Apply targeted find-and-replace edits to a node's existing content. "
+            "Atomically patch exact text in a node without resending its full content. "
             "Prefer this over write_node when only changing specific parts. "
-            "The 'find' string must be an EXACT verbatim match (including whitespace/line breaks). "
-            "Include enough surrounding text to be unique."
+            "Use the version returned by get_node_content as expected_version. "
+            "All replacements match the ORIGINAL content literally and case-sensitively. "
+            "Stale versions, unexpected match counts and overlapping replacements abort all edits. "
+            "dry_run=true returns a diff and counts without saving; false saves one new version "
+            "and marks the existing AI summary stale. The result includes the current/new version."
         ),
         "strict": True,
         "parameters": {
             "type": "object",
             "properties": {
                 "node_id": {"type": "string", "description": "UUID of the node to patch."},
-                "patches": {
+                "expected_version": {
+                    "type": "integer", "minimum": 1,
+                    "description": "Current version from get_node_content; never guess it.",
+                },
+                "replacements": {
                     "type": "array",
-                    "description": "List of find/replace pairs, applied in order.",
+                    "minItems": 1,
+                    "description": "Exact replacements in the original content; inserted text is never matched again.",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "find":    {"type": "string", "description": "Exact text to find."},
-                            "replace": {"type": "string", "description": "Text to replace it with."},
+                            "old_text": {"type": "string", "minLength": 1, "description": "Exact original text, including whitespace and line breaks."},
+                            "new_text": {"type": "string", "description": "Replacement text; empty string deletes matches."},
+                            "expected_matches": {"type": "integer", "minimum": 1, "description": "Required number of non-overlapping literal occurrences."},
                         },
-                        "required": ["find", "replace"],
+                        "required": ["old_text", "new_text", "expected_matches"],
                         "additionalProperties": False,
                     },
                 },
-                "ai_summary": {
-                    "type": ["string", "null"],
-                    "description": "Updated summary (3 bullets). Pass null to leave unchanged.",
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "True previews the diff without saving; false applies the patch.",
                 },
             },
-            "required": ["node_id", "patches", "ai_summary"],
+            "required": ["node_id", "expected_version", "replacements", "dry_run"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "set_summary",
+        "description": (
+            "Refresh only a node's AI summary without changing Markdown content or creating a version. "
+            "ai_summary must be exactly 3 bullet points starting with '- '. "
+            "Read the node's content first. Existing access policies and write locks apply."
+        ),
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "UUID of the node."},
+                "ai_summary": {"type": "string", "description": "Exactly 3 bullet points starting with '- '."},
+            },
+            "required": ["node_id", "ai_summary"],
             "additionalProperties": False,
         },
     },
@@ -353,7 +382,7 @@ You have been given a task by the vault owner. Execute it fully and independentl
 
 TOOLS AT YOUR DISPOSAL:
   READ  : get_subtree (free), get_node_summary, get_node_content, search_nodes (free)
-  WRITE : write_node, patch_node, rename_node, move_node, create_node
+  WRITE : write_node, patch_node, set_summary, rename_node, move_node, create_node
   DONE  : finish
 
 HOW TO WORK:
@@ -369,7 +398,13 @@ HOW TO WORK:
 - For sorting/reorganizing: get_subtree → move_node each child to its correct parent.
 - For content updates with new info: get_node_content → patch_node for small changes, write_node for full rewrites.
 - patch_node is preferred when only a specific section needs changing.
-- When patching, your 'find' text must match EXACTLY (spaces, newlines, punctuation).
+- When patching, use the version from get_node_content as expected_version and exact old_text
+  (spaces, newlines, punctuation) with the expected_matches count. Never guess the version.
+- All replacements target the original content. New text is not searched again; overlaps fail.
+- Use dry_run=true to review the diff, then false with the same expected_version to save.
+  If a version or match conflict occurs, re-read the node before adapting the patch.
+- A changed patch creates one version and marks the existing AI summary stale; dry-runs and no-ops do not write.
+- Use set_summary for summary-only refreshes; it does not change content or create a version.
 - ai_summary must ALWAYS be exactly 3 bullet points starting with '- '.
 - Internal links use the format: [[Display Text|UUID]]
 - Only link to UUIDs you have confirmed. Never guess a UUID.
@@ -418,6 +453,7 @@ def run_agent(task_row: dict, audit,
     _svc_get_node_summary = partial(svc_get_node_summary, agent_user_id=agent_user_id)
     _svc_search           = partial(svc_search,           agent_user_id=agent_user_id)
     _svc_update_node      = partial(svc_update_node,      agent_user_id=agent_user_id)
+    _svc_patch_node       = partial(svc_patch_node,       agent_user_id=agent_user_id)
     _svc_update_summary   = partial(svc_update_summary,   agent_user_id=agent_user_id)
     _svc_move_node        = partial(svc_move_node,        agent_user_id=agent_user_id)
     _svc_create_node      = partial(svc_create_node,      agent_user_id=agent_user_id)
@@ -559,7 +595,7 @@ def run_agent(task_row: dict, audit,
 
             log_fn(f"  🔧 {name}({str(args)[:160]})")
 
-            mutation_names = {"write_node", "patch_node", "rename_node", "move_node", "create_node"}
+            mutation_names = {"write_node", "patch_node", "set_summary", "rename_node", "move_node", "create_node"}
             if allowed_write_nodes is not None and name in mutation_names:
                 target_id = args.get("node_id")
                 if name not in allowed_write_operations or target_id not in allowed_write_nodes:
@@ -714,82 +750,53 @@ def run_agent(task_row: dict, audit,
 
             # ── patch_node ───────────────────────────────────────────────
             elif name == "patch_node":
-                node_id    = args["node_id"]
-                patches    = args["patches"]
-                ai_summary = args.get("ai_summary")
-
+                node_id = args["node_id"]
                 if _is_blacklisted(vault_id, node_id):
-                    msg = "Node is protected (bxs-lock-alt) — content cannot be modified."
-                    if ai_summary:
-                        err = _validate_summary(ai_summary)
-                        if err:
-                            _append(input_list, item.call_id,
-                                    f"Content protected, and summary validation error: {err}")
-                            audit.record_tool(name, args, "error", err)
-                            continue
-                        res2 = _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
-                        if not res2["ok"]:
-                            _append(input_list, item.call_id,
-                                    f"Error writing summary to protected node: {res2['error']}")
-                            audit.record_tool(name, args, "error", res2["error"])
-                            continue
-                        msg += " However, AI summary was updated."
-                        log_fn(f"  ✅ patch_node (summary only): {node_id}")
-                        _append(input_list, item.call_id, msg)
-                        audit.record_tool(name, args, "ok", msg)
-                        audit.record_write("patch_node", node_id, {"ai_summary": ai_summary})
-                        continue
+                    msg = "Node is protected — content cannot be patched, including dry-run."
                     _append(input_list, item.call_id, msg)
                     audit.record_tool(name, args, "blocked", msg)
                     continue
 
-                node = _svc_get_node(vault_id, node_id)
-                if not node:
-                    msg = f"Cannot fetch node to patch: {node_id} not found"
-                    _append(input_list, item.call_id, msg)
-                    audit.record_tool(name, args, "error", msg)
-                    continue
-
-                current      = node.get("content") or ""
-                patch_failed = False
-                for i, patch in enumerate(patches):
-                    if patch["find"] not in current:
-                        msg = f"Patch {i} failed: find text not found verbatim."
-                        _append(input_list, item.call_id, msg)
-                        audit.record_tool(name, args, "error", msg)
-                        patch_failed = True
-                        break
-                    current = current.replace(patch["find"], patch["replace"], 1)
-
-                if patch_failed:
-                    continue
-
-                res = _svc_update_node(vault_id, node_id, content=current)
+                res = _svc_patch_node(
+                    vault_id, node_id, expected_version=args.get("expected_version"),
+                    replacements=args.get("replacements"), dry_run=args.get("dry_run", False),
+                )
+                output = _fmt(res)
+                _append(input_list, item.call_id, output)
                 if not res["ok"]:
-                    _append(input_list, item.call_id,
-                            f"Error writing patched content: {res['error']}")
-                    audit.record_tool(name, args, "error", res["error"])
+                    audit.record_tool(name, args, "blocked" if res.get("blocked") else "error", output)
                     continue
 
-                if ai_summary:
-                    err = _validate_summary(ai_summary)
-                    if err:
-                        _append(input_list, item.call_id,
-                                f"Content patched but summary invalid: {err}")
-                        audit.record_tool(name, args, "error", err)
-                        continue
-                    _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
+                audit.record_tool(name, args, "ok", output)
+                if res["dry_run"]:
+                    log_fn(f"  ✅ patch_node preview: {node_id} (version {res['version']})")
+                elif res["changed"]:
+                    detail = {"version": res["version"], "matches": res["matches"],
+                              "num_patches": len(args["replacements"])}
+                    if record_full_text:
+                        detail["replacements"] = args["replacements"]
+                    audit.record_write("patch_node", node_id, detail)
+                    log_fn(f"  ✅ patch_node: {node_id} (version {res['version']})")
 
-                log_fn(f"  ✅ patch_node: {node_id} ({len(patches)} patch(es))")
-                msg = f"Node {node_id} patched ({len(patches)} patch(es))."
-                _append(input_list, item.call_id, msg)
-                audit.record_tool(name, args, "ok", msg)
-                detail = {"ai_summary": ai_summary} if ai_summary else {}
-                if record_full_text:
-                    detail["content"] = current
-                else:
-                    detail["num_patches"] = len(patches)
-                audit.record_write("patch_node", node_id, detail)
+            # ── set_summary ──────────────────────────────────────────────
+            elif name == "set_summary":
+                node_id = args["node_id"]
+                ai_summary = args["ai_summary"]
+                if _is_read_locked(vault_id, node_id):
+                    msg = "Node is private — summary cannot be refreshed by the agent."
+                    _append(input_list, item.call_id, msg)
+                    audit.record_tool(name, args, "blocked", msg)
+                    continue
+                err = _validate_summary(ai_summary)
+                if err:
+                    _append(input_list, item.call_id, f"Validation error: {err}")
+                    audit.record_tool(name, args, "error", err)
+                    continue
+                res = _svc_update_summary(vault_id, node_id, ai_summary=ai_summary)
+                _append(input_list, item.call_id, _fmt(res))
+                audit.record_tool(name, args, "ok" if res["ok"] else "error", _fmt(res))
+                if res["ok"]:
+                    audit.record_write("set_summary", node_id, {"ai_summary": ai_summary})
 
             # ── move_node ────────────────────────────────────────────────
             elif name == "move_node":

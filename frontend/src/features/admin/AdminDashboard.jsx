@@ -545,6 +545,11 @@ export default function AdminDashboard() {
     const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
     const lastActiveVaultId = useWorkspaceStore(state => state.lastActiveVaultId);
     const [activeTab, setActiveTab] = useState('users');
+    const { data: system } = useQuery({
+        queryKey: ['admin', 'system'],
+        queryFn: () => apiClient.get('/api/admin/system').then(r => r.data),
+        staleTime: 5 * 60 * 1000,
+    });
 
     const handleBackClick = () => {
         const lastPath = lastActiveVaultId ? lastValidPaths[lastActiveVaultId] : null;
@@ -554,7 +559,17 @@ export default function AdminDashboard() {
     return (
         <Container className="p-4" style={{ height: '100%', overflowY: 'auto' }}>
             <div className="d-flex justify-content-between align-items-center mb-4">
-                <h1 className="mb-0">Admin Dashboard</h1>
+                <div className="d-flex align-items-baseline gap-3">
+                    <h1 className="mb-0">Admin Dashboard</h1>
+                    {system && (
+                        <Badge
+                            bg="light" text="dark" className="border fw-normal"
+                            title={`Database migration: ${system.db_revision || 'unknown'}`}
+                        >
+                            Nexidion v{system.version}
+                        </Badge>
+                    )}
+                </div>
                 <Button onClick={handleBackClick} variant="secondary">Back to Workspace</Button>
             </div>
 

@@ -22,6 +22,7 @@ export default function AppShell() {
     const lastValidPaths = useWorkspaceStore(state => state.lastValidPaths);
     const setLastValidPathForVault = useWorkspaceStore(state => state.setLastValidPathForVault);
     const setLastActiveVaultId = useWorkspaceStore(state => state.setLastActiveVaultId);
+    const resetWorkspaceContext = useWorkspaceStore(state => state.resetWorkspaceContext);
 
     const isLoading = isLoadingVaults || isLoadingUser;
     const currentVault = vaults?.find(v => v.id.toString() === vaultId);
@@ -67,6 +68,11 @@ return (
                                                 key={vault.id}
                                                 as={Link}
                                                 to={getVaultLink(vault.id)}
+                                                onClick={event => {
+                                                    if (vault.id.toString() !== vaultId && !event.defaultPrevented
+                                                        && event.button === 0 && !event.metaKey && !event.ctrlKey
+                                                        && !event.shiftKey && !event.altKey) resetWorkspaceContext();
+                                                }}
                                                 active={vault.id.toString() === vaultId}
                                             >
                                                 {vault.name}

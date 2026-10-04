@@ -15,6 +15,7 @@ import './AgentTab.css';
 const OPERATION_META = {
     create_node:             { label: 'Created node',  color: 'var(--agent-op-create, #2e7d5e)', icon: '✦' },
     patch_node:              { label: 'Patched node',  color: 'var(--primary-color, #405d83)', icon: '✎' },
+    set_summary:             { label: 'Updated summary', color: 'var(--primary-color, #405d83)', icon: '✦' },
     write_node:              { label: 'Wrote node',    color: 'var(--agent-op-write, #2e6b7d)', icon: '▤' },
     write_node_summary_only: { label: 'Summary only',  color: 'var(--agent-op-summary, #888888)', icon: '◎' },
     delete_node:             { label: 'Deleted node',  color: 'var(--agent-op-delete, #a03535)', icon: '✕' },
@@ -61,7 +62,7 @@ If a selected root is a leaf, leave it unchanged and report that it has no child
         buttonLabel: 'Refresh summaries',
         instruction: `Refresh the AI summary of each selected context node, and only those nodes.
 
-Read each selected node's content and replace its ai_summary with exactly three useful bullet points beginning with "- ". Use patch_node with an empty patches array so Markdown content is unchanged. Do not process descendants unless they are separately selected. Do not create, delete, move, rename, or reorganize nodes. Skip private nodes that cannot be read and mention them in the final result.
+Read each selected node's content and replace its ai_summary with exactly three useful bullet points beginning with "- ". Use set_summary so Markdown content and its version stay unchanged. Do not process descendants unless they are separately selected. Do not create, delete, move, rename, or reorganize nodes. Skip private nodes that cannot be read and mention them in the final result.
 
 Finish with the number of summaries updated and any nodes skipped.`,
     },

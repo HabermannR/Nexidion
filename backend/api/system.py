@@ -24,10 +24,15 @@ def get_config():
             "supports_custom_model": True,
         },
     }
+    requested_provider = os.environ.get("SUMMARY_PROVIDER", "local")
+    default_provider = (requested_provider
+                        if providers.get(requested_provider, {}).get("configured")
+                        else next((name for name, provider in providers.items()
+                                   if provider["configured"]), None))
     payload = {
         "summary_providers": providers,
         "task_providers": providers,
-        "default_summary_provider": os.environ.get("SUMMARY_PROVIDER", "local"),
+        "default_summary_provider": default_provider,
         "default_visual_mode": os.environ.get("SUMMARY_VISUAL_MODE", "off"),
     }
 

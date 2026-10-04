@@ -1,7 +1,7 @@
 # backend/services/node_service.py
 
 from typing import List, Dict, Any, Optional, Set
-from sqlalchemy.orm import joinedload, with_parent, defer
+from sqlalchemy.orm import joinedload, with_parent, defer, lazyload
 from sqlalchemy import func, select, or_, case, cast, Float
 import hashlib
 import json
@@ -11,6 +11,8 @@ import re
 from backend.services.vault_service import get_vault_access, assert_write_allowed, _verify_vault_access
 from backend.models import db, Node, Version, Vault, User, UserType, SourceItem
 from backend.services import node_policy_service
+from backend.exceptions import NodePatchConflictError
+from backend.services.node_patch import validate_patch, apply_replacements, content_diff
 
 PRIVATE_ICON = "bxs-no-entry"
 
@@ -806,7 +808,7 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
     # After the access check, so outsiders cannot probe which ids are managed sources.
     _assert_source_mutable(node_id, allow_managed_source)
 
-    node = Node.query.filter_by(id=node_id, vault_id=vault_id).options(joinedload(Node.current_version_object)).first()
+    node = _get_node_for_content_write(node_id, vault_id)
     if not node:
         raise ValueError("Node not found in the specified vault")
     node_policy_service.assert_writable(node, user_id, actor_type=actor_type)
@@ -844,6 +846,60 @@ def update_node(node_id: str, vault_id: int, user_id: int, title: Optional[str] 
         id=node_id).one()
     rebuild_vault_tree_cache(vault_id)
     return updated_node
+
+
+def _get_node_for_content_write(node_id: str, vault_id: int) -> Node | None:
+    # Refresh even if this session has already read the node. Load its version
+    # AFTER the row lock: a joined version snapshot could predate a waiting writer.
+    return (Node.query.filter_by(id=node_id, vault_id=vault_id)
+            .options(lazyload(Node.current_version_object))
+            .populate_existing().with_for_update(of=Node).first())
+
+
+def patch_node(node_id: str, vault_id: int, user_id: int, expected_version: int,
+               replacements: list[dict], dry_run: bool = False, *,
+               actor_type: str | None = None) -> dict:
+    """Apply all literal content replacements in one version, or write nothing."""
+    validate_patch(expected_version, replacements, dry_run)
+    try:
+        vault, role = get_vault_access(vault_id, user_id)
+        assert_write_allowed(role, db.session.get(User, user_id))
+        node = _get_node_for_content_write(node_id, vault_id)
+        if node is None:
+            raise LookupError("Node not found in the specified vault.")
+        node_policy_service.assert_writable(node, user_id, actor_type=actor_type)
+        _assert_source_mutable(node_id)
+        if node.current_version != expected_version:
+            raise NodePatchConflictError("Node version has changed.", {
+                "expected_version": expected_version, "current_version": node.current_version,
+            })
+        previous = node.current_version_object
+        if previous is None:
+            raise ValueError("Cannot patch a node with no existing versions.")
+        before = previous.content or ""
+        after, matches = apply_replacements(before, replacements)
+        changed = after != before
+        result = {"node_id": node.id, "version": node.current_version,
+                  "dry_run": dry_run, "changed": changed, "matches": matches}
+        if dry_run:
+            result["diff"] = content_diff(before, after)
+            db.session.rollback()
+            return result
+        if not changed:
+            db.session.rollback()
+            return result
+        next_version = node.current_version + 1
+        db.session.add(Version(node_id=node.id, version=next_version,
+                               title=previous.title, content=after, author_id=user_id))
+        node.current_version = next_version
+        node.summary_is_current = False
+        invalidate_vault_tree_cache(vault_id)
+        db.session.commit()
+        result["version"] = next_version
+        return result
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def update_node_ai_summary(node_id: str, vault_id: int, user_id: int, ai_summary: str, *,

@@ -121,6 +121,25 @@ def update_user_details(user_id):
 
 
 # ---------------------------------------------------------------------------
+# System information
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/system', methods=['GET'])
+@jwt_required()
+@admin_required
+def system_info():
+    """[ADMIN] Running version and database migration revision, for verifying deploys."""
+    from sqlalchemy import text
+    from backend.version import app_version
+    try:
+        db_revision = db.session.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    except Exception:
+        db.session.rollback()
+        db_revision = None
+    return jsonify({"version": app_version(), "db_revision": db_revision}), 200
+
+
+# ---------------------------------------------------------------------------
 # Vault access management
 # ---------------------------------------------------------------------------
 

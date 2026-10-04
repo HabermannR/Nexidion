@@ -32,6 +32,7 @@
    - Wird zum Flex-Container für das aktive .tab-pane.
 */
 .context-panel-container .tab-content {
+    min-width: 0;
     flex: 1 1 auto;
     min-height: 0; /* Verhindert Flexbox-Schrumpf-Probleme */
     display: flex;
@@ -44,6 +45,7 @@
    - Der aktive Zustand wird durch eine spezifischere Regel zu einem Flex-Container.
 */
 .context-panel-container .tab-pane {
+    min-width: 0;
     flex: 1 1 auto;
     min-height: 0;
 }

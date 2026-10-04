@@ -60,6 +60,22 @@ def _write(client, env, headers):
     )
 
 
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("human_locked", [False, True])
+def test_patch_respects_inherited_locks_for_every_mode(client, policy_vault, dry_run, human_locked):
+    env = policy_vault
+    _set_policy(client, env, ai_read="allow", ai_write_locked=True,
+                human_write_locked=human_locked)
+    path = f'/api/vaults/{env["vault_id"]}/nodes/{env["child"]["id"]}/patch'
+    body = {"expected_version": 1, "dry_run": dry_run, "replacements": [
+        {"old_text": "content:", "new_text": "updated:", "expected_matches": 1},
+    ]}
+    for actor in ("mcp", "llm"):
+        assert client.patch(path, headers=env[actor], json=body).status_code == 403
+    human = client.patch(path, headers=env["human"], json=body)
+    assert human.status_code == (403 if human_locked else 200)
+
+
 def _tree_ids(items):
     result = set()
     for item in items:

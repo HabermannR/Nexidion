@@ -1,6 +1,6 @@
 // IN: src/components/SecureImage.jsx (oder wo immer du sie ablegst)
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '../api/apiClient'; // Stelle sicher, dass der Pfad korrekt ist
 
@@ -9,7 +9,8 @@ export default function SecureImage({ src, alt, ...props }) {
     // ==========================================================
     // SÄULE 2: DATENLADUNG MIT useQuery
     // ==========================================================
-    const { data: imageObjectUrl, isLoading, isError, error } = useQuery({
+    const [imageUrl, setImageUrl] = useState(null);
+    const { data: imageBlob, isLoading, isError, error } = useQuery({
         // Der queryKey MUSS den `src`-Pfad enthalten, damit jede Bild-URL
         // einen eigenen, eindeutigen Cache-Eintrag erhält.
         queryKey: ['secureImage', src],
@@ -21,8 +22,8 @@ export default function SecureImage({ src, alt, ...props }) {
             // Lade das Bild als Blob (binäre Daten).
             const response = await apiClient.get(src, { responseType: 'blob' });
 
-            // Erstelle eine temporäre URL für den Blob, die der Browser anzeigen kann.
-            return URL.createObjectURL(response.data);
+            // Cache the Blob, not a URL that becomes invalid when a viewer unmounts.
+            return response.data;
         },
 
         // Wichtige Optionen für Bild-Caching:
@@ -39,12 +40,13 @@ export default function SecureImage({ src, alt, ...props }) {
     // verantwortlich, die temporäre Blob-URL freizugeben, wenn die Komponente
     // verschwindet, um Speicherlecks zu verhindern.
     useEffect(() => {
+        if (!imageBlob) return;
+        const url = URL.createObjectURL(imageBlob);
+        setImageUrl({ blob: imageBlob, url });
         return () => {
-            if (imageObjectUrl) {
-                URL.revokeObjectURL(imageObjectUrl);
-            }
+            URL.revokeObjectURL(url);
         };
-    }, [imageObjectUrl]);
+    }, [imageBlob]);
 
 
     // ==========================================================
@@ -62,10 +64,10 @@ export default function SecureImage({ src, alt, ...props }) {
     }
 
     // Fall 2: Bild wird gerade geladen
-    if (isLoading) {
+    if (isLoading || !imageUrl || imageUrl.blob !== imageBlob) {
         return <span className="image-loading" {...props}>{alt || 'Loading image...'}</span>;
     }
 
     // Fall 3: Erfolgreich geladen
-    return <img src={imageObjectUrl} alt={alt} {...props} />;
+    return <img src={imageUrl.url} alt={alt} {...props} />;
 }

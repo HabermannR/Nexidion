@@ -14,6 +14,7 @@ import { useSystemConfigQuery } from '../auth/useSystemConfigQuery';
 // Import our helper functions
 import { getIdsInOrder, generateTocForSelectedNodes } from '../nodes/node.utils.js';
 import { getFullNodesByIds } from '../../lib/exportService.js';
+import { formatSummaryTree } from '../../lib/summaryExport.js';
 
 // Import the Agent styles so our chips look exactly the same!
 import '../agent/AgentTab.css';
@@ -33,15 +34,14 @@ export default function ToolsTab() {
     const [lastIngestion, setLastIngestion] = useState(null);
     const [pdfMode, setPdfMode] = useState('extract');
     const [pdfGranularity, setPdfGranularity] = useState('auto');
-    const [pdfProvider, setPdfProvider] = useState('local');
+    const [pdfProvider, setPdfProvider] = useState('');
     const [pdfModel, setPdfModel] = useState('');
     const [pdfVisualMode, setPdfVisualMode] = useState('off');
 
     useEffect(() => {
-        if (systemConfig?.summary_providers?.local?.configured === false &&
-            systemConfig?.summary_providers?.openai?.configured) {
-            setPdfProvider('openai');
-        }
+        if (!systemConfig) return;
+        setPdfProvider(current => systemConfig.summary_providers?.[current]?.configured
+            ? current : systemConfig.default_summary_provider || '');
     }, [systemConfig]);
 
     // Toggles for Copy Tree
@@ -154,33 +154,14 @@ export default function ToolsTab() {
             });
             const summaryTree = res.data.tree || res.data;
 
-            const buildSummaryText = (nodes, depth = 0) => {
-                let text = '';
-                const indent = '  '.repeat(depth);
-                for (const node of nodes) {
-                    text += `${indent}- ${node.title}`;
-                    if (includeUuid) text += ` (${node.id})`;
-                    text += '\n';
-
-                    const summaryIndent = '  '.repeat(depth + 1);
-                    const summary = node.ai_summary?.trim() || '[No AI summary]';
-                    text += `${summaryIndent}${summary.replace(/\n/g, `\n${summaryIndent}`)}\n`;
-
-                    if (node.children?.length) {
-                        text += buildSummaryText(node.children, depth + 1);
-                    }
-                }
-                return text;
-            };
-
-            await navigator.clipboard.writeText(buildSummaryText(summaryTree).trim());
+            await navigator.clipboard.writeText(formatSummaryTree(summaryTree).trim());
             setCopySummariesStatus('success');
             setTimeout(() => setCopySummariesStatus('idle'), 2000);
         } catch (error) {
             toast.error(`Copy failed: ${error.message || 'Failed to copy AI summaries.'}`);
             setCopySummariesStatus('idle');
         }
-    }, [vaultId, includeUuid, toast]);
+    }, [vaultId, toast]);
 
     const handlePrintSelected = useCallback(async () => {
         if (!hasSelection) return;
@@ -451,8 +432,10 @@ export default function ToolsTab() {
                             {pdfMode !== 'extract' && (
                                 <>
                                     <Form.Select size="sm" value={pdfProvider} onChange={e => setPdfProvider(e.target.value)}>
+                                        <option value="" disabled>No configured provider</option>
                                         <option value="local" disabled={!systemConfig?.summary_providers?.local?.configured}>Local LLM</option>
                                         <option value="openai" disabled={!systemConfig?.summary_providers?.openai?.configured}>OpenAI</option>
+                                        <option value="openrouter" disabled={!systemConfig?.summary_providers?.openrouter?.configured}>OpenRouter</option>
                                     </Form.Select>
                                     <Form.Control size="sm" value={pdfModel} onChange={e => setPdfModel(e.target.value)}
                                         placeholder="Model (leave blank for default)" />
@@ -476,7 +459,7 @@ export default function ToolsTab() {
                                 variant="outline-info"
                                 size="sm"
                                 onClick={handlePdfIngestClick}
-                                disabled={!isIngestAllowed || ingestStatus === 'ingesting'}
+                                disabled={!isIngestAllowed || ingestStatus === 'ingesting' || (pdfMode !== 'extract' && !pdfProvider)}
                             >
                                 {ingestStatus === 'ingesting' ? (
                                     <><i className="bx bx-loader-alt bx-spin me-1"></i> {{
@@ -591,7 +574,7 @@ export default function ToolsTab() {
                         size="sm"
                         onClick={handleCopySummariesOnly}
                         disabled={!hasNodes || copySummariesStatus === 'copying'}
-                        title="Copy titles, hierarchy, and AI summaries without node content"
+                        title="Copy titles, UUIDs, hierarchy, and AI summaries without node content"
                     >
                         <i className="bx bx-brain me-1"></i>
                         {copySummariesStatus === 'copying' && 'Copying…'}

@@ -13,6 +13,7 @@ time, and the cache is invalidated server-side via ETags.
 import time
 
 from backend.services import node_service
+from backend.exceptions import NodePatchConflictError
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,23 @@ def svc_update_node(vault_id: int, node_id: str, agent_user_id: int,
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def svc_patch_node(vault_id: int, node_id: str, agent_user_id: int,
+                   expected_version: int, replacements: list[dict],
+                   dry_run: bool = False) -> dict:
+    try:
+        result = node_service.patch_node(
+            node_id, vault_id, agent_user_id, expected_version, replacements,
+            dry_run, actor_type="agent",
+        )
+        return {"ok": True, **result}
+    except NodePatchConflictError as exc:
+        return {"ok": False, "error": str(exc), "conflict": True, **exc.details}
+    except PermissionError as exc:
+        return {"ok": False, "error": str(exc), "blocked": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def svc_update_summary(vault_id: int, node_id: str, agent_user_id: int,

@@ -1,3 +1,25 @@
+import pytest
+
+
+@pytest.mark.parametrize("configured,requested,expected", [
+    (["openai"], None, "openai"),
+    (["openrouter"], "local", "openrouter"),
+    (["local", "openai"], "openai", "openai"),
+    (["local", "openai"], "unknown", "local"),
+    ([], "local", None),
+])
+def test_default_provider_is_available_or_unset(client, monkeypatch, configured, requested, expected):
+    variables = {"local": "LOCAL_LLM_URL", "openai": "OPENAI_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
+    for name, variable in variables.items():
+        monkeypatch.delenv(variable, raising=False)
+        if name in configured:
+            monkeypatch.setenv(variable, "test-value")
+    monkeypatch.delenv("SUMMARY_PROVIDER", raising=False)
+    if requested:
+        monkeypatch.setenv("SUMMARY_PROVIDER", requested)
+    assert client.get('/api/system/config').get_json()["default_summary_provider"] == expected
+
+
 def test_system_config_exposes_openrouter_without_secret(client, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "must-not-leak")
     monkeypatch.setenv("OPENROUTER_MODEL", "vendor/model:free")

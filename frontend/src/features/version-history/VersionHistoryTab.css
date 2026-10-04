@@ -13,6 +13,8 @@
     flex-direction: column;
     height: 100%; /* <-- Das ist der Schlüssel! */
     max-height: 100%;
+    min-width: 0;
+    width: 100%;
 }
 
 /* Der Bereich, der scrollen soll.
@@ -25,6 +27,23 @@
     flex-grow: 1;          /* <-- Extrem wichtig */
     overflow-y: auto;      /* <-- Scrollen aktivieren */
     min-height: 0;         /* <-- Flexbox "Magic Fix" */
+    min-width: 0;
+}
+
+.version-list-item {
+    min-width: 0;
+    width: 100%;
+}
+
+.version-row-content {
+    flex-basis: 0;
+    overflow-wrap: anywhere;
+}
+
+.version-row-title {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* Der "Zurück zur aktuellen Version"-Button soll nicht wachsen oder schrumpfen */

@@ -32,6 +32,11 @@ From the Tools tab, you can export the full Markdown tree of your selected nodes
 *   **Include UUIDs:** When enabled, the hidden internal ID of the node is included at the top of the copied text. This is highly useful if you are pasting the text into an external system (or providing context to an external AI) and want to maintain a strict reference back to the original Nexidion node.
 *   **Include AI Summaries:** If your nodes have AI-generated summary blocks attached to them, you can choose to include or exclude them from the copied text.
 
+**Copy AI Summaries Only** always includes every exported node's title and UUID,
+followed by its indented summary and children. Nodes without a summary show
+`[No AI summary]`. The separate **Include UUIDs** toggle applies to the general
+tree copy; summary-only output keeps UUIDs so references remain unambiguous.
+
 *Security Note: To prevent data leakage, Nexidion's backend will automatically block any attempt to copy or export nodes that do not belong to your currently active vault.*
 
 ---

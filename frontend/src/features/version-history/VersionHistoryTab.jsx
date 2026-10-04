@@ -33,12 +33,12 @@ function VersionRow({ v, isBase, isCompare, showDiffButton, vaultId, nodeId, onS
             onMouseEnter={handleMouseEnter}
         >
             <div
-                className="flex-grow-1 me-2"
+                className="flex-grow-1 me-2 version-row-content"
                 style={{ minWidth: 0, cursor: 'pointer' }}
                 onClick={() => onSelect(v)}
             >
                 <div className="d-flex align-items-center gap-1">
-                    <strong className="text-truncate" title={v.title || `Version ${v.version}`}>
+                    <strong className="version-row-title" title={v.title || `Version ${v.version}`}>
                         {v.title || `Version ${v.version}`}
                     </strong>
                     {v.is_stub && (
@@ -62,6 +62,7 @@ function VersionRow({ v, isBase, isCompare, showDiffButton, vaultId, nodeId, onS
             </div>
             {showDiffButton && (
                 <Button
+                    className="flex-shrink-0"
                     variant="outline-info"
                     size="sm"
                     onClick={(e) => {

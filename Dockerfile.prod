@@ -18,7 +18,7 @@ RUN npm run build
 # ==========================================
 FROM python:3.13-slim
 LABEL org.opencontainers.image.title="Nexidion" \
-      org.opencontainers.image.version="4.3.2"
+      org.opencontainers.image.version="4.3.3"
 WORKDIR /app
 
 # Install system dependencies (needed for Postgres/psycopg2)

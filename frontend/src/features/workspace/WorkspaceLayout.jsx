@@ -1,8 +1,8 @@
 // src/features/workspace/WorkspaceLayout.jsx
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { Outlet, useParams, Link } from 'react-router-dom';
+import { Outlet, useParams } from 'react-router-dom';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Button, ButtonGroup, Offcanvas, Breadcrumb } from 'react-bootstrap';
+import { Button, ButtonGroup, Offcanvas } from 'react-bootstrap';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkspaceStore } from './workspaceStore';
 import apiClient from '../../api/apiClient.js';
@@ -12,24 +12,7 @@ import { useVaultTreeQuery } from '../nodes/hooks/useVaultTreeQuery.js';
 import ContextPanel from './ContextPanel.jsx';
 import ContextBarContainer from './ContextBarContainer.jsx';
 import './WorkspaceLayout.css';
-
-const BreadcrumbTrail = ({ path }) => {
-    if (!path || path.length === 0) return null;
-    return (
-        <Breadcrumb listProps={{ className: "mb-0 bg-transparent p-0 small" }}>
-            {path.map((crumb, index) => (
-                <Breadcrumb.Item
-                    key={crumb.id}
-                    linkAs={Link}
-                    linkProps={{ to: crumb.to }}
-                    active={index === path.length - 1}
-                >
-                    {crumb.title}
-                </Breadcrumb.Item>
-            ))}
-        </Breadcrumb>
-    );
-};
+import BreadcrumbTrail from './BreadcrumbTrail.jsx';
 
 export default function WorkspaceLayout() {
     const { vaultId } = useParams();
@@ -268,12 +251,12 @@ export default function WorkspaceLayout() {
                     {/* Center Panel */}
                     <Panel id="center-panel" minSize={30} order={2} className="pane-template">
                         <div className="desktop-action-bar p-2 d-flex align-items-center border-bottom bg-light">
-                            <Button variant="outline-secondary" size="sm" onClick={toggleLeftPanel} title="Toggle navigation">☰ Nav</Button>
-                            <div className="vr mx-2"></div>
+                            <Button className="flex-shrink-0" variant="outline-secondary" size="sm" onClick={toggleLeftPanel} title="Toggle navigation">☰ Nav</Button>
+                            <div className="vr mx-2 flex-shrink-0"></div>
                             <div className="breadcrumb-wrapper mx-2 flex-grow-1">
                                 <BreadcrumbTrail path={breadcrumbPath} />
                             </div>
-                            <ButtonGroup size="sm">
+                            <ButtonGroup size="sm" className="flex-shrink-0">
                                 <Button variant={rightPanelMode === 'expanded' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('expanded')} title="Context Wide">{'<'}</Button>
                                 <Button variant={rightPanelMode === 'normal' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('normal')} title="Context Normal">{'|'}</Button>
                                 <Button variant={rightPanelMode === 'collapsed' ? 'primary' : 'outline-secondary'} onClick={() => setRightPanelState('collapsed')} title="Context Off">{'>'}</Button>

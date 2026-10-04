@@ -18,12 +18,12 @@ import NodeEditor from './NodeEditor.jsx';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
 import AppLoading from '../../components/AppLoading.jsx';
 
-const findPathInTree = (nodes, nodeId, currentPath =[]) => {
+const findPathInTree = (nodes, nodeId, vaultId, currentPath =[]) => {
     for (const node of nodes) {
-        const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${node.vault_id}/nodes/${node.id}`}];
+        const newPath = [...currentPath, {id: node.id, title: node.title, to: `/vaults/${vaultId}/nodes/${node.id}`}];
         if (node.id === nodeId) return newPath;
         if (node.children && node.children.length > 0) {
-            const foundPath = findPathInTree(node.children, nodeId, newPath);
+            const foundPath = findPathInTree(node.children, nodeId, vaultId, newPath);
             if (foundPath) return foundPath;
         }
     }
@@ -128,12 +128,12 @@ export default function NodeContent() {
 
     useEffect(() => {
         if (vaultTreeData?.tree && nodeId) {
-            const path = findPathInTree(vaultTreeData.tree, nodeId);
+            const path = findPathInTree(vaultTreeData.tree, nodeId, vaultId);
             setBreadcrumbPath(path ||[]);
         } else {
             setBreadcrumbPath([]);
         }
-    }, [vaultTreeData, nodeId, setBreadcrumbPath]);
+    }, [vaultTreeData, vaultId, nodeId, setBreadcrumbPath]);
 
     useEffect(() => {
         if (activeNodeData) {

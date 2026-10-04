@@ -8,7 +8,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from backend.extensions import limiter
 # Import the services and the new exceptions +++
 from backend.services import node_service, retrieval_service
-from backend.exceptions import InsufficientVaultRoleError
+from backend.exceptions import InsufficientVaultRoleError, NodePatchConflictError
 
 # The blueprint contains the vault_id as a dynamic part of the prefix.
 # All routes are relative to this prefix.
@@ -417,6 +417,35 @@ def update_node(vault_id: int, node_id: str):
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
+
+
+@nodes_bp.route('/<string:node_id>/patch', methods=['PATCH'], strict_slashes=False)
+@jwt_required()
+@limiter.limit("60 per minute; 500 per hour")
+def patch_node(vault_id: int, node_id: str):
+    """Atomically replace exact content fragments with version preconditions."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+    if set(data) - {'expected_version', 'replacements', 'dry_run'}:
+        return jsonify({"error": "Unknown patch fields."}), 400
+    try:
+        return jsonify(node_service.patch_node(
+            node_id, vault_id, int(get_jwt_identity()),
+            data.get('expected_version'), data.get('replacements'),
+            data.get('dry_run', False), actor_type=_actor_type(),
+        ))
+    except (PermissionError, InsufficientVaultRoleError) as e:
+        return jsonify({"error": str(e)}), 403
+    except NodePatchConflictError as e:
+        return jsonify({"error": str(e), **e.details}), 409
+    except LookupError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        logging.exception("Node content patch failed")
+        return jsonify({"error": "An internal server error occurred"}), 500
 
 
 @nodes_bp.route('/<string:node_id>/move', methods=['PATCH'], strict_slashes=False)

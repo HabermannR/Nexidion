@@ -71,6 +71,22 @@ All UUIDs listed in the operations log are **clickable links**. You can click ri
 
 ![Task Details and Logs](images/agent3.jpg)
 
+### Targeted content edits
+
+The runner's `patch_node` uses the same atomic backend service as the MCP tool.
+Its vault is fixed to the task's vault. Pass `node_id`, `expected_version` from
+`get_node_content`, `replacements` containing `old_text`, `new_text`, and
+`expected_matches`, and `dry_run`. All literal replacements match the original
+content; version conflicts, unexpected counts, and overlapping edits abort the
+entire patch. Dry-run returns a diff and counts without writing. Applying creates
+one new version and marks the existing summary stale. The tool returns the
+current or new version without the full content. Node policies and task write
+boundaries apply in both modes. Only changed, saved patches appear as writes in
+the audit log.
+
+For summary-only refreshes, the runner uses `set_summary`; content and version
+stay unchanged.
+
 ### Roll-up write boundary
 
 Each roll-up job may call `write_node` only for its one advertised destination
